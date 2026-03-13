@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { DEFAULT_STARTUP_PROFILE } from '../../core/default-starting-profile.js';
-import { APP_STATE_VERSION, AppState } from '../../state/app-state.js';
+import { APP_STATE_VERSION, AppState, createDefaultAppStateData } from '../../state/app-state.js';
 
 describe('AppState', () => {
     beforeEach(() => {
@@ -79,5 +79,17 @@ describe('AppState', () => {
         expect(AppState.bowl.sideLength).toBe(345);
         expect(AppState.tiers[0].cValue).toBe(3.5);
         expect(AppState.tiers[1].numRows).toBe(18);
+    });
+
+    test('creates a fresh default app state payload for project creation flows', () => {
+        const first = createDefaultAppStateData();
+        const second = createDefaultAppStateData();
+
+        expect(first).not.toBe(second);
+        expect(first._version).toBe(APP_STATE_VERSION);
+        expect(second.tiers[0].enabled).toBe(true);
+
+        first.tiers[0].numRows = 99;
+        expect(second.tiers[0].numRows).toBe(30);
     });
 });

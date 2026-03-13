@@ -10,5 +10,5 @@ echo Browser auto-open skipped [NO_AUTO_OPEN=1].
 echo Opening http://localhost:8001 in your browser...
 start http://localhost:8001
 )
-python -m http.server 8001
+node scripts/project-api-server.mjs
 pause

@@ -107,6 +107,10 @@
                 background: #ffffff;
             }
 
+            [hidden] {
+                display: none !important;
+            }
+
             *::-webkit-scrollbar {
                 width: 8px;
                 height: 8px;
@@ -127,6 +131,257 @@
         }
 
         @layer components {
+            .dashboard-shell {
+                min-height: 100vh;
+                background:
+                    radial-gradient(circle at top left, rgba(122, 174, 26, 0.22), transparent 32%),
+                    linear-gradient(135deg, #111315 0%, #191d18 52%, #222820 100%);
+                color: #f5f7f1;
+            }
+
+            .dashboard-stage {
+                min-height: 100vh;
+                padding: 48px 24px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .dashboard-frame {
+                width: min(1180px, 100%);
+                display: grid;
+                grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+                gap: 24px;
+                align-items: start;
+            }
+
+            .dashboard-hero {
+                padding: 28px;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                border-radius: 28px;
+                background: rgba(255, 255, 255, 0.06);
+                backdrop-filter: blur(16px);
+                box-shadow: 0 18px 40px rgba(0, 0, 0, 0.24);
+            }
+
+            .dashboard-hero h1 {
+                margin: 10px 0 12px;
+                font-family: 'Barlow Condensed', sans-serif;
+                font-size: clamp(2.2rem, 4vw, 3.5rem);
+                line-height: 0.95;
+                letter-spacing: 0.02em;
+            }
+
+            .dashboard-hero p {
+                margin: 0;
+                color: rgba(245, 247, 241, 0.82);
+                line-height: 1.6;
+            }
+
+            .dashboard-kicker {
+                display: inline-flex;
+                align-items: center;
+                min-height: 30px;
+                padding: 0 12px;
+                border-radius: 999px;
+                background: rgba(122, 174, 26, 0.14);
+                color: #d8ecb1;
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 0.16em;
+                text-transform: uppercase;
+            }
+
+            .dashboard-card {
+                padding: 24px;
+                border-radius: 24px;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                background: rgba(255, 255, 255, 0.96);
+                color: #131618;
+                box-shadow: 0 20px 44px rgba(0, 0, 0, 0.22);
+            }
+
+            .dashboard-card h2,
+            .dashboard-card h3 {
+                margin: 0;
+            }
+
+            .dashboard-copy {
+                margin: 8px 0 0;
+                color: #55606a;
+                line-height: 1.55;
+            }
+
+            .dashboard-error {
+                margin: 16px 0 0;
+                padding: 12px 14px;
+                border-radius: 14px;
+                background: rgba(209, 67, 61, 0.12);
+                color: #952722;
+                font-weight: 600;
+            }
+
+            .dashboard-form {
+                display: grid;
+                gap: 14px;
+                margin-top: 20px;
+            }
+
+            .dashboard-form label {
+                display: grid;
+                gap: 6px;
+                font-size: 12px;
+                font-weight: 700;
+                color: #4d535a;
+                letter-spacing: 0.02em;
+            }
+
+            .dashboard-form input {
+                width: 100%;
+                min-height: 48px;
+                padding: 0 14px;
+                border-radius: 14px;
+                border: 1px solid #d4d8cf;
+                background: #f7f7f3;
+                color: #121417;
+                font-size: 14px;
+            }
+
+            .dashboard-actions {
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+                justify-content: flex-end;
+            }
+
+            .dashboard-primary-btn,
+            .dashboard-secondary-btn,
+            .editor-route-btn {
+                min-height: 44px;
+                padding: 0 16px;
+                border-radius: 999px;
+                font-size: 13px;
+                font-weight: 800;
+                letter-spacing: 0.01em;
+                transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+            }
+
+            .dashboard-primary-btn,
+            .editor-route-btn-primary {
+                border: 1px solid #0f1113;
+                background: #0f1113;
+                color: #ffffff;
+                box-shadow: 0 8px 18px rgba(15, 17, 19, 0.14);
+            }
+
+            .dashboard-secondary-btn,
+            .editor-route-btn-secondary {
+                border: 1px solid rgba(15, 17, 19, 0.12);
+                background: #ffffff;
+                color: #111827;
+            }
+
+            .dashboard-primary-btn:hover,
+            .dashboard-secondary-btn:hover,
+            .editor-route-btn:hover {
+                transform: translateY(-1px);
+            }
+
+            .dashboard-primary-btn:disabled,
+            .dashboard-secondary-btn:disabled,
+            .editor-route-btn:disabled {
+                cursor: not-allowed;
+                opacity: 0.6;
+                transform: none;
+            }
+
+            .dashboard-overview-header {
+                display: flex;
+                justify-content: space-between;
+                gap: 16px;
+                align-items: start;
+            }
+
+            .dashboard-inline-form {
+                grid-template-columns: minmax(0, 1fr) auto;
+                align-items: end;
+            }
+
+            .dashboard-project-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+                gap: 16px;
+                margin-top: 18px;
+            }
+
+            .project-card {
+                padding: 20px;
+                border-radius: 22px;
+                background: rgba(255, 255, 255, 0.96);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
+            }
+
+            .project-card-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: start;
+                gap: 12px;
+            }
+
+            .project-card-header p {
+                margin: 6px 0 0;
+                color: #64707c;
+                font-weight: 600;
+            }
+
+            .project-card-meta {
+                margin: 18px 0 0;
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 12px;
+            }
+
+            .project-card-meta dt {
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+                color: #78818b;
+            }
+
+            .project-card-meta dd {
+                margin: 6px 0 0;
+                color: #1a1f23;
+                font-size: 13px;
+                line-height: 1.45;
+            }
+
+            .dashboard-empty-state {
+                padding: 28px;
+                border-radius: 22px;
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px dashed rgba(255, 255, 255, 0.18);
+                color: rgba(245, 247, 241, 0.86);
+            }
+
+            .dashboard-empty-state p {
+                margin: 10px 0 0;
+                line-height: 1.6;
+            }
+
+            .sr-only {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                white-space: nowrap;
+                border: 0;
+            }
+
             .jlg-shell .app-container {
                 @apply relative;
             }
@@ -278,10 +533,12 @@
             .jlg-shell .view-tabs {
                 @apply bg-white border-b border-zinc-200;
                 position: relative;
-                height: 60px;
-                padding: 0 16px 4px;
+                min-height: 60px;
+                height: auto;
+                padding: 8px 16px;
                 gap: 8px;
                 align-items: center;
+                flex-wrap: wrap;
             }
 
             .jlg-shell .view-tabs::before {
@@ -379,6 +636,80 @@
             .jlg-shell .view-tabs-feedback-btn:focus-visible {
                 outline: 2px solid rgba(122, 174, 26, 0.55);
                 outline-offset: 2px;
+            }
+
+            .editor-route-toolbar {
+                margin-left: auto;
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+
+            .project-name-field {
+                display: inline-flex;
+                align-items: center;
+            }
+
+            .project-name-input {
+                height: 42px;
+                min-width: min(240px, 42vw);
+                padding: 0 14px;
+                border-radius: 999px;
+                border: 1px solid #d4d4d8;
+                background: #fafaf7;
+                color: #111827;
+                font-weight: 600;
+            }
+
+            .editor-project-statusbar {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                align-items: center;
+                padding: 10px 16px 0;
+            }
+
+            .editor-session-label,
+            .editor-project-meta,
+            .project-status-message {
+                min-height: 34px;
+                display: inline-flex;
+                align-items: center;
+                padding: 0 12px;
+                border-radius: 999px;
+                font-size: 12px;
+                font-weight: 700;
+            }
+
+            .editor-session-label {
+                background: #eef2e5;
+                color: #395320;
+            }
+
+            .editor-project-meta {
+                background: #f5f6f2;
+                color: #58606a;
+            }
+
+            .project-status-message {
+                background: #f5f6f2;
+                color: #232323;
+            }
+
+            .project-status-message[data-tone="pending"] {
+                background: rgba(222, 133, 10, 0.12);
+                color: #9a5808;
+            }
+
+            .project-status-message[data-tone="success"] {
+                background: rgba(122, 174, 26, 0.12);
+                color: #47670f;
+            }
+
+            .project-status-message[data-tone="error"] {
+                background: rgba(209, 67, 61, 0.12);
+                color: #952722;
             }
 
             .jlg-shell .view-container {
@@ -1305,6 +1636,35 @@
                     min-width: 360px;
                 }
             }
+
+            @media (max-width: 980px) {
+                .dashboard-stage {
+                    padding: 24px 16px;
+                }
+
+                .dashboard-frame {
+                    grid-template-columns: minmax(0, 1fr);
+                }
+
+                .dashboard-inline-form {
+                    grid-template-columns: minmax(0, 1fr);
+                }
+
+                .editor-route-toolbar {
+                    width: 100%;
+                    margin-left: 0;
+                }
+
+                .project-name-input {
+                    min-width: 0;
+                    width: 100%;
+                }
+
+                .jlg-shell .view-tabs-note {
+                    max-width: 100%;
+                    order: 10;
+                }
+            }
         }
     </style>
     <style>
@@ -1942,7 +2302,23 @@
 </head>
 
 <body class="jlg-shell">
-    <div class="app-container">
+    <section id="dashboardShell" class="dashboard-shell" hidden>
+        <div class="dashboard-stage">
+            <div class="dashboard-frame">
+                <div class="dashboard-hero">
+                    <div class="dashboard-kicker">JLG Architects</div>
+                    <h1>Seating Bowl Project Dashboard</h1>
+                    <p>
+                        Authenticated project persistence for the Phase 5 editor flow. Create a study, reopen it later,
+                        and keep the study payload anchored to the single AppState contract.
+                    </p>
+                </div>
+                <div id="dashboardPageRoot"></div>
+            </div>
+        </div>
+    </section>
+
+    <div id="editorShell" class="app-container" hidden>
         <!-- ========== LEFT SIDEBAR ========== -->
         <aside class="sidebar left-sidebar">
             <div class="sidebar-header">
@@ -2471,6 +2847,15 @@
                 <button class="view-tab-btn active" data-tab="profile">Section</button>
                 <button class="view-tab-btn" data-tab="field">Plan</button>
                 <button class="view-tab-btn" data-tab="scene3d">3D</button>
+                <div class="editor-route-toolbar" aria-label="Project actions">
+                    <button id="backToDashboardBtn" class="editor-route-btn editor-route-btn-secondary" type="button">Dashboard</button>
+                    <label class="project-name-field" for="projectNameInput">
+                        <span class="sr-only">Project name</span>
+                        <input id="projectNameInput" class="project-name-input" type="text" maxlength="120" placeholder="Project name">
+                    </label>
+                    <button id="saveProjectBtn" class="editor-route-btn editor-route-btn-primary" type="button" disabled>Save Project</button>
+                    <button id="editorSignOutBtn" class="editor-route-btn editor-route-btn-secondary" type="button">Sign Out</button>
+                </div>
                 <div class="view-tabs-note" role="note" aria-label="Beta disclaimer">
                     <strong>Beta</strong> Results are preliminary and may not be accurate.
                 </div>
@@ -2479,6 +2864,11 @@
                    href="mailto:eklinger@jlgarchitects.com?subject=Seating%20Bowl%20Study%20Beta%20Feedback"
                    title="Opens your default email app. If nothing opens, email eklinger@jlgarchitects.com."
                    aria-label="Send beta feedback by email to eklinger@jlgarchitects.com">Feedback</a>
+            </div>
+            <div class="editor-project-statusbar" aria-live="polite">
+                <span id="editorSessionLabel" class="editor-session-label">Signed out</span>
+                <span id="editorProjectMeta" class="editor-project-meta">Create or open a project from the dashboard</span>
+                <span id="projectStatusMessage" class="project-status-message" data-tone="default">Project persistence ready</span>
             </div>
 
             <div class="view-container">

@@ -153,6 +153,11 @@ function createDefaultStateData() {
     };
 }
 
+/** @returns {AppStateData} */
+function createDefaultAppStateData() {
+    return createDefaultStateData();
+}
+
 function parseNumber(value, fallback) {
     const numeric = Number(value);
     return Number.isFinite(numeric) ? numeric : fallback;
@@ -422,3 +427,4 @@ export const AppState = {
 };
 
 export { APP_STATE_VERSION };
+export { createDefaultAppStateData };

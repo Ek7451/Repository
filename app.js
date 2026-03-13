@@ -13,6 +13,9 @@ import { exportRhinoModel, getRhinoExportOffsetCorrection } from './export/rhino
 import { AppState } from './state/app-state.js';
 import { CameraBookmarks } from './ui/camera-bookmarks.js?v=1';
 import { renderStatsPanel } from './ui/stats-panel.js?v=1';
+import { createAuthService } from './services/auth-service.js';
+import { createProjectsService } from './services/projects-service.js';
+import { DashboardPage } from './pages/dashboard-page.js';
 // Scene3D is imported lazily in _init3DAsync to avoid blocking if Three.js CDN is unavailable
 
 const EDGE_SPORTS = ['Ice Hockey', 'Football', 'Concert', 'Soccer', 'Basketball'];
@@ -117,6 +120,13 @@ class App {
 
         this._themeStorageKey = 'jlg-seating-theme';
         this._theme = 'light';
+        this._session = null;
+        this._projectMetadata = {
+            id: null,
+            name: '',
+            createdAt: '',
+            updatedAt: ''
+        };
     }
 
     async init() {
@@ -142,6 +152,8 @@ class App {
             this._syncTemplateFromState();
             this._applyStateToDom();
             this.cameraBookmarks?.render();
+            this._refreshProjectChrome();
+            this.setProjectStatus('Project persistence ready');
 
             // Initialize tooltips
             this._initTooltips();
@@ -160,6 +172,97 @@ class App {
 
         } catch (err) {
             console.error('App init error:', err);
+        }
+    }
+
+    setSession(session) {
+        this._session = session && typeof session === 'object'
+            ? { ...session }
+            : null;
+        this._refreshProjectChrome();
+    }
+
+    setProjectMetadata(project = null) {
+        this._projectMetadata = {
+            id: typeof project?.id === 'string' ? project.id : null,
+            name: typeof project?.name === 'string' ? project.name : '',
+            createdAt: typeof project?.createdAt === 'string' ? project.createdAt : '',
+            updatedAt: typeof project?.updatedAt === 'string' ? project.updatedAt : ''
+        };
+        this._refreshProjectChrome();
+    }
+
+    setProjectName(name = '') {
+        this._projectMetadata.name = typeof name === 'string' ? name : '';
+        this._refreshProjectChrome();
+    }
+
+    getProjectMetadata() {
+        return { ...this._projectMetadata };
+    }
+
+    getProjectSaveRequest() {
+        const name = (this._projectMetadata.name || this._deriveProjectName()).trim();
+        this._projectMetadata.name = name;
+        this._refreshProjectChrome();
+
+        return {
+            name,
+            state: this.state.toJSON()
+        };
+    }
+
+    setProjectStatus(message, tone = 'default') {
+        const statusEl = document.getElementById('projectStatusMessage');
+        if (!statusEl) return;
+
+        statusEl.textContent = typeof message === 'string' && message.trim()
+            ? message.trim()
+            : 'Project persistence ready';
+        statusEl.dataset.tone = tone;
+    }
+
+    loadProject(project) {
+        if (!project || typeof project !== 'object') return;
+        this.setProjectMetadata(project);
+        this._loadStateFromConfig(project.state ?? {}, { logSuccess: true });
+        this.setProjectStatus(`Loaded ${this._projectMetadata.name || this._deriveProjectName()}`, 'success');
+    }
+
+    _deriveProjectName() {
+        const sportName = typeof this.state?.sport === 'string' && this.state.sport.trim()
+            ? this.state.sport.trim()
+            : 'Seating';
+        return `${sportName} Study`;
+    }
+
+    _refreshProjectChrome() {
+        const nameInput = document.getElementById('projectNameInput');
+        const nextName = (this._projectMetadata.name || this._deriveProjectName()).trim();
+        if (nameInput && document.activeElement !== nameInput) {
+            nameInput.value = nextName;
+        }
+
+        const metaEl = document.getElementById('editorProjectMeta');
+        if (metaEl) {
+            const updatedAt = this._projectMetadata.updatedAt
+                ? new Date(this._projectMetadata.updatedAt).toLocaleString()
+                : 'Not yet saved';
+            metaEl.textContent = this._projectMetadata.id
+                ? `Updated ${updatedAt}`
+                : 'Create or open a project from the dashboard';
+        }
+
+        const sessionEl = document.getElementById('editorSessionLabel');
+        if (sessionEl) {
+            sessionEl.textContent = this._session?.displayName
+                ? `Signed in as ${this._session.displayName}`
+                : 'Signed out';
+        }
+
+        const saveBtn = document.getElementById('saveProjectBtn');
+        if (saveBtn && saveBtn.dataset.busy !== 'true') {
+            saveBtn.disabled = !this._projectMetadata.id || !this._session;
         }
     }
 
@@ -651,6 +754,13 @@ class App {
         if (exportConfigBtn) exportConfigBtn.addEventListener('click', () => this._exportConfig());
         if (loadConfigBtn) loadConfigBtn.addEventListener('click', () => configFileInput && configFileInput.click());
         if (configFileInput) configFileInput.addEventListener('change', (e) => this._loadConfig(e));
+
+        const projectNameInput = document.getElementById('projectNameInput');
+        if (projectNameInput) {
+            projectNameInput.addEventListener('input', () => {
+                this.setProjectName(projectNameInput.value);
+            });
+        }
 
         // Export menu toggle + auto-collapse behavior
         const exportMenuPanel = document.querySelector('.export-menu-panel');
@@ -2107,6 +2217,132 @@ if (rightResizer) {
     });
 }
 
-// Boot
-const app = new App();
-app.init().catch(err => console.error('App init failed:', err));
+function buildDashboardUrl() {
+    const url = new URL(window.location.href);
+    url.search = '';
+    return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function buildEditorUrl(projectId) {
+    const url = new URL(window.location.href);
+    url.search = '';
+    url.searchParams.set('project', projectId);
+    return `${url.pathname}?${url.searchParams.toString()}${url.hash}`;
+}
+
+function setShellMode(mode) {
+    const dashboardShell = document.getElementById('dashboardShell');
+    const editorShell = document.getElementById('editorShell');
+    const showDashboard = mode === 'dashboard';
+
+    if (dashboardShell) dashboardShell.hidden = !showDashboard;
+    if (editorShell) editorShell.hidden = showDashboard;
+    document.body.classList.toggle('dashboard-mode', showDashboard);
+}
+
+function setSaveButtonBusy(isBusy) {
+    const saveBtn = document.getElementById('saveProjectBtn');
+    if (!saveBtn) return;
+
+    saveBtn.dataset.busy = isBusy ? 'true' : 'false';
+    saveBtn.textContent = isBusy ? 'Saving...' : 'Save Project';
+    if (isBusy) {
+        saveBtn.disabled = true;
+    }
+}
+
+function wireProjectShellControls(app, authService, projectsService) {
+    const backBtn = document.getElementById('backToDashboardBtn');
+    const saveBtn = document.getElementById('saveProjectBtn');
+    const signOutBtn = document.getElementById('editorSignOutBtn');
+
+    backBtn?.addEventListener('click', () => {
+        window.location.assign(buildDashboardUrl());
+    });
+
+    signOutBtn?.addEventListener('click', async () => {
+        try {
+            await authService.signOut();
+        } catch (error) {
+            console.error('Sign-out failed:', error);
+        } finally {
+            window.location.assign(buildDashboardUrl());
+        }
+    });
+
+    saveBtn?.addEventListener('click', async () => {
+        const metadata = app.getProjectMetadata();
+        if (!metadata.id) return;
+
+        setSaveButtonBusy(true);
+        app.setProjectStatus('Saving project...', 'pending');
+
+        try {
+            const savedProject = await projectsService.updateProject(
+                metadata.id,
+                app.getProjectSaveRequest()
+            );
+            app.setProjectMetadata(savedProject);
+            app.setProjectStatus(`Saved ${savedProject.name}`, 'success');
+        } catch (error) {
+            console.error('Project save failed:', error);
+            app.setProjectStatus(
+                error instanceof Error ? error.message : 'Project save failed.',
+                'error'
+            );
+        } finally {
+            setSaveButtonBusy(false);
+            app._refreshProjectChrome();
+        }
+    });
+}
+
+async function bootAppShell() {
+    const authService = createAuthService();
+    const projectsService = createProjectsService();
+    const app = new App();
+    const dashboardPage = new DashboardPage({
+        root: document.getElementById('dashboardPageRoot'),
+        authService,
+        projectsService,
+        onOpenProject: (projectId) => {
+            window.location.assign(buildEditorUrl(projectId));
+        }
+    });
+
+    const projectId = new URLSearchParams(window.location.search).get('project');
+
+    if (!projectId) {
+        setShellMode('dashboard');
+        await dashboardPage.show();
+        return;
+    }
+
+    const session = await authService.getSession();
+    if (!session) {
+        window.location.assign(buildDashboardUrl());
+        return;
+    }
+
+    setShellMode('editor');
+    app.setSession(session);
+    wireProjectShellControls(app, authService, projectsService);
+    await app.init();
+    app.setProjectStatus('Loading project...', 'pending');
+
+    try {
+        const project = await projectsService.getProject(projectId);
+        app.loadProject(project);
+    } catch (error) {
+        console.error('Project load failed:', error);
+        app.setProjectStatus(
+            error instanceof Error ? error.message : 'Project load failed.',
+            'error'
+        );
+        window.setTimeout(() => {
+            window.location.assign(buildDashboardUrl());
+        }, 900);
+    }
+}
+
+bootAppShell().catch((err) => console.error('App init failed:', err));
