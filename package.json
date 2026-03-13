@@ -1,0 +1,21 @@
+{
+  "name": "seating-bowl-generator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint export/**/*.js tests/**/*.js scripts/**/*.mjs eslint.config.js vitest.config.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "build": "node scripts/build-check.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.22.0",
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.25.0",
+    "eslint": "^9.22.0",
+    "globals": "^16.0.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.1.1"
+  }
+}

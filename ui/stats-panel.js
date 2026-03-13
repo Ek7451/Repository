@@ -5,9 +5,9 @@ export function renderStatsPanel({
     solvers = [],
     statsEl = null,
     detailsEl = null,
-    getInputValue = (_id) => 0,
-    getEgressParams = () => ({}),
-    getBowlConfig = () => ({}),
+    focalPointFt = { x: 0, z: 0 },
+    egressParams = {},
+    bowlConfig = {},
     tierAisleLayouts = [],
     fieldRenderer = null,
     sportName = ''
@@ -38,8 +38,8 @@ export function renderStatsPanel({
     if (rowsForStats.length > 0) {
         const analyzer = new SightlineAnalyzer(
             rowsForStats,
-            getInputValue('focalX'),
-            getInputValue('focalZ')
+            Number(focalPointFt?.x) || 0,
+            Number(focalPointFt?.z) || 0
         );
         analyzer.analyze();
         stats = analyzer.getStatistics();
@@ -95,9 +95,6 @@ export function renderStatsPanel({
     const totalDistVal = maxX > -Infinity ? maxX.toFixed(1) : '0.0';
 
     // --- Occupancy Logic ---
-    const egressParams = getEgressParams();
-    const bowlConfig = getBowlConfig();
-
     // Base Offset Logic removed in favor of offsetCorrection
     const edgeSports = ['Ice Hockey', 'Football', 'Concert', 'Soccer', 'Basketball'];
     const isEdgeSport = edgeSports.includes(sportName);
@@ -297,7 +294,7 @@ export function renderStatsPanel({
 
     // Build per-tier row tables
     let rowTableHTML = '';
-    const focalXForDetails = getInputValue('focalX') || 0;
+    const focalXForDetails = Number(focalPointFt?.x) || 0;
     const isMirroredSidesMode = String(bowlConfig && bowlConfig.type ? bowlConfig.type : '').toLowerCase() === 'sides';
     for (let t = 0; t < solvers.length; t++) {
         const s = solvers[t];

@@ -10,11 +10,92 @@ import { ProfileRenderer } from './profile-renderer.js?v=4';
 import { DEFAULT_STARTUP_PROFILE } from './default-starting-profile.js?v=1';
 import { buildPlanDxf, buildProfileDxf } from './export/dxf-exporter.js';
 import { exportRhinoModel, getRhinoExportOffsetCorrection } from './export/rhino/rhino-exporter.js';
+import { AppState } from './state/app-state.js';
 import { renderStatsPanel } from './ui/stats-panel.js?v=1';
 // Scene3D is imported lazily in _init3DAsync to avoid blocking if Three.js CDN is unavailable
 
+const EDGE_SPORTS = ['Ice Hockey', 'Football', 'Concert', 'Soccer', 'Basketball'];
+const NUMERIC_INPUT_STATE_PATHS = {
+    focalZ: ['setup', 'focalZ'],
+    bowlCornerRad: ['bowl', 'cornerRad'],
+    bowlSideLength: ['bowl', 'sideLength'],
+    structuralDepth: ['bowl', 'structuralDepth'],
+    clipPosition: ['bowl', 'clipPosition'],
+    seatWidth: ['occupancy', 'seatWidth'],
+    minAisle: ['occupancy', 'minAisle'],
+    maxAisle: ['occupancy', 'maxAisle'],
+    seatsBetweenAisles: ['occupancy', 'seatsBetweenAisles'],
+    egressFactor: ['occupancy', 'egressFactor'],
+    cValue: ['tiers', 0, 'cValue'],
+    numRows: ['tiers', 0, 'numRows'],
+    firstRowDist: ['tiers', 0, 'firstRowDist'],
+    firstRowElev: ['tiers', 0, 'firstRowElev'],
+    treadDepth: ['tiers', 0, 'treadDepth'],
+    riserHeight: ['tiers', 0, 'riserHeight'],
+    eyeHeight: ['tiers', 0, 'eyeHeight'],
+    eyeSetback: ['tiers', 0, 'eyeSetback'],
+    t2CValue: ['tiers', 1, 'cValue'],
+    t2NumRows: ['tiers', 1, 'numRows'],
+    t2FirstRowDist: ['tiers', 1, 'firstRowDist'],
+    t2FirstRowElev: ['tiers', 1, 'firstRowElev'],
+    t2TreadDepth: ['tiers', 1, 'treadDepth'],
+    t2RiserHeight: ['tiers', 1, 'riserHeight'],
+    t2EyeHeight: ['tiers', 1, 'eyeHeight'],
+    t2EyeSetback: ['tiers', 1, 'eyeSetback'],
+    t3CValue: ['tiers', 2, 'cValue'],
+    t3NumRows: ['tiers', 2, 'numRows'],
+    t3FirstRowDist: ['tiers', 2, 'firstRowDist'],
+    t3FirstRowElev: ['tiers', 2, 'firstRowElev'],
+    t3TreadDepth: ['tiers', 2, 'treadDepth'],
+    t3RiserHeight: ['tiers', 2, 'riserHeight'],
+    t3EyeHeight: ['tiers', 2, 'eyeHeight'],
+    t3EyeSetback: ['tiers', 2, 'eyeSetback']
+};
+const SELECT_STATE_PATHS = {
+    sportSelect: ['sport'],
+    bowlType: ['bowl', 'type'],
+    clipAxis: ['bowl', 'clipAxis'],
+    clipSide: ['bowl', 'clipSide'],
+    profileType: ['tiers', 0, 'profileType'],
+    t2ProfileType: ['tiers', 1, 'profileType'],
+    t3ProfileType: ['tiers', 2, 'profileType']
+};
+const CHECKBOX_STATE_PATHS = {
+    enableClipPlane: ['bowl', 'clipEnabled'],
+    showSeatCubes3D: ['occupancy', 'showSeatCubes3D'],
+    toggleSightlinesBtn: ['setup', 'sightlineVisuals'],
+    toggleSightlinesBtnField: ['setup', 'sightlineVisuals'],
+    toggleSectionMetricsBtn: ['setup', 'sectionMetrics'],
+    enableTier1: ['tiers', 0, 'enabled'],
+    enableTier2: ['tiers', 1, 'enabled'],
+    enableTier3: ['tiers', 2, 'enabled']
+};
+const INTEGER_INPUT_IDS = new Set([
+    'numRows',
+    't2NumRows',
+    't3NumRows',
+    'minAisle',
+    'maxAisle',
+    'seatsBetweenAisles'
+]);
+
+function getValueAtPath(root, path) {
+    return path.reduce((value, key) => value?.[key], root);
+}
+
+function setValueAtPath(root, path, nextValue) {
+    let cursor = root;
+    for (let index = 0; index < path.length - 1; index += 1) {
+        cursor = cursor[path[index]];
+        if (!cursor) return;
+    }
+
+    cursor[path[path.length - 1]] = nextValue;
+}
+
 class App {
     constructor() {
+        this.state = AppState.reset();
         this.fieldRenderer = null;
         this.profileRenderer = null;
         this.scene3D = null;
@@ -32,10 +113,6 @@ class App {
         this._tier2Initialized = false;
         this._tier3Initialized = false;
 
-        // Track user-modified states for each sport
-        this._sportStates = {};
-        this._previousSport = null;
-        this._didApplyStartupProfile = false;
         this._themeStorageKey = 'jlg-seating-theme';
         this._theme = 'light';
     }
@@ -58,8 +135,10 @@ class App {
             // Wire up events (must happen before update)
             this._wireEvents();
 
-            // Apply built-in starting profile after controls are wired
-            const startupProfileApplied = this._applyStartupProfile();
+            this.state.fromJSON(DEFAULT_STARTUP_PROFILE);
+            this._syncTemplateFromState();
+            this._applyStateToDom();
+            this._renderCameraBookmarks();
 
             // Initialize tooltips
             this._initTooltips();
@@ -72,9 +151,6 @@ class App {
             if (tc) this._lastTierCount = parseInt(tc.value) || 1;
 
             // Set initial view state (hides Field Setup on Profile tab)
-            if (!startupProfileApplied) {
-                this._switchViewTab('profile');
-            }
             requestAnimationFrame(() => this._applyUrlViewOverride());
 
             // 3D scene is initialized lazily when user clicks the 3D tab
@@ -225,8 +301,6 @@ class App {
             option.textContent = name;
             select.appendChild(option);
         }
-        select.value = 'Football'; // Default
-        this._onSportChange();
     }
 
     _applyUrlViewOverride() {
@@ -242,13 +316,167 @@ class App {
         }
     }
 
+    _getStateValue(path) {
+        return getValueAtPath(this.state, path);
+    }
+
+    _setStateValue(path, nextValue) {
+        setValueAtPath(this.state, path, nextValue);
+    }
+
+    _normalizeNumericControlValue(baseId, rawValue) {
+        if (rawValue === '' || rawValue === null || rawValue === undefined) return null;
+        const numericValue = Number(rawValue);
+        if (!Number.isFinite(numericValue)) return null;
+        if (INTEGER_INPUT_IDS.has(baseId)) {
+            return Math.max(0, Math.round(numericValue));
+        }
+        return numericValue;
+    }
+
+    _syncTemplateFromState() {
+        const resolvedSport = getTemplate(this.state.sport) ? this.state.sport : 'Football';
+        if (resolvedSport !== this.state.sport) {
+            this.state.sport = resolvedSport;
+        }
+
+        this._currentTemplate = getTemplate(this.state.sport);
+        this._updateFieldDimensions();
+    }
+
+    _updateFieldDimensions() {
+        const dimEl = document.getElementById('fieldDimensions');
+        if (!dimEl || !this._currentTemplate) return;
+
+        let text = '';
+        if (this._currentTemplate.field_length) text += `${this._currentTemplate.field_length}' L`;
+        if (this._currentTemplate.field_width) text += ` - ${this._currentTemplate.field_width}' W`;
+        if (this._currentTemplate.field_radius) text += `Radius: ${this._currentTemplate.field_radius}'`;
+        dimEl.textContent = text;
+    }
+
+    _bindPairedNumberControl(baseId) {
+        const path = NUMERIC_INPUT_STATE_PATHS[baseId];
+        if (!path) return;
+
+        const slider = document.getElementById(`${baseId}Slider`);
+        const input = document.getElementById(`${baseId}Input`);
+
+        if (slider) {
+            slider.addEventListener('input', () => {
+                const nextValue = this._normalizeNumericControlValue(baseId, slider.value);
+                if (nextValue === null) return;
+                this._setStateValue(path, nextValue);
+                if (input) input.value = slider.value;
+                this._scheduleUpdate();
+            });
+        }
+
+        if (input) {
+            input.addEventListener('input', () => {
+                const nextValue = this._normalizeNumericControlValue(baseId, input.value);
+                if (nextValue === null) return;
+                this._setStateValue(path, nextValue);
+                if (slider) slider.value = input.value;
+                this._scheduleUpdate();
+            });
+        }
+    }
+
+    _bindSelectControl(id, handler = null) {
+        const path = SELECT_STATE_PATHS[id];
+        const el = document.getElementById(id);
+        if (!el || !path) return;
+
+        el.addEventListener('change', () => {
+            this._setStateValue(path, el.value);
+            if (typeof handler === 'function') {
+                handler(el.value);
+            }
+            this._scheduleUpdate();
+        });
+    }
+
+    _bindCheckboxControl(id, handler = null) {
+        const path = CHECKBOX_STATE_PATHS[id];
+        const el = document.getElementById(id);
+        if (!el || !path) return;
+
+        el.addEventListener('change', () => {
+            this._setStateValue(path, !!el.checked);
+            if (typeof handler === 'function') {
+                handler(!!el.checked);
+            }
+            this._scheduleUpdate();
+        });
+    }
+
+    _applyStateToDom() {
+        const sportSelect = document.getElementById('sportSelect');
+        if (sportSelect) {
+            sportSelect.value = this.state.sport;
+        }
+
+        const runoffInput = document.getElementById('customRunoffInput');
+        const runoffSlider = document.getElementById('customRunoffSlider');
+        const runoffValue = this._getRunoffDistance();
+        if (runoffInput) {
+            runoffInput.value = this.state.setup.customRunoff ?? '';
+        }
+        if (runoffSlider) {
+            runoffSlider.value = runoffValue;
+        }
+
+        Object.entries(NUMERIC_INPUT_STATE_PATHS).forEach(([baseId, path]) => {
+            const value = this._getStateValue(path);
+            if (value !== undefined && value !== null) {
+                this._setInputValue(baseId, value);
+            }
+        });
+
+        Object.entries(SELECT_STATE_PATHS).forEach(([id, path]) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const value = this._getStateValue(path);
+            if (value !== undefined && value !== null) {
+                el.value = value;
+            }
+        });
+
+        Object.entries(CHECKBOX_STATE_PATHS).forEach(([id, path]) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.checked = !!this._getStateValue(path);
+        });
+
+        const sideLengthRow = document.getElementById('sideLengthRow');
+        if (sideLengthRow) {
+            sideLengthRow.style.display = this.state.bowl.type.includes('Side') ? 'flex' : 'none';
+        }
+
+        const clipPlaneControls = document.getElementById('clipPlaneControls');
+        if (clipPlaneControls) {
+            clipPlaneControls.style.display = this.state.bowl.clipEnabled ? 'block' : 'none';
+        }
+
+        [1, 2, 3].forEach((tierNum) => {
+            const section = document.getElementById(`tier${tierNum}Section`);
+            if (!section) return;
+            const enabled = !!this.state.tiers[tierNum - 1]?.enabled;
+            section.classList.toggle('tier-disabled', !enabled);
+        });
+
+        this._switchViewTab(this.state.ui.activeViewTab);
+        this._switchResultsTab(this.state.ui.activeResultsTab);
+    }
+
     _wireEvents() {
         // Sport selector
         const sportSelect = document.getElementById('sportSelect');
         if (sportSelect) {
             sportSelect.addEventListener('change', () => {
+                this.state.sport = sportSelect.value;
                 this._onSportChange();
-                this._scheduleUpdate();
             });
         }
 
@@ -257,40 +485,35 @@ class App {
         const runoffSlider = document.getElementById('customRunoffSlider');
         if (runoffInput && runoffSlider) {
             runoffInput.addEventListener('input', () => {
+                if (runoffInput.value === '') {
+                    this.state.setup.customRunoff = null;
+                    runoffSlider.value = this._getRunoffDistance();
+                    this._scheduleUpdate();
+                    return;
+                }
+
+                const nextValue = Number(runoffInput.value);
+                if (!Number.isFinite(nextValue)) return;
+                this.state.setup.customRunoff = nextValue;
                 runoffSlider.value = runoffInput.value;
                 this._scheduleUpdate();
             });
             runoffSlider.addEventListener('input', () => {
+                const nextValue = Number(runoffSlider.value);
+                if (!Number.isFinite(nextValue)) return;
+                this.state.setup.customRunoff = nextValue;
                 runoffInput.value = runoffSlider.value;
                 this._scheduleUpdate();
             });
         }
 
-        // All range sliders — sync to paired number input
-        document.querySelectorAll('input[type="range"]').forEach(slider => {
-            slider.addEventListener('input', () => {
-                this._syncSliderToInput(slider);
-                this._scheduleUpdate();
-            });
-        });
-
-        // All number inputs — sync to paired slider
-        document.querySelectorAll('.control-row input[type="number"]').forEach(numInput => {
-            numInput.addEventListener('input', () => {
-                this._syncInputToSlider(numInput);
-                this._scheduleUpdate();
-            });
+        Object.keys(NUMERIC_INPUT_STATE_PATHS).forEach((baseId) => {
+            this._bindPairedNumberControl(baseId);
         });
 
         // Tier toggles
         ['enableTier1', 'enableTier2', 'enableTier3'].forEach((id, index) => {
-            const el = document.getElementById(id);
-            if (el) {
-                el.addEventListener('change', () => {
-                    this._onTierToggle(index + 1); // 1, 2 or 3
-                    this._scheduleUpdate();
-                });
-            }
+            this._bindCheckboxControl(id, () => this._onTierToggle(index + 1));
         });
 
         // Mark Tier 2/3 as initialized once the user edits any tier-specific parameter.
@@ -314,16 +537,19 @@ class App {
 
         // Profile type selects (main + tier-specific)
         ['profileType', 't2ProfileType', 't3ProfileType'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) {
-                el.addEventListener('change', () => this._scheduleUpdate());
-            }
+            this._bindSelectControl(id);
         });
 
         // View tab buttons
         document.querySelectorAll('.view-tab-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 this._switchViewTab(btn.dataset.tab);
+            });
+        });
+
+        document.querySelectorAll('.results-tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._switchResultsTab(btn.dataset.target);
             });
         });
 
@@ -441,109 +667,34 @@ class App {
             });
         }
 
-        this._cameraBookmarks = [];
-
         // Clip Plane controls
-        const enableClip = document.getElementById('enableClipPlane');
-        if (enableClip) {
-            enableClip.addEventListener('change', () => {
-                const controls = document.getElementById('clipPlaneControls');
-                if (controls) controls.style.display = enableClip.checked ? 'block' : 'none';
-                this._scheduleUpdate();
-            });
-        }
-        ['clipAxis', 'clipSide'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.addEventListener('change', () => this._scheduleUpdate());
+        this._bindCheckboxControl('enableClipPlane', (enabled) => {
+            const controls = document.getElementById('clipPlaneControls');
+            if (controls) controls.style.display = enabled ? 'block' : 'none';
         });
-        ['clipPosition'].forEach(baseId => {
-            const slider = document.getElementById(baseId + 'Slider');
-            const input = document.getElementById(baseId + 'Input');
-            if (slider) { slider.addEventListener('input', () => { this._syncSliderToInput(slider); this._scheduleUpdate(); }); }
-            if (input) { input.addEventListener('input', () => { this._syncInputToSlider(input); this._scheduleUpdate(); }); }
-        });
-
-        // Structural Depth slider/input
-        ['structuralDepth'].forEach(baseId => {
-            const slider = document.getElementById(baseId + 'Slider');
-            const input = document.getElementById(baseId + 'Input');
-            if (slider) { slider.addEventListener('input', () => { this._syncSliderToInput(slider); this._scheduleUpdate(); }); }
-            if (input) { input.addEventListener('input', () => { this._syncInputToSlider(input); this._scheduleUpdate(); }); }
-        });
+        ['clipAxis', 'clipSide'].forEach(id => this._bindSelectControl(id));
 
         // Bowl Configuration Change Events
-        ['bowlType'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) {
-                el.addEventListener('change', (e) => {
-                    if (id === 'bowlType') {
-                        const sideRow = document.getElementById('sideLengthRow');
-                        if (sideRow) sideRow.style.display = e.target.value.includes('Side') ? 'flex' : 'none';
-                    }
-                    this._scheduleUpdate();
-                });
-            }
+        this._bindSelectControl('bowlType', (value) => {
+            const sideRow = document.getElementById('sideLengthRow');
+            if (sideRow) sideRow.style.display = value.includes('Side') ? 'flex' : 'none';
         });
 
-        // Bowl Configuration Sliders/Inputs
-        ['bowlCornerRad', 'bowlSideLength'].forEach(baseId => {
-            const slider = document.getElementById(baseId + 'Slider');
-            const input = document.getElementById(baseId + 'Input');
-
-            if (slider) {
-                slider.addEventListener('input', () => {
-                    this._syncSliderToInput(slider);
-                    this._scheduleUpdate();
-                });
-            }
-            if (input) {
-                input.addEventListener('input', () => {
-                    this._syncInputToSlider(input);
-                    this._scheduleUpdate();
-                });
-            }
-        });
-
-        // Occupancy & Egress Inputs
-        ['seatWidth', 'seatsBetweenAisles', 'egressFactor'].forEach(baseId => {
-            const slider = document.getElementById(baseId + 'Slider');
-            const input = document.getElementById(baseId + 'Input');
-            if (slider) {
-                slider.addEventListener('input', () => {
-                    this._syncSliderToInput(slider);
-                    this._scheduleUpdate();
-                });
-            }
-            if (input) {
-                input.addEventListener('input', () => {
-                    this._syncInputToSlider(input);
-                    this._scheduleUpdate();
-                });
-            }
-        });
-
-        ['minAisleInput', 'maxAisleInput'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.addEventListener('input', () => this._scheduleUpdate());
-        });
-
-        const showSeatCubes3D = document.getElementById('showSeatCubes3D');
-        if (showSeatCubes3D) showSeatCubes3D.addEventListener('change', () => this._scheduleUpdate());
+        this._bindCheckboxControl('showSeatCubes3D');
 
         // Sightlines Toggle
         const sightlinesBtn = document.getElementById('toggleSightlinesBtn');
         const sightlinesBtnField = document.getElementById('toggleSightlinesBtnField');
         const syncSightlinesToggles = (sourceEl) => {
             const checked = !!sourceEl?.checked;
+            this.state.setup.sightlineVisuals = checked;
             if (sightlinesBtn && sightlinesBtn !== sourceEl) sightlinesBtn.checked = checked;
             if (sightlinesBtnField && sightlinesBtnField !== sourceEl) sightlinesBtnField.checked = checked;
             this._scheduleUpdate();
         };
         if (sightlinesBtn) sightlinesBtn.addEventListener('change', () => syncSightlinesToggles(sightlinesBtn));
         if (sightlinesBtnField) sightlinesBtnField.addEventListener('change', () => syncSightlinesToggles(sightlinesBtnField));
-        if (sightlinesBtn && sightlinesBtnField) sightlinesBtnField.checked = !!sightlinesBtn.checked;
-        const sectionMetricsBtn = document.getElementById('toggleSectionMetricsBtn');
-        if (sectionMetricsBtn) sectionMetricsBtn.addEventListener('change', () => this._scheduleUpdate());
+        this._bindCheckboxControl('toggleSectionMetricsBtn');
 
         // Collapsible sections
         // Collapsible sections (Event Delegation to handle dynamic content)
@@ -643,223 +794,61 @@ class App {
     }
 
     _onSportChange() {
-        const sportSelect = document.getElementById('sportSelect');
-        const newSport = sportSelect.value;
-
-        // 1. Save state of the PREVIOUS sport (if exists)
-        if (this._previousSport && this._previousSport !== newSport) {
-            this._saveSportState(this._previousSport);
-        }
-
-        // 2. Load state for the NEW sport
-        const template = getTemplate(newSport);
-        this._currentTemplate = template;
-        this._previousSport = newSport;
-
-        if (template) {
-            // Update Dimensions Text
-            const dimEl = document.getElementById('fieldDimensions');
-            if (dimEl) {
-                let text = '';
-                if (template.field_length) text += `${template.field_length}' L`;
-                if (template.field_width) text += ` - ${template.field_width}' W`;
-                if (template.field_radius) text += `Radius: ${template.field_radius}'`;
-                dimEl.textContent = text;
-            }
-
-            // check if we have a saved state
-            if (this._sportStates[newSport]) {
-                this._loadSportState(this._sportStates[newSport]);
-            } else if (template.defaults) {
-                // Load defaults from template
-                this._loadSportState(template.defaults);
-            } else {
-                // Fallback / Legecy logic if no defaults defined
-                this._boxLegacyDefaults(newSport, template);
-            }
-
-            // Trigger update
-            this._scheduleUpdate();
-        }
-    }
-
-    _saveSportState(sportName) {
-        // Capture current values of Tier 1 and Setup
-        const state = {
-            setup: {
-                customRunoff: this._getCustomRunoff() !== null ? this._getCustomRunoff() : 0,
-                // Note: _getCustomRunoff returns null if empty, we want value. 
-                // Actually, the input might be "Auto" (empty). If empty, we store null or 0? 
-                // Let's grab the raw value from input if we want to persist "Auto" state vs explicit value.
-                // But for simplicity, let's persist the numeric values.
-                focalZ: this._getInputValue('focalZ')
-            },
-            tier1: {
-                targetCValue: this._getInputValue('cValue'),
-                numRows: Math.round(this._getInputValue('numRows')),
-                firstRowDist: this._getInputValue('firstRowDist'),
-                firstRowElev: this._getInputValue('firstRowElev'),
-                treadDepth: this._getInputValue('treadDepth'),
-                riserHeight: this._getInputValue('riserHeight'),
-                eyeHeight: this._getInputValue('eyeHeight'),
-                eyeSetback: this._getInputValue('eyeSetback'),
-                profileType: document.getElementById('profileType').value
-            },
-            bowl: {
-                type: document.getElementById('bowlType').value,
-                corner: 'Chamfer',
-                radius: this._getInputValue('bowlCornerRad'),
-                sideLength: this._getInputValue('bowlSideLength'),
-                structuralDepth: this._getInputValue('structuralDepth')
-            }
-        };
-
-        // Handle Runoff "Auto" case
-        const runoffInput = document.getElementById('customRunoffInput');
-        if (runoffInput && runoffInput.value === '') {
-            state.setup.customRunoff = null; // Auto
-        } else {
-            state.setup.customRunoff = parseFloat(runoffInput.value);
-        }
-
-        this._sportStates[sportName] = state;
-    }
-
-    _loadSportState(state) {
-        if (!state) return;
-
-        // Setup
-        if (state.setup) {
-            this._setInputValue('focalZ', state.setup.focalZ);
-
-            const runoffInput = document.getElementById('customRunoffInput');
-            const runoffSlider = document.getElementById('customRunoffSlider');
-            if (state.setup.customRunoff !== null && state.setup.customRunoff !== undefined) {
-                runoffInput.value = state.setup.customRunoff;
-                runoffSlider.value = state.setup.customRunoff;
-            } else {
-                runoffInput.value = ''; // Auto
-                // Slider usually follows, but for auto it might be 0 or template default
-                if (this._currentTemplate) runoffSlider.value = this._currentTemplate.runoff || 0;
-            }
-        }
-
-        // Bowl Config
-        if (state.bowl) {
-            const normalizedBowlType = state.bowl.type === 'Side2' ? 'Side1' : state.bowl.type;
-            if (normalizedBowlType) document.getElementById('bowlType').value = normalizedBowlType;
-            const sideLengthRow = document.getElementById('sideLengthRow');
-            if (sideLengthRow) {
-                if (normalizedBowlType && normalizedBowlType.includes('Side')) {
-                    sideLengthRow.style.display = 'flex';
-                } else {
-                    sideLengthRow.style.display = 'none';
-                }
-            }
-            this._setInputValue('bowlCornerRad', state.bowl.radius);
-            if (state.bowl.sideLength !== undefined) {
-                this._setInputValue('bowlSideLength', state.bowl.sideLength);
-            }
-            if (state.bowl.structuralDepth !== undefined) {
-                this._setInputValue('structuralDepth', state.bowl.structuralDepth);
-            }
-        } else {
-            // Defaults if not saved?
-            document.getElementById('bowlType').value = 'Full';
-            const sideLengthRow = document.getElementById('sideLengthRow');
-            if (sideLengthRow) sideLengthRow.style.display = 'none';
-            this._setInputValue('bowlCornerRad', 10);
-            this._setInputValue('bowlSideLength', this._currentTemplate ? this._currentTemplate.field_length : 300);
-        }
-
-        // Tier 1
-        if (state.tier1) {
-            this._setInputValue('cValue', state.tier1.targetCValue);
-            this._setInputValue('numRows', state.tier1.numRows);
-            this._setInputValue('firstRowDist', state.tier1.firstRowDist);
-            this._setInputValue('firstRowElev', state.tier1.firstRowElev);
-            this._setInputValue('treadDepth', state.tier1.treadDepth);
-            this._setInputValue('riserHeight', state.tier1.riserHeight);
-            this._setInputValue('eyeHeight', state.tier1.eyeHeight);
-            this._setInputValue('eyeSetback', state.tier1.eyeSetback);
-
-            if (state.tier1.profileType) {
-                document.getElementById('profileType').value = state.tier1.profileType;
-            }
-        }
-    }
-
-    _boxLegacyDefaults(sportName, template) {
-        // Fallback to previous logic if no defaults found
-        this._setInputValue('focalX', 0);
-
-        if (sportName === 'Concert') {
-            this._setInputValue('focalZ', 5.0);
-        } else {
-            this._setInputValue('focalZ', 0);
-        }
-
-        const runoffInput = document.getElementById('customRunoffInput');
-        if (runoffInput) runoffInput.value = template.runoff || 0;
+        this.state.applySportDefaults({
+            sport: this.state.sport,
+            template: getTemplate(this.state.sport)
+        });
+        this._syncTemplateFromState();
+        this._applyStateToDom();
+        this._scheduleUpdate();
     }
 
     _onTierToggle(tierNum) {
-        const checkbox = document.getElementById(`enableTier${tierNum}`);
         const section = document.getElementById(`tier${tierNum}Section`);
-        const enabled = checkbox && checkbox.checked;
+        const enabled = !!this.state.tiers[tierNum - 1]?.enabled;
 
         if (section) {
             if (enabled) {
                 section.classList.remove('tier-disabled');
-                // Auto-expand if enabling? User didn't explicitly ask, but it's good UX.
-                // section.classList.remove('collapsed'); 
             } else {
                 section.classList.add('tier-disabled');
             }
         }
 
-        // Auto-stack logic: When enabling a tier, start it at the end of the previous tier
-        // Note: solvers array might not be up to date with the *current* toggle yet until update() runs,
-        // but we can check the *previous* tier which should exist if we are enabling tier N (assuming N-1 is enabled/solved)
-
-        // However, we need to run update() to generate solvers. 
-        // Logic: if we are enabling, checking if we should auto-stack happens *after* we have some data? 
-        // Actually, we can just check if we have data for the *previous* tier right now.
-
-        // Conservative approach: We can't rely on `this._solvers` having the new tier yet. 
-        // But we rely on `this._solvers` having the *previous* tier.
-
         if (enabled && tierNum > 1) {
             const isInit = tierNum === 2 ? this._tier2Initialized : this._tier3Initialized;
             if (!isInit && this._solvers && this._solvers.length >= tierNum - 1) {
-                const prevTier = this._solvers[tierNum - 2]; // index 0 for Tier 2, 1 for Tier 3
+                const prevTier = this._solvers[tierNum - 2];
                 if (prevTier && prevTier.rows && prevTier.rows.length > 0) {
                     const lastRow = prevTier.rows[prevTier.rows.length - 1];
-
-                    // Set defaults for New Tier to start where Prev Tier ends
-                    const prefix = tierNum === 2 ? 't2' : 't3';
-                    this._setInputValue(`${prefix}FirstRowDist`, lastRow.x.toFixed(2));
-                    this._setInputValue(`${prefix}FirstRowElev`, (lastRow.z + 20).toFixed(2));
-                    this._setInputValue(`${prefix}RiserHeight`, 12);
-
+                    const tierState = this.state.tiers[tierNum - 1];
+                    if (tierState) {
+                        tierState.firstRowDist = Number(lastRow.x.toFixed(2));
+                        tierState.firstRowElev = Number((lastRow.z + 20).toFixed(2));
+                        tierState.riserHeight = 12;
+                    }
                 }
             }
 
-            // Preserve user values on subsequent off/on toggles even if auto-stack couldn't run this time.
             if (tierNum === 2) this._tier2Initialized = true;
             else this._tier3Initialized = true;
         }
+
+        this._applyStateToDom();
     }
 
     _switchViewTab(tab) {
+        const nextTab = ['profile', 'field', 'scene3d'].includes(tab) ? tab : 'profile';
+        this.state.ui.activeViewTab = nextTab;
+
         // Update tab buttons
         document.querySelectorAll('.view-tab-btn').forEach(b => b.classList.remove('active'));
-        const activeBtn = document.querySelector(`.view-tab-btn[data-tab="${tab}"]`);
+        const activeBtn = document.querySelector(`.view-tab-btn[data-tab="${nextTab}"]`);
         if (activeBtn) activeBtn.classList.add('active');
 
         // Update panels
         document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
-        const activePanel = document.getElementById(`${tab}Panel`);
+        const activePanel = document.getElementById(`${nextTab}Panel`);
         if (activePanel) activePanel.classList.add('active');
 
         // Helper to toggle visibility
@@ -870,8 +859,8 @@ class App {
 
         const set3DExportButtonState = (button) => {
             if (!button) return;
-            button.disabled = tab !== 'scene3d';
-            if (tab === 'scene3d') {
+            button.disabled = nextTab !== 'scene3d';
+            if (nextTab === 'scene3d') {
                 button.style.opacity = '1';
                 button.style.cursor = 'pointer';
             } else {
@@ -883,7 +872,7 @@ class App {
         set3DExportButtonState(document.getElementById('exportRhinoBtn'));
 
         // Context-sensitive controls
-        if (tab === 'profile') {
+        if (nextTab === 'profile') {
             toggle('fieldSetupSection', true); // Show Field Setup!
             toggle('profileParamsSection', true);
             toggle('focalPointSection', true);
@@ -891,7 +880,7 @@ class App {
             toggle('planViewControls', false);
             toggle('resultsSection', true);
             toggle('bowlConfigSection', true);
-        } else if (tab === 'field') {
+        } else if (nextTab === 'field') {
             toggle('fieldSetupSection', true);
             toggle('profileParamsSection', false);
             toggle('focalPointSection', true);
@@ -899,7 +888,7 @@ class App {
             toggle('planViewControls', true);
             toggle('resultsSection', true);
             toggle('bowlConfigSection', true);
-        } else if (tab === 'scene3d') {
+        } else if (nextTab === 'scene3d') {
             toggle('fieldSetupSection', true);
             toggle('profileParamsSection', false);
             toggle('focalPointSection', false);
@@ -911,63 +900,25 @@ class App {
 
         // After switching, resize canvas and re-render
         requestAnimationFrame(() => {
-            if (tab === 'field') {
+            if (nextTab === 'field') {
                 const canvas = document.getElementById('fieldCanvas');
-                const parent = canvas.parentElement;
-                const rect = parent.getBoundingClientRect();
-                canvas.width = rect.width;
-                canvas.height = rect.height;
-                if (this.fieldRenderer) {
-                    const runoff = this._getCustomRunoff();
-                    const fx = this._getInputValue('focalX');
-
-                    // Construct Bowl Config on tab switch
-                    const clipEnabled = document.getElementById('enableClipPlane')?.checked || false;
-                    const clipCfg = clipEnabled ? { enabled: true, axis: document.getElementById('clipAxis')?.value || 'X', position: this._getInputValue('clipPosition') || 0, side: document.getElementById('clipSide')?.value || 'positive' } : { enabled: false };
-                    const bowlConfig = {
-                        width: this._currentTemplate.field_width,
-                        length: this._currentTemplate.field_length,
-                        shape: this._currentTemplate.shape,
-                        radius_arc: this._currentTemplate.field_radius,
-                        arc_angle: this._currentTemplate.arc_angle,
-                        type: document.getElementById('bowlType').value,
-                        corner: 'Chamfer',
-                        radius: this._getInputValue('bowlCornerRad'),
-                        sideLength: this._getInputValue('bowlSideLength'),
-                        clip: clipCfg
-                    };
-
-                    const edgeSports = ['Ice Hockey', 'Football', 'Concert', 'Soccer', 'Basketball'];
-                    const isEdgeSport = edgeSports.includes(document.getElementById('sportSelect').value);
-                    const safeWidth = Number.isFinite(bowlConfig.width) ? bowlConfig.width : 0;
-                    const offsetCorrection = isEdgeSport ? 0 : (safeWidth / 2);
-
-                    // Ensure signature matches: render(template, runoff, solvers, visibility, visualFocalX, bowlConfig, offsetCorrection)
-                    const sightlineVisualsEnabled = document.getElementById('toggleSightlinesBtn')?.checked ?? true;
-                    const vis = {
-                        showSeating: true,
-                        t1: document.getElementById('enableTier1').checked,
-                        t2: document.getElementById('enableTier2').checked,
-                        t3: document.getElementById('enableTier3').checked,
-                        colorByCValue: sightlineVisualsEnabled,
-                        showSectionMetrics: document.getElementById('toggleSectionMetricsBtn')?.checked ?? false
-                    };
-                    this.fieldRenderer.render(this._currentTemplate, runoff, this._solvers, vis, fx, bowlConfig, offsetCorrection, this._tierAisleLayouts || []);
+                const parent = canvas?.parentElement;
+                const rect = parent?.getBoundingClientRect();
+                if (canvas && rect) {
+                    canvas.width = rect.width;
+                    canvas.height = rect.height;
                 }
-            } else if (tab === 'profile') {
+                this.update();
+            } else if (nextTab === 'profile') {
                 const canvas = document.getElementById('profileCanvas');
-                const parent = canvas.parentElement;
-                const rect = parent.getBoundingClientRect();
-                canvas.width = rect.width;
-                canvas.height = rect.height;
-                if (this.profileRenderer && this._solver) {
-                    this.profileRenderer.render(
-                        this._solver,
-                        this._getInputValue('focalX'),
-                        this._getInputValue('focalZ')
-                    );
+                const parent = canvas?.parentElement;
+                const rect = parent?.getBoundingClientRect();
+                if (canvas && rect) {
+                    canvas.width = rect.width;
+                    canvas.height = rect.height;
                 }
-            } else if (tab === 'scene3d') {
+                this.update();
+            } else if (nextTab === 'scene3d') {
                 this._ensure3DContainerSize();
                 // Lazy init: only load 3D when user first clicks the tab
                 if (!this._scene3dReady) {
@@ -978,6 +929,30 @@ class App {
                 }
             }
         });
+    }
+
+    _switchResultsTab(targetId) {
+        const nextTarget = targetId === 'detailsTab' ? 'detailsTab' : 'statsTab';
+        this.state.ui.activeResultsTab = nextTarget;
+
+        const tabBtns = document.querySelectorAll('.results-tab-btn');
+        const tabPanels = document.querySelectorAll('.results-tab-panel');
+
+        tabBtns.forEach((btn) => {
+            btn.classList.toggle('active', btn.getAttribute('data-target') === nextTarget);
+        });
+        tabPanels.forEach((panel) => {
+            panel.classList.toggle('active', panel.id === nextTarget);
+            if (panel.id === nextTarget) {
+                panel.scrollTop = 0;
+            }
+        });
+
+        const rightSidebar = document.querySelector('.right-sidebar');
+        if (rightSidebar && rightSidebar.classList.contains('collapsed')) {
+            rightSidebar.classList.remove('collapsed');
+            setTimeout(() => window.dispatchEvent(new Event('resize')), 300);
+        }
     }
 
     _ensure3DContainerSize() {
@@ -1016,155 +991,89 @@ class App {
     }
 
     _getInputValue(id) {
-        // Try number input first, fall back to slider
-        const input = document.getElementById(id + 'Input');
-        if (input && input.value !== '') return parseFloat(input.value);
-        const slider = document.getElementById(id + 'Slider');
-        if (slider) return parseFloat(slider.value);
-        return 0;
+        if (id === 'focalX') return 0;
+        const path = NUMERIC_INPUT_STATE_PATHS[id];
+        if (!path) return 0;
+        const value = this._getStateValue(path);
+        return Number.isFinite(Number(value)) ? Number(value) : 0;
     }
 
     _getCustomRunoff() {
-        const el = document.getElementById('customRunoffInput');
-        if (el && el.value !== '') return parseFloat(el.value);
-        return null; // null means "use template default"
+        return this.state.setup.customRunoff;
+    }
+
+    _getRunoffDistance() {
+        const customRunoff = this._getCustomRunoff();
+        return customRunoff !== null ? customRunoff : (this._currentTemplate?.runoff || 0);
+    }
+
+    _getFocalPointFt() {
+        return {
+            x: 0,
+            z: this.state.setup.focalZ
+        };
+    }
+
+    _getOffsetCorrection(bowlConfig, sportName = this.state.sport) {
+        const safeWidth = Number.isFinite(bowlConfig?.width) ? bowlConfig.width : 0;
+        return EDGE_SPORTS.includes(sportName) ? 0 : (safeWidth / 2);
     }
 
     update() {
         try {
-            // CONSTANTS / DEPRECATED
-            const focalX = 0; // Removed control, always 0 (relative to field edge/center)
-            const focalZ = this._getInputValue('focalZ');
-            const structuralDepth = this._getInputValue('structuralDepth') || 0; // inches
-
-            // Clip Plane config
-            const clipEnabled = document.getElementById('enableClipPlane')?.checked || false;
-            const clipConfig = clipEnabled ? {
-                enabled: true,
-                axis: document.getElementById('clipAxis')?.value || 'X',
-                position: this._getInputValue('clipPosition') || 0,
-                side: document.getElementById('clipSide')?.value || 'positive'
-            } : { enabled: false };
-
-            // Tier 1 params (main controls)
-            const tier1Params = {
-                targetCValue: this._getInputValue('cValue'),
-                firstRowDistance: this._getInputValue('firstRowDist'),
-                firstRowElevation: this._getInputValue('firstRowElev'),
-                treadDepth: this._getInputValue('treadDepth'),
-                defaultRiser: this._getInputValue('riserHeight'),
-                numRows: Math.round(this._getInputValue('numRows')),
-                eyeHeight: this._getInputValue('eyeHeight'),
-                eyeSetback: this._getInputValue('eyeSetback'),
-                focalX, focalZ
-            };
-            const tier1Type = document.getElementById('profileType').value;
-
-            // Solve tier 1
+            this._syncTemplateFromState();
+            const focalPointFt = this._getFocalPointFt();
+            const structuralDepth = this.state.bowl.structuralDepth || 0;
             const solvers = [];
-            const t1Enabled = document.getElementById('enableTier1').checked;
+            this.state.tiers.forEach((tierState, tierIndex) => {
+                if (!tierState?.enabled) return;
 
-            if (t1Enabled) {
-                const solver1 = new ProfileSolver(tier1Params);
-                solver1.solve(tier1Type);
-                solver1.tierIndex = 0; // Explicit Color Index
-                solvers.push(solver1);
-            }
-
-            // Solve tier 2
-            const t2Enabled = document.getElementById('enableTier2').checked;
-            if (t2Enabled) {
-                const t2Params = {
-                    targetCValue: this._getInputValue('t2CValue'),
-                    firstRowDistance: this._getInputValue('t2FirstRowDist'),
-                    firstRowElevation: this._getInputValue('t2FirstRowElev'),
-                    treadDepth: this._getInputValue('t2TreadDepth'),
-                    defaultRiser: this._getInputValue('t2RiserHeight'),
-                    numRows: Math.round(this._getInputValue('t2NumRows')),
-                    eyeHeight: this._getInputValue('t2EyeHeight'),
-                    eyeSetback: this._getInputValue('t2EyeSetback'),
-                    focalX, focalZ
-                };
-                const t2Type = document.getElementById('t2ProfileType').value;
-                const solver2 = new ProfileSolver(t2Params);
-                solver2.solve(t2Type);
-                solver2.tierIndex = 1; // Explicit Color Index
-                solvers.push(solver2);
-            }
-
-            // Solve tier 3
-            const t3Enabled = document.getElementById('enableTier3').checked;
-            if (t3Enabled) {
-                const t3Params = {
-                    targetCValue: this._getInputValue('t3CValue'),
-                    firstRowDistance: this._getInputValue('t3FirstRowDist'),
-                    firstRowElevation: this._getInputValue('t3FirstRowElev'),
-                    treadDepth: this._getInputValue('t3TreadDepth'),
-                    defaultRiser: this._getInputValue('t3RiserHeight'),
-                    numRows: Math.round(this._getInputValue('t3NumRows')),
-                    eyeHeight: this._getInputValue('t3EyeHeight'),
-                    eyeSetback: this._getInputValue('t3EyeSetback'),
-                    focalX, focalZ
-                };
-                const t3Type = document.getElementById('t3ProfileType').value;
-                const solver3 = new ProfileSolver(t3Params);
-                solver3.solve(t3Type);
-                solver3.tierIndex = 2; // Explicit Color Index
-                solvers.push(solver3);
-            }
+                const solver = new ProfileSolver({
+                    targetCValue: tierState.cValue,
+                    firstRowDistance: tierState.firstRowDist,
+                    firstRowElevation: tierState.firstRowElev,
+                    treadDepth: tierState.treadDepth,
+                    defaultRiser: tierState.riserHeight,
+                    numRows: Math.round(tierState.numRows),
+                    eyeHeight: tierState.eyeHeight,
+                    eyeSetback: tierState.eyeSetback,
+                    focalX: focalPointFt.x,
+                    focalZ: focalPointFt.z
+                });
+                solver.solve(tierState.profileType);
+                solver.tierIndex = tierIndex;
+                solvers.push(solver);
+            });
 
             // Store for stats and 3D
             this._solvers = solvers;
             this._solver = solvers[0] || null; // Backward compat for 3D view
 
-            // Get template
-            const sportName = document.getElementById('sportSelect').value;
-            this._currentTemplate = getTemplate(sportName);
+            const sportName = this.state.sport;
+            const bowlConfig = this._getBowlConfig();
             const customRunoff = this._getCustomRunoff();
-            this._updateClipSliderRange(solvers, this._getBowlConfig());
+            this._updateClipSliderRange(solvers, bowlConfig);
 
             // Render field
             if (this.fieldRenderer) {
-                const sightlineVisualsEnabled = document.getElementById('toggleSightlinesBtn')?.checked ?? true;
                 const visibility = {
                     showSeating: true,
-                    t1: document.getElementById('enableTier1').checked,
-                    t2: document.getElementById('enableTier2').checked,
-                    t3: document.getElementById('enableTier3').checked,
-                    colorByCValue: sightlineVisualsEnabled,
-                    showSectionMetrics: document.getElementById('toggleSectionMetricsBtn')?.checked ?? false
+                    t1: !!this.state.tiers[0]?.enabled,
+                    t2: !!this.state.tiers[1]?.enabled,
+                    t3: !!this.state.tiers[2]?.enabled,
+                    colorByCValue: this.state.setup.sightlineVisuals,
+                    showSectionMetrics: this.state.setup.sectionMetrics
                 };
 
                 // Calculate Visual Focal Y (Plan View) based on Sport Type
-                // Group 1 (Edge): Hockey, Football, Concert, Soccer -> Base = template.focal_y
-                // Group 2 (Center): Others -> Base = 0
-                const edgeSports = ['Ice Hockey', 'Football', 'Concert', 'Soccer', 'Basketball'];
                 let baseY = 0;
-                if (edgeSports.includes(sportName)) {
+                if (EDGE_SPORTS.includes(sportName)) {
                     baseY = this._currentTemplate.focal_y || 0;
                 }
 
                 // Focal X input acts as an offset from the Base Y
-                const visualFocalY = baseY + focalX;
-
-                // Bowl Configuration
-                const bowlConfig = {
-                    width: this._currentTemplate.field_width,
-                    length: this._currentTemplate.field_length,
-                    shape: this._currentTemplate.shape,
-                    radius_arc: this._currentTemplate.field_radius,
-                    arc_angle: this._currentTemplate.arc_angle,
-                    type: document.getElementById('bowlType').value,
-                    corner: 'Chamfer',
-                    radius: this._getInputValue('bowlCornerRad'),
-                    sideLength: this._getInputValue('bowlSideLength'),
-                    structuralDepth,
-                    clip: clipConfig
-                };
-
-                const isEdgeSport = edgeSports.includes(sportName);
-                const safeWidth = Number.isFinite(bowlConfig.width) ? bowlConfig.width : 0;
-                const offsetCorrection = isEdgeSport ? 0 : (safeWidth / 2);
+                const visualFocalY = baseY + focalPointFt.x;
+                const offsetCorrection = this._getOffsetCorrection(bowlConfig, sportName);
                 const egressParams = this._getEgressParams();
                 const tierAisleLayouts = [];
 
@@ -1203,9 +1112,8 @@ class App {
 
             // Render profile — pass all solvers
             if (this.profileRenderer) {
-                const sightlinesEl = document.getElementById('toggleSightlinesBtn');
-                const showSightlines = sightlinesEl ? sightlinesEl.checked : true;
-                this.profileRenderer.renderMulti(solvers, focalX, focalZ, {
+                const showSightlines = this.state.setup.sightlineVisuals;
+                this.profileRenderer.renderMulti(solvers, focalPointFt.x, focalPointFt.z, {
                     structuralDepth,
                     showSightlines,
                     showCLabels: showSightlines
@@ -1232,37 +1140,11 @@ class App {
             }
 
             const customRunoff = this._getCustomRunoff();
-            const focalZ = this._getInputValue('focalZ');
-            this.scene3D.updateField(this._currentTemplate, customRunoff, focalZ);
+            this.scene3D.updateField(this._currentTemplate, customRunoff, this.state.setup.focalZ);
 
-            const clipEnabled = document.getElementById('enableClipPlane')?.checked || false;
-            const clipConfig = clipEnabled ? {
-                enabled: true,
-                axis: document.getElementById('clipAxis')?.value || 'X',
-                position: this._getInputValue('clipPosition') || 0,
-                side: document.getElementById('clipSide')?.value || 'positive'
-            } : { enabled: false };
-
-            const bowlConfig = {
-                width: this._currentTemplate.field_width,
-                length: this._currentTemplate.field_length,
-                shape: this._currentTemplate.shape,
-                radius_arc: this._currentTemplate.field_radius,
-                arc_angle: this._currentTemplate.arc_angle,
-                type: document.getElementById('bowlType').value,
-                corner: 'Chamfer',
-                radius: this._getInputValue('bowlCornerRad'),
-                sideLength: this._getInputValue('bowlSideLength'),
-                structuralDepth: this._getInputValue('structuralDepth') || 0,
-                clip: clipConfig
-            };
-
-            // Recalculate offsetCorrection for 3D update
-            const sportName = document.getElementById('sportSelect').value;
-            const edgeSports = ['Ice Hockey', 'Football', 'Concert', 'Soccer', 'Basketball'];
-            const isEdgeSport = edgeSports.includes(sportName);
-            const safeWidth = Number.isFinite(bowlConfig.width) ? bowlConfig.width : 0;
-            const offsetCorrection = isEdgeSport ? 0 : (safeWidth / 2);
+            const bowlConfig = this._getBowlConfig();
+            const sportName = this.state.sport;
+            const offsetCorrection = this._getOffsetCorrection(bowlConfig, sportName);
 
             const solvers = this._solvers || (this._solver ? [this._solver] : []);
             if (this.scene3D) {
@@ -1273,8 +1155,8 @@ class App {
                     offsetCorrection,
                     this._tierAisleLayouts || [],
                     {
-                        showSeatCubes: document.getElementById('showSeatCubes3D')?.checked || false,
-                        seatWidthIn: parseFloat(document.getElementById('seatWidthInput')?.value) || 20
+                        showSeatCubes: this.state.occupancy.showSeatCubes3D,
+                        seatWidthIn: this.state.occupancy.seatWidth
                     }
                 );
             }
@@ -1285,11 +1167,11 @@ class App {
 
     _getEgressParams() {
         return {
-            seatWidthIn: parseFloat(document.getElementById('seatWidthInput').value) || 20,
-            maxAisleWidthIn: parseFloat(document.getElementById('maxAisleInput').value) || 72,
-            minAisleWidthIn: parseFloat(document.getElementById('minAisleInput').value) || 48,
-            egressFactor: parseFloat(document.getElementById('egressFactorInput').value) || 0.2,
-            seatsBetweenAisles: parseFloat(document.getElementById('seatsBetweenAislesInput').value) || 20
+            seatWidthIn: this.state.occupancy.seatWidth,
+            maxAisleWidthIn: this.state.occupancy.maxAisle,
+            minAisleWidthIn: this.state.occupancy.minAisle,
+            egressFactor: this.state.occupancy.egressFactor,
+            seatsBetweenAisles: this.state.occupancy.seatsBetweenAisles
         };
     }
 
@@ -1298,12 +1180,12 @@ class App {
             solvers: this._solvers || (this._solver ? [this._solver] : []),
             statsEl: document.getElementById('statsContent'),
             detailsEl: document.getElementById('detailsContent'),
-            getInputValue: (id) => this._getInputValue(id),
-            getEgressParams: () => this._getEgressParams(),
-            getBowlConfig: () => this._getBowlConfig(),
+            focalPointFt: this._getFocalPointFt(),
+            egressParams: this._getEgressParams(),
+            bowlConfig: this._getBowlConfig(),
             tierAisleLayouts: this._tierAisleLayouts || [],
             fieldRenderer: this.fieldRenderer,
-            sportName: document.getElementById('sportSelect')?.value || ''
+            sportName: this.state.sport
         });
     }
 
@@ -1319,7 +1201,7 @@ class App {
         const egressParams = this._getEgressParams();
         const offsetCorrection = getRhinoExportOffsetCorrection(
             bowlConfig,
-            document.getElementById('sportSelect')?.value || ''
+            this.state.sport
         );
         const tierLayoutByIndex = new Map((this._tierAisleLayouts || []).map(layout => [
             Number.isInteger(Number(layout?.tierIndex)) ? Number(layout.tierIndex) : 0,
@@ -1581,8 +1463,8 @@ class App {
         const data = {
             exportVersion: 'phase6-multitier-metrics',
             exportedAt: new Date().toISOString(),
-            sport: document.getElementById('sportSelect').value,
-            profileType: document.getElementById('profileType').value,
+            sport: this.state.sport,
+            profileType: this.state.tiers[0]?.profileType || 'Parabolic',
             template: this._currentTemplate ? {
                 name: this._currentTemplate.name || null,
                 shape: this._currentTemplate.shape || null,
@@ -1605,16 +1487,16 @@ class App {
                 totalSections: totalSectionsAllTiers
             },
             parameters: {
-                targetCValue: this._getInputValue('cValue'),
-                firstRowDistance: this._getInputValue('firstRowDist'),
-                firstRowElevation: this._getInputValue('firstRowElev'),
-                treadDepth: this._getInputValue('treadDepth'),
-                riserHeight: this._getInputValue('riserHeight'),
-                numRows: Math.round(this._getInputValue('numRows')),
-                eyeHeight: this._getInputValue('eyeHeight'),
-                eyeSetback: this._getInputValue('eyeSetback'),
-                focalX: this._getInputValue('focalX'),
-                focalZ: this._getInputValue('focalZ')
+                targetCValue: this.state.tiers[0]?.cValue ?? 0,
+                firstRowDistance: this.state.tiers[0]?.firstRowDist ?? 0,
+                firstRowElevation: this.state.tiers[0]?.firstRowElev ?? 0,
+                treadDepth: this.state.tiers[0]?.treadDepth ?? 0,
+                riserHeight: this.state.tiers[0]?.riserHeight ?? 0,
+                numRows: Math.round(this.state.tiers[0]?.numRows ?? 0),
+                eyeHeight: this.state.tiers[0]?.eyeHeight ?? 0,
+                eyeSetback: this.state.tiers[0]?.eyeSetback ?? 0,
+                focalX: 0,
+                focalZ: this.state.setup.focalZ
             },
             rows: (tier1Solver?.rows || []).map(r => ({
                 row: r.row_number,
@@ -1668,7 +1550,7 @@ class App {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        const sportName = document.getElementById('sportSelect').value;
+        const sportName = this.state.sport;
         a.download = `seating - study - ${sportName.toLowerCase().replace(/\s/g, '-')}.obj`;
         document.body.appendChild(a);
         a.click();
@@ -1686,7 +1568,7 @@ class App {
             const rhino = await this._loadRhino3dm();
             const solvers = this._solvers || (this._solver ? [this._solver] : []);
             const bowlConfig = this._getBowlConfig();
-            const sportName = document.getElementById('sportSelect')?.value || '';
+            const sportName = this.state.sport;
             const result = await exportRhinoModel({
                 rhino,
                 solvers,
@@ -1821,18 +1703,15 @@ class App {
 
         const dxf = buildProfileDxf({
             solvers: this._solvers,
-            structuralDepthFt: (this._getInputValue('structuralDepth') || 0) / 12.0,
-            focalPointFt: {
-                x: this._getInputValue('focalX') || 0,
-                z: this._getInputValue('focalZ') || 0
-            }
+            structuralDepthFt: (this.state.bowl.structuralDepth || 0) / 12.0,
+            focalPointFt: this._getFocalPointFt()
         });
 
         const blob = new Blob([dxf], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        const sportName = document.getElementById('sportSelect').value;
+        const sportName = this.state.sport;
         a.download = `SeatingProfile_${sportName.toLowerCase().replace(/\\s/g, '-')}.dxf`;
         document.body.appendChild(a);
         a.click();
@@ -1846,20 +1725,16 @@ class App {
             return;
         }
 
-        const sportName = document.getElementById('sportSelect')?.value || '';
-        const runoffDist = this._getCustomRunoff() !== null ? this._getCustomRunoff() : (this._currentTemplate.runoff || 0);
+        const sportName = this.state.sport;
+        const runoffDist = this._getRunoffDistance();
         const dxf = buildPlanDxf({
             solvers: this._solvers,
             sportName,
             bowlConfig: this._getBowlConfig(),
             template: this._currentTemplate,
             runoffFt: runoffDist,
-            visualFocalXFt: this._getInputValue('focalX'),
-            enabledTiers: [
-                !!document.getElementById('enableTier1')?.checked,
-                !!document.getElementById('enableTier2')?.checked,
-                !!document.getElementById('enableTier3')?.checked
-            ],
+            visualFocalXFt: this._getFocalPointFt().x,
+            enabledTiers: this.state.tiers.map((tier) => !!tier.enabled),
             tierAisleLayouts: this._tierAisleLayouts || [],
             fieldAdapter: {
                 getBowlGeometry: (config, offset) => this.fieldRenderer?._getBowlGeometry(config, offset) || [],
@@ -1884,12 +1759,10 @@ class App {
         if (!this._solvers || this._solvers.length === 0) { console.warn('No data for CSV'); return; }
         const egressParams = this._getEgressParams();
         const bowlConfig = this._getBowlConfig();
-        const sportName = document.getElementById('sportSelect').value;
-        const edgeSports = ['Ice Hockey', 'Football', 'Concert', 'Soccer', 'Basketball'];
-        const safeWidth = Number.isFinite(bowlConfig.width) ? bowlConfig.width : 0;
-        const offsetCorrection = edgeSports.includes(sportName) ? 0 : (safeWidth / 2);
+        const sportName = this.state.sport;
+        const offsetCorrection = this._getOffsetCorrection(bowlConfig, sportName);
 
-        const focalXForDetails = this._getInputValue('focalX') || 0;
+        const focalXForDetails = this._getFocalPointFt().x;
         let csv = 'Tier,Row,Riser (in),Elevation (ft),C-Value (in),Tread (in),Dist to Focal (ft),Sightline Angle (deg),Linear Length (ft),Seats\n';
         this._solvers.forEach((solver, ti) => {
             if (!solver.rows) return;
@@ -1916,58 +1789,7 @@ class App {
 
     // ========== CONFIG SAVE/LOAD ==========
     _exportConfig() {
-        const config = {
-            _version: 'phase5',
-            sport: document.getElementById('sportSelect').value,
-            setup: {
-                customRunoff: this._getCustomRunoff(),
-                focalZ: this._getInputValue('focalZ'),
-                sightlineVisuals: document.getElementById('toggleSightlinesBtn')?.checked ?? true,
-                sectionMetrics: document.getElementById('toggleSectionMetricsBtn')?.checked ?? false
-            },
-            bowl: {
-                type: document.getElementById('bowlType').value,
-                cornerRad: this._getInputValue('bowlCornerRad'),
-                sideLength: this._getInputValue('bowlSideLength'),
-                structuralDepth: this._getInputValue('structuralDepth'),
-                clipEnabled: document.getElementById('enableClipPlane')?.checked || false,
-                clipAxis: document.getElementById('clipAxis')?.value || 'X',
-                clipPosition: this._getInputValue('clipPosition'),
-                clipSide: document.getElementById('clipSide')?.value || 'positive'
-            },
-            occupancy: {
-                seatWidth: this._getInputValue('seatWidth'),
-                minAisle: parseFloat(document.getElementById('minAisleInput')?.value) || 48,
-                maxAisle: parseFloat(document.getElementById('maxAisleInput')?.value) || 72,
-                seatsBetweenAisles: this._getInputValue('seatsBetweenAisles'),
-                egressFactor: this._getInputValue('egressFactor'),
-                showSeatCubes3D: document.getElementById('showSeatCubes3D')?.checked || false
-            },
-            ui: {
-                activeViewTab: document.querySelector('.view-tab-btn.active')?.dataset?.tab || 'profile',
-                activeResultsTab: document.querySelector('.results-tab-btn.active')?.dataset?.target || 'statsTab'
-            },
-            tiers: []
-        };
-        const tierPrefixes = [['', 'enableTier1', 'profileType'], ['t2', 'enableTier2', 't2ProfileType'], ['t3', 'enableTier3', 't3ProfileType']];
-        tierPrefixes.forEach(([prefix, enableId, profileId], i) => {
-            const p = prefix || '';
-            const pCap = p ? p : '';
-            config.tiers.push({
-                enabled: document.getElementById(enableId)?.checked || false,
-                profileType: document.getElementById(profileId)?.value || 'Parabolic',
-                cValue: this._getInputValue(p ? `${p}CValue` : 'cValue'),
-                numRows: Math.round(this._getInputValue(p ? `${p}NumRows` : 'numRows')),
-                firstRowDist: this._getInputValue(p ? `${p}FirstRowDist` : 'firstRowDist'),
-                firstRowElev: this._getInputValue(p ? `${p}FirstRowElev` : 'firstRowElev'),
-                treadDepth: this._getInputValue(p ? `${p}TreadDepth` : 'treadDepth'),
-                riserHeight: this._getInputValue(p ? `${p}RiserHeight` : 'riserHeight'),
-                eyeHeight: this._getInputValue(p ? `${p}EyeHeight` : 'eyeHeight'),
-                eyeSetback: this._getInputValue(p ? `${p}EyeSetback` : 'eyeSetback')
-            });
-        });
-
-        config.bookmarks = this._cameraBookmarks || [];
+        const config = this.state.toJSON();
         const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -1984,137 +1806,23 @@ class App {
         reader.onload = (e) => {
             try {
                 const config = JSON.parse(e.target.result);
-                this._applyConfigObject(config, { logSuccess: true });
+                this._loadStateFromConfig(config, { logSuccess: true });
             } catch (err) { console.error('Failed to load config:', err); }
         };
         reader.readAsText(file);
         event.target.value = ''; // Reset
     }
 
-    _applyStartupProfile() {
-        if (this._didApplyStartupProfile || !DEFAULT_STARTUP_PROFILE) return false;
-        try {
-            const cloned = (typeof structuredClone === 'function')
-                ? structuredClone(DEFAULT_STARTUP_PROFILE)
-                : JSON.parse(JSON.stringify(DEFAULT_STARTUP_PROFILE));
-            this._applyConfigObject(cloned, { logSuccess: false });
-            this._didApplyStartupProfile = true;
-            return true;
-        } catch (err) {
-            console.error('Failed to apply startup profile:', err);
-            return false;
-        }
-    }
-
-    _applyConfigObject(config, options = {}) {
+    _loadStateFromConfig(config, options = {}) {
         if (!config || typeof config !== 'object') return;
         const { logSuccess = false } = options;
-
-        if (config.sport) {
-            document.getElementById('sportSelect').value = config.sport;
-            this._onSportChange();
-        }
-        if (config.setup) {
-            if (config.setup.focalZ !== undefined) this._setInputValue('focalZ', config.setup.focalZ);
-            if (config.setup.customRunoff !== null && config.setup.customRunoff !== undefined) {
-                document.getElementById('customRunoffInput').value = config.setup.customRunoff;
-                document.getElementById('customRunoffSlider').value = config.setup.customRunoff;
-            } else {
-                const runoffInput = document.getElementById('customRunoffInput');
-                const runoffSlider = document.getElementById('customRunoffSlider');
-                if (runoffInput) runoffInput.value = '';
-                if (runoffSlider && this._currentTemplate) runoffSlider.value = this._currentTemplate.runoff || 0;
-            }
-            const sightlinesEl = document.getElementById('toggleSightlinesBtn');
-            if (sightlinesEl && config.setup.sightlineVisuals !== undefined) {
-                sightlinesEl.checked = !!config.setup.sightlineVisuals;
-                const sightlinesElField = document.getElementById('toggleSightlinesBtnField');
-                if (sightlinesElField) sightlinesElField.checked = sightlinesEl.checked;
-            }
-            const sectionMetricsEl = document.getElementById('toggleSectionMetricsBtn');
-            if (sectionMetricsEl && config.setup.sectionMetrics !== undefined) {
-                sectionMetricsEl.checked = !!config.setup.sectionMetrics;
-            }
-        }
-        if (config.bowl) {
-            if (config.bowl.type) {
-                const normalizedBowlType = config.bowl.type === 'Side2' ? 'Side1' : config.bowl.type;
-                const bowlTypeEl = document.getElementById('bowlType');
-                if (bowlTypeEl) {
-                    bowlTypeEl.value = normalizedBowlType;
-                    const sideRow = document.getElementById('sideLengthRow');
-                    if (sideRow) sideRow.style.display = normalizedBowlType.includes('Side') ? 'flex' : 'none';
-                }
-            }
-            if (config.bowl.cornerRad !== undefined) this._setInputValue('bowlCornerRad', config.bowl.cornerRad);
-            if (config.bowl.sideLength !== undefined) this._setInputValue('bowlSideLength', config.bowl.sideLength);
-            if (config.bowl.structuralDepth !== undefined) this._setInputValue('structuralDepth', config.bowl.structuralDepth);
-            const clipEl = document.getElementById('enableClipPlane');
-            if (clipEl && config.bowl.clipEnabled !== undefined) {
-                clipEl.checked = config.bowl.clipEnabled;
-                document.getElementById('clipPlaneControls').style.display = config.bowl.clipEnabled ? 'block' : 'none';
-            }
-            if (config.bowl.clipAxis) document.getElementById('clipAxis').value = config.bowl.clipAxis;
-            if (config.bowl.clipPosition !== undefined) this._setInputValue('clipPosition', config.bowl.clipPosition);
-            if (config.bowl.clipSide) document.getElementById('clipSide').value = config.bowl.clipSide;
-        }
-        if (config.occupancy) {
-            if (config.occupancy.seatWidth !== undefined) this._setInputValue('seatWidth', config.occupancy.seatWidth);
-            if (config.occupancy.minAisle !== undefined) this._setInputValue('minAisle', config.occupancy.minAisle);
-            if (config.occupancy.maxAisle !== undefined) this._setInputValue('maxAisle', config.occupancy.maxAisle);
-            if (config.occupancy.seatsBetweenAisles !== undefined) this._setInputValue('seatsBetweenAisles', config.occupancy.seatsBetweenAisles);
-            if (config.occupancy.egressFactor !== undefined) this._setInputValue('egressFactor', config.occupancy.egressFactor);
-            if (config.occupancy.showSeatCubes3D !== undefined) {
-                const showSeatCubes3D = document.getElementById('showSeatCubes3D');
-                if (showSeatCubes3D) showSeatCubes3D.checked = !!config.occupancy.showSeatCubes3D;
-            }
-        }
-        if (config.tiers && config.tiers.length) {
-            // Loaded tier values should be treated as user-defined and preserved across enable/disable toggles.
-            this._tier2Initialized = false;
-            this._tier3Initialized = false;
-            const prefixes = ['', 't2', 't3'];
-            const enableIds = ['enableTier1', 'enableTier2', 'enableTier3'];
-            const profileIds = ['profileType', 't2ProfileType', 't3ProfileType'];
-            config.tiers.forEach((t, i) => {
-                if (i >= 3) return;
-                const p = prefixes[i];
-                document.getElementById(enableIds[i]).checked = t.enabled;
-                document.getElementById(profileIds[i]).value = t.profileType || 'Parabolic';
-                this._setInputValue(p ? `${p}CValue` : 'cValue', t.cValue);
-                this._setInputValue(p ? `${p}NumRows` : 'numRows', t.numRows);
-                this._setInputValue(p ? `${p}FirstRowDist` : 'firstRowDist', t.firstRowDist);
-                this._setInputValue(p ? `${p}FirstRowElev` : 'firstRowElev', t.firstRowElev);
-                this._setInputValue(p ? `${p}TreadDepth` : 'treadDepth', t.treadDepth);
-                this._setInputValue(p ? `${p}RiserHeight` : 'riserHeight', t.riserHeight);
-                this._setInputValue(p ? `${p}EyeHeight` : 'eyeHeight', t.eyeHeight);
-                this._setInputValue(p ? `${p}EyeSetback` : 'eyeSetback', t.eyeSetback);
-
-                if (i === 1) this._tier2Initialized = true;
-                if (i === 2) this._tier3Initialized = true;
-            });
-        }
-
-        if (config.bookmarks && Array.isArray(config.bookmarks)) {
-            this._cameraBookmarks = config.bookmarks;
-            if (typeof this._renderCameraBookmarks === 'function') {
-                this._renderCameraBookmarks();
-            }
-        }
-
+        this.state.fromJSON(config);
+        this._syncTemplateFromState();
+        this._tier2Initialized = Array.isArray(config.tiers) && config.tiers.length > 1;
+        this._tier3Initialized = Array.isArray(config.tiers) && config.tiers.length > 2;
+        this._applyStateToDom();
+        this._renderCameraBookmarks();
         this._scheduleUpdate();
-        if (config.ui) {
-            const { activeViewTab, activeResultsTab } = config.ui;
-            requestAnimationFrame(() => {
-                if (activeViewTab && ['profile', 'field', 'scene3d'].includes(activeViewTab)) {
-                    this._switchViewTab(activeViewTab);
-                }
-                if (activeResultsTab) {
-                    const btn = document.querySelector(`.results-tab-btn[data-target="${activeResultsTab}"]`);
-                    if (btn) btn.click();
-                }
-            });
-        }
 
         if (logSuccess) {
             console.log('Configuration loaded successfully');
@@ -2123,19 +1831,24 @@ class App {
 
     // ========== HELPER: Get standard bowl config ==========
     _getBowlConfig() {
-        const clipEnabled = document.getElementById('enableClipPlane')?.checked || false;
-        const clipCfg = clipEnabled ? { enabled: true, axis: document.getElementById('clipAxis')?.value || 'X', position: this._getInputValue('clipPosition') || 0, side: document.getElementById('clipSide')?.value || 'positive' } : { enabled: false };
+        const clipCfg = this.state.bowl.clipEnabled ? {
+            enabled: true,
+            axis: this.state.bowl.clipAxis,
+            position: this.state.bowl.clipPosition,
+            side: this.state.bowl.clipSide
+        } : { enabled: false };
+
         return {
             width: this._currentTemplate.field_width,
             length: this._currentTemplate.field_length,
             shape: this._currentTemplate.shape,
             radius_arc: this._currentTemplate.field_radius,
             arc_angle: this._currentTemplate.arc_angle,
-            type: document.getElementById('bowlType').value,
+            type: this.state.bowl.type,
             corner: 'Chamfer',
-            radius: this._getInputValue('bowlCornerRad'),
-            sideLength: this._getInputValue('bowlSideLength'),
-            structuralDepth: this._getInputValue('structuralDepth') || 0,
+            radius: this.state.bowl.cornerRad,
+            sideLength: this.state.bowl.sideLength,
+            structuralDepth: this.state.bowl.structuralDepth || 0,
             clip: clipCfg
         };
     }
@@ -2153,17 +1866,14 @@ class App {
             if (last && Number.isFinite(last.x)) maxRowX = Math.max(maxRowX, last.x);
         });
 
-        const sportName = document.getElementById('sportSelect')?.value || '';
-        const edgeSports = ['Ice Hockey', 'Football', 'Concert', 'Soccer', 'Basketball'];
-        const safeWidth = Number.isFinite(bowlConfig.width) ? bowlConfig.width : 0;
-        const offsetCorrection = edgeSports.includes(sportName) ? 0 : (safeWidth / 2);
+        const offsetCorrection = this._getOffsetCorrection(bowlConfig, this.state.sport);
         const outerOffset = maxRowX - offsetCorrection;
 
         const cfgNoClip = { ...bowlConfig, clip: { enabled: false } };
         const bounds = this._computeBowlBounds(cfgNoClip, outerOffset);
         if (!bounds) return;
 
-        const axis = (document.getElementById('clipAxis')?.value || 'X').toUpperCase();
+        const axis = (this.state.bowl.clipAxis || 'X').toUpperCase();
         const minVal = Math.floor(axis === 'X' ? bounds.minX : bounds.minY);
         const maxVal = Math.ceil(axis === 'X' ? bounds.maxX : bounds.maxY);
         const lo = Math.min(minVal, maxVal - 1);
@@ -2177,7 +1887,10 @@ class App {
         let curr = this._getInputValue('clipPosition');
         if (!Number.isFinite(curr)) curr = 0;
         const clamped = Math.max(lo, Math.min(hi, curr));
-        if (clamped !== curr) this._setInputValue('clipPosition', clamped);
+        if (clamped !== curr) {
+            this.state.bowl.clipPosition = clamped;
+            this._setInputValue('clipPosition', clamped);
+        }
     }
 
     _computeBowlBounds(bowlConfig, offset) {
@@ -2223,12 +1936,12 @@ class App {
         const thumbnail = this._captureBookmarkThumbnail(150, 150);
 
         const bm = {
-            name: `View ${this._cameraBookmarks.length + 1}`,
+            name: `View ${this.state.bookmarks.length + 1}`,
             position: { x: cam.position.x, y: cam.position.y, z: cam.position.z },
             target: { x: ctrl.target.x, y: ctrl.target.y, z: ctrl.target.z },
             thumbnail
         };
-        this._cameraBookmarks.push(bm);
+        this.state.bookmarks.push(bm);
         this._renderCameraBookmarks();
     }
 
@@ -2266,7 +1979,7 @@ class App {
         if (!list) return;
         list.innerHTML = '';
 
-        this._cameraBookmarks.forEach((bm, i) => {
+        this.state.bookmarks.forEach((bm, i) => {
             const card = document.createElement('div');
             card.className = 'cam-bookmark-card';
             card.setAttribute('role', 'button');
@@ -2348,7 +2061,7 @@ class App {
             deleteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 dropdown.style.display = 'none';
-                this._cameraBookmarks.splice(i, 1);
+                this.state.bookmarks.splice(i, 1);
                 this._renderCameraBookmarks();
             });
 
@@ -2390,7 +2103,7 @@ class App {
         const dataUrl = this.scene3D.renderer.domElement.toDataURL('image/png');
         const a = document.createElement('a');
         a.href = dataUrl;
-        const sportName = document.getElementById('sportSelect').value;
+        const sportName = this.state.sport;
         const suffix = viewName ? `-${viewName.toLowerCase().replace(/\s/g, '-')}` : '';
         a.download = `3d-view-${sportName.toLowerCase().replace(/\s/g, '-')}${suffix}.png`;
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
@@ -2450,36 +2163,6 @@ if (resizer && leftSidebar) {
         }
     });
 }
-
-// 3. Results Panel Tabs
-document.addEventListener('DOMContentLoaded', () => {
-    const tabBtns = document.querySelectorAll('.results-tab-btn');
-    const tabPanels = document.querySelectorAll('.results-tab-panel');
-
-    tabBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            // Remove active class from all
-            tabBtns.forEach(b => b.classList.remove('active'));
-            tabPanels.forEach(p => p.classList.remove('active'));
-
-            // Add active class to clicked button and target panel
-            btn.classList.add('active');
-            const targetId = btn.getAttribute('data-target');
-            const targetPanel = document.getElementById(targetId);
-            if (targetPanel) {
-                targetPanel.classList.add('active');
-                targetPanel.scrollTop = 0;
-            }
-
-            // Expand the sidebar if it was collapsed
-            const rightSidebar = document.querySelector('.right-sidebar');
-            if (rightSidebar && rightSidebar.classList.contains('collapsed')) {
-                rightSidebar.classList.remove('collapsed');
-                setTimeout(() => window.dispatchEvent(new Event('resize')), 300);
-            }
-        });
-    });
-});
 
 // 3. Right Sidebar Resizer
 const rightResizer = document.getElementById('rightSidebarResizer');
