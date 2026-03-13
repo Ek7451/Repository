@@ -3,14 +3,14 @@
  * Renders top-down field shapes, runoff perimeters, and focal point markers.
  */
 
-import { getCValueQuality } from './sightline-calc.js';
+import { getCValueQuality } from '../core/sightline-calc.js';
 import {
     buildGeometryPaths,
     sampleAisleBand,
     samplePathPointByRatio,
     buildTierAisleLayout,
     resolveAisleStationRatios
-} from './aisle-layout.js?v=9';
+} from '../core/aisle-layout.js?v=9';
 
 const FIELD_THEME_COLORS = {
     light: {

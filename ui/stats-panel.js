@@ -1,5 +1,5 @@
-import { ProfileSolver } from '../profile-solver.js?v=4';
-import { SightlineAnalyzer, getCValueQuality } from '../sightline-calc.js';
+import { ProfileSolver } from '../core/profile-solver.js?v=4';
+import { SightlineAnalyzer, getCValueQuality } from '../core/sightline-calc.js';
 
 export function renderStatsPanel({
     solvers = [],

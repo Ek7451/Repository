@@ -3,14 +3,15 @@
  * Wires inputs to solvers → renderers with debounced updates.
  */
 
-import { SPORTS_TEMPLATES, getSportNames, getTemplate } from './sports-templates.js';
-import { ProfileSolver } from './profile-solver.js?v=4';
-import { FieldRenderer } from './field-renderer.js?v=19';
-import { ProfileRenderer } from './profile-renderer.js?v=4';
-import { DEFAULT_STARTUP_PROFILE } from './default-starting-profile.js?v=1';
+import { SPORTS_TEMPLATES, getSportNames, getTemplate } from './core/sports-templates.js';
+import { ProfileSolver } from './core/profile-solver.js?v=4';
+import { FieldRenderer } from './viz/field-renderer.js?v=19';
+import { ProfileRenderer } from './viz/profile-renderer.js?v=4';
+import { DEFAULT_STARTUP_PROFILE } from './core/default-starting-profile.js?v=1';
 import { buildPlanDxf, buildProfileDxf } from './export/dxf-exporter.js';
 import { exportRhinoModel, getRhinoExportOffsetCorrection } from './export/rhino/rhino-exporter.js';
 import { AppState } from './state/app-state.js';
+import { CameraBookmarks } from './ui/camera-bookmarks.js?v=1';
 import { renderStatsPanel } from './ui/stats-panel.js?v=1';
 // Scene3D is imported lazily in _init3DAsync to avoid blocking if Three.js CDN is unavailable
 
@@ -105,6 +106,7 @@ class App {
         this._scene3dReady = false;
         this._tierAisleLayouts = [];
         this._rhino3dmPromise = null;
+        this.cameraBookmarks = null;
 
         // Track tier count to implement progressive stacking
         this._lastTierCount = 1; // Default
@@ -134,11 +136,12 @@ class App {
 
             // Wire up events (must happen before update)
             this._wireEvents();
+            this._initCameraBookmarks();
 
             this.state.fromJSON(DEFAULT_STARTUP_PROFILE);
             this._syncTemplateFromState();
             this._applyStateToDom();
-            this._renderCameraBookmarks();
+            this.cameraBookmarks?.render();
 
             // Initialize tooltips
             this._initTooltips();
@@ -181,6 +184,36 @@ class App {
         themeToggleBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this._toggleTheme();
+        });
+    }
+
+    _initCameraBookmarks() {
+        this.cameraBookmarks?.destroy();
+        this.cameraBookmarks = new CameraBookmarks({
+            barEl: document.getElementById('cameraBookmarksBar'),
+            listEl: document.getElementById('cameraBookmarksList'),
+            saveBtnEl: document.getElementById('saveCameraViewBtn'),
+            toggleBtnEl: document.getElementById('toggleBookmarksBtn'),
+            getBookmarks: () => this.state.bookmarks,
+            createCurrentBookmark: () => this._createCurrentCameraBookmark(),
+            renameBookmark: (index, nextName) => {
+                if (!this.state.bookmarks[index]) return;
+                this.state.bookmarks[index].name = nextName;
+            },
+            removeBookmark: (index) => {
+                if (!this.state.bookmarks[index]) return;
+                this.state.bookmarks.splice(index, 1);
+            },
+            restoreBookmark: (index) => {
+                this._restoreCameraBookmark(this.state.bookmarks[index]);
+            },
+            exportBookmarkImage: (index, fallbackName = null) => {
+                this._export3DImage(this.state.bookmarks[index]?.name ?? fallbackName);
+            },
+            onLayoutChanged: () => {
+                this._ensure3DContainerSize();
+                this.scene3D?.forceResize();
+            }
         });
     }
 
@@ -243,7 +276,7 @@ class App {
             container3d.innerHTML = '<div class="loading-3d"><div class="spinner"></div><span>Loading 3D engine...</span></div>';
 
             // Dynamic import — if Three.js fails, only 3D breaks
-            const { Scene3D } = await import('./scene3d.js?v=25');
+            const { Scene3D } = await import('./viz/scene3d.js?v=25');
 
             // Clear loading indicator BEFORE Scene3D creates its canvas
             container3d.innerHTML = '';
@@ -645,26 +678,6 @@ class App {
 
             // Prevent clicks inside menu body from bubbling to document
             exportMenuPanel.addEventListener('click', (e) => e.stopPropagation());
-        }
-
-        // Camera bookmarks (3D view)
-        const saveCamBtn = document.getElementById('saveCameraViewBtn');
-        const toggleBookmarksBtn = document.getElementById('toggleBookmarksBtn');
-        const cameraBookmarksBar = document.getElementById('cameraBookmarksBar');
-
-        if (saveCamBtn) {
-            saveCamBtn.addEventListener('click', () => {
-                if (cameraBookmarksBar && cameraBookmarksBar.classList.contains('collapsed')) {
-                    cameraBookmarksBar.classList.remove('collapsed');
-                }
-                this._saveCameraBookmark();
-            });
-        }
-
-        if (toggleBookmarksBtn && cameraBookmarksBar) {
-            toggleBookmarksBtn.addEventListener('click', () => {
-                cameraBookmarksBar.classList.toggle('collapsed');
-            });
         }
 
         // Clip Plane controls
@@ -1821,7 +1834,7 @@ class App {
         this._tier2Initialized = Array.isArray(config.tiers) && config.tiers.length > 1;
         this._tier3Initialized = Array.isArray(config.tiers) && config.tiers.length > 2;
         this._applyStateToDom();
-        this._renderCameraBookmarks();
+        this.cameraBookmarks?.render();
         this._scheduleUpdate();
 
         if (logSuccess) {
@@ -1926,7 +1939,7 @@ class App {
     }
 
     // ========== 3D VIEW CAMERA BOOKMARKS ==========
-    _saveCameraBookmark() {
+    _createCurrentCameraBookmark() {
         if (!this.scene3D || !this.scene3D.camera || !this.scene3D.controls || !this.scene3D.renderer) return;
         const cam = this.scene3D.camera;
         const ctrl = this.scene3D.controls;
@@ -1942,7 +1955,7 @@ class App {
             thumbnail
         };
         this.state.bookmarks.push(bm);
-        this._renderCameraBookmarks();
+        return bm;
     }
 
     _captureBookmarkThumbnail(width = 100, height = 100) {
@@ -1971,130 +1984,19 @@ class App {
         }
     }
 
-    _renderCameraBookmarks() {
-        // Clean up any orphaned dropdowns attached to the body
-        document.querySelectorAll('body > .cam-bookmark-dropdown').forEach(d => d.remove());
-
-        const list = document.getElementById('cameraBookmarksList');
-        if (!list) return;
-        list.innerHTML = '';
-
-        this.state.bookmarks.forEach((bm, i) => {
-            const card = document.createElement('div');
-            card.className = 'cam-bookmark-card';
-            card.setAttribute('role', 'button');
-            card.tabIndex = 0; card.innerHTML = `
-                <img class="cam-bookmark-image" src="${bm.thumbnail || ''}" alt="${bm.name}">
-                <div class="cam-bookmark-label">${bm.name}</div>
-                <div class="cam-bookmark-menu-wrapper">
-                    <button type="button" class="cam-bookmark-menu-btn" title="Options">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="5" r="1.5"></circle>
-                            <circle cx="12" cy="12" r="1.5"></circle>
-                            <circle cx="12" cy="19" r="1.5"></circle>
-                        </svg>
-                    </button>
-                    <div class="cam-bookmark-dropdown" style="display:none;">
-                        <button type="button" class="cam-bookmark-rename">Rename</button>
-                        <button type="button" class="cam-bookmark-export">Export Image</button>
-                        <button type="button" class="cam-bookmark-remove">Delete</button>
-                    </div>
-                </div>
-            `;
-
-            const menuBtn = card.querySelector('.cam-bookmark-menu-btn');
-            const dropdown = card.querySelector('.cam-bookmark-dropdown');
-            const renameBtn = card.querySelector('.cam-bookmark-rename');
-            const exportBtn = card.querySelector('.cam-bookmark-export');
-            const deleteBtn = card.querySelector('.cam-bookmark-remove');
-
-            menuBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                document.querySelectorAll('.cam-bookmark-dropdown').forEach(d => {
-                    if (d !== dropdown) d.style.display = 'none';
-                });
-                if (dropdown.style.display === 'none') {
-                    // Start rendering so we can get its dimensions
-                    dropdown.style.visibility = 'hidden';
-                    dropdown.style.display = 'flex';
-
-                    // Temporarily move the dropdown to the document body to escape the card's CSS transform bounds
-                    document.body.appendChild(dropdown);
-
-                    const cardRect = card.getBoundingClientRect();
-                    const dropWidth = dropdown.offsetWidth;
-
-                    // Push the menu up above the thumbnail, centered horizontally with the card's left/right boundaries
-                    const alignLeft = cardRect.left + (cardRect.width / 2) - (dropWidth / 2);
-
-                    dropdown.style.bottom = (window.innerHeight - cardRect.top + 8) + 'px';
-                    dropdown.style.left = alignLeft + 'px';
-
-                    dropdown.style.top = 'auto'; // ensure it uses bottom alignment
-                    dropdown.style.right = 'auto'; // ensure it uses left alignment
-
-                    dropdown.style.visibility = 'visible';
-                } else {
-                    dropdown.style.display = 'none';
-                }
-            });
-
-            renameBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                dropdown.style.display = 'none';
-                const newName = prompt("Rename view:", bm.name);
-                if (newName && newName.trim() !== "") {
-                    bm.name = newName.trim();
-                    this._renderCameraBookmarks();
-                }
-            });
-
-            exportBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                dropdown.style.display = 'none';
-                restore();
-                setTimeout(() => {
-                    this._export3DImage(bm.name);
-                }, 50);
-            });
-
-            deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                dropdown.style.display = 'none';
-                this.state.bookmarks.splice(i, 1);
-                this._renderCameraBookmarks();
-            });
-
-
-            const restore = () => {
-                if (!this.scene3D) return;
-                this.scene3D.camera.position.set(bm.position.x, bm.position.y, bm.position.z);
-                this.scene3D.controls.target.set(bm.target.x, bm.target.y, bm.target.z);
-                this.scene3D.controls.update();
-            };
-
-            card.addEventListener('click', (e) => {
-                if (e.target.closest('.cam-bookmark-menu-wrapper')) return;
-                restore();
-            });
-            card.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    restore();
-                }
-            });
-
-            list.appendChild(card);
-        });
-
-        const closeDropdowns = () => {
-            document.querySelectorAll('.cam-bookmark-dropdown').forEach(d => {
-                d.style.display = 'none';
-            });
-        };
-        document.removeEventListener('click', this._globalBookmarkMenuCloser);
-        this._globalBookmarkMenuCloser = closeDropdowns;
-        document.addEventListener('click', this._globalBookmarkMenuCloser);
+    _restoreCameraBookmark(bookmark) {
+        if (!bookmark || !this.scene3D || !this.scene3D.camera || !this.scene3D.controls) return;
+        this.scene3D.camera.position.set(
+            bookmark.position.x,
+            bookmark.position.y,
+            bookmark.position.z
+        );
+        this.scene3D.controls.target.set(
+            bookmark.target.x,
+            bookmark.target.y,
+            bookmark.target.z
+        );
+        this.scene3D.controls.update();
     }
 
     _export3DImage(viewName = null) {

@@ -3,7 +3,7 @@
  * Renders the stepped seating profile, sightlines, head circles, and focal point.
  */
 
-import { getCValueQuality, generateHeadCirclePoints, SightlineAnalyzer } from './sightline-calc.js';
+import { getCValueQuality, generateHeadCirclePoints, SightlineAnalyzer } from '../core/sightline-calc.js';
 
 const PROFILE_THEME_COLORS = {
     light: {

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'vitest';
-import { DEFAULT_STARTUP_PROFILE } from '../../default-starting-profile.js';
+import { DEFAULT_STARTUP_PROFILE } from '../../core/default-starting-profile.js';
 import { APP_STATE_VERSION, AppState } from '../../state/app-state.js';
 
 describe('AppState', () => {

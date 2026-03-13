@@ -3,9 +3,9 @@
  * Creates extruded seating bowl geometry + field surface.
  */
 
-import * as THREE from './lib/three.module.js';
-import { OrbitControls } from './lib/OrbitControls.js';
-import { buildGeometryPaths, sampleAisleBand, resolveAisleStationRatios, samplePathPointByRatio } from './aisle-layout.js?v=7';
+import * as THREE from '../lib/three.module.js';
+import { OrbitControls } from '../lib/OrbitControls.js';
+import { buildGeometryPaths, sampleAisleBand, resolveAisleStationRatios, samplePathPointByRatio } from '../core/aisle-layout.js?v=7';
 
 const SCENE_THEME_COLORS = {
     light: {
