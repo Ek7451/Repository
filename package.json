@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "eslint export/**/*.js tests/**/*.js scripts/**/*.mjs eslint.config.js vitest.config.js",
+    "lint": "eslint app.js core/**/*.js state/**/*.js ui/**/*.js viz/**/*.js export/**/*.js pages/**/*.js services/**/*.js tests/**/*.js scripts/**/*.mjs eslint.config.js vitest.config.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",

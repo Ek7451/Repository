@@ -72,6 +72,15 @@ export function generateHeadCirclePoints(centerX, centerZ, radius, numSegments =
     return points;
 }
 
+/**
+ * @typedef {{
+ *   eye_x: number,
+ *   eye_z: number,
+ *   row_number: number,
+ *   c_value: number
+ * }} RowData
+ */
+
 export class SightlineAnalyzer {
     /**
      * @param {RowData[]} rows 

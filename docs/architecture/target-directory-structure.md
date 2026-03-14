@@ -50,7 +50,7 @@ seating-bowl/
 │                                      #   first launch.            [existing ✅]
 │
 │
-├── state/                             # APPLICATION STATE  [NEW]
+├── state/                             # APPLICATION STATE
 │   │                                  # The serializable memory of the app.
 │   │                                  # This is the save/load target.
 │   │                                  # Only imports from core/.
@@ -59,13 +59,14 @@ seating-bowl/
 │   │                                  #   sport, tier settings, focal point,
 │   │                                  #   camera bookmarks, aisle config.
 │   │                                  #   toJSON() / fromJSON() for persistence.
+|   |                                  #                            [existing ✅]
 │   │
 │   └── project.js                     #   Wraps one or more studies:
 │                                      #   { id, name, createdAt, studies: [...] }
 │                                      #   This is what gets stored in the DB.
 │
 │
-├── ui/                                # CONFIGURATOR UI CONTROLLERS  [extracted]
+├── ui/                                # CONFIGURATOR UI CONTROLLERS  
 │   │                                  # Reads from state/, calls core/ solvers,
 │   │                                  # passes results down to viz/.
 │   │                                  # No calculations. No direct DOM data reads.
@@ -73,16 +74,17 @@ seating-bowl/
 │   ├── app.js                         #   Main orchestrator.
 │   │                                  #   Reads AppState → calls solvers →
 │   │                                  #   passes output to renderers.
-│   │                                  #   Target: 600–800 lines.  [existing — slimmed]
+│   │                                  #   Target: 600–800 lines.  [existing ✅]
 │   │
 │   ├── stats-panel.js                 #   Generates sightline summary and
 │   │                                  #   stats tables from solver output.
-│   │                                  #   (~550 lines from app.js)  [NEW]
+│   │                                  #   (~550 lines from app.js)  [existing ✅]
 │   │
-│   └── camera-bookmarks.js            #   Save, restore, rename, delete
-│                                      #   3D camera views.
-│                                      #   (~200 lines from app.js)  [NEW]
-│
+│   ├── camera-bookmarks.js            #   Save, restore, rename, delete
+│   |                                  #   3D camera views.
+│   |                                  #   (~200 lines from app.js)  [existing ✅]
+|   |
+│   ├── project-dashboard.js
 │
 ├── viz/                               # VISUALIZATION  [existing — rule tightened]
 │   │
@@ -111,26 +113,26 @@ seating-bowl/
 │   │                                  # as plain arguments — no DOM, no state.
 │   │
 │   ├── rhino/                         #   Rhino 3DM export — split into 3 files
-│   │   │                              #   to prevent a new monolith.  [NEW]
+│   │   │                              #   to prevent a new monolith.  [existing ✅]
 │   │   │
 │   │   ├── rhino-exporter.js          #     Entry point. Orchestrates the
-│   │   │                              #     Rhino export pipeline.
+│   │   │                              #     Rhino export pipeline. [existing ✅]
 │   │   │
 │   │   ├── rhino-geometry.js          #     Brep/mesh construction helpers:
 │   │   │                              #     ruled surfaces, quad patches,
-│   │   │                              #     point math utilities.
+│   │   │                              #     point math utilities.  [existing ✅]
 │   │   │
 │   │   └── rhino-layers.js            #     Layer naming, tier categories,
-│   │                                  #     layer index management.
+│   │                                  #     layer index management.  [existing ✅]
 │   │
 │   ├── dxf-exporter.js                #   DXF plan + section export.
-│   │                                  #   (~340 lines from app.js)  [NEW]
+│   │                                  #   (~340 lines from app.js)  [existing ✅]
 │   │
 │   └── obj-csv-exporter.js            #   OBJ mesh + CSV row data table.
-│                                      #                              [NEW]
+│                                      #                              [existing ✅]
 │
 │
-└── services/                          # BACKEND SERVICES  [NEW]
+└── services/                          # BACKEND SERVICES
     │
     │                                  # ⚠️  REVISED RULE (v2):
     │                                  # Services do NOT import from state/.
@@ -139,9 +141,10 @@ seating-bowl/
     │                                  # must stay decoupled from the frontend
     │                                  # state model.
     │
-    ├── auth.js                        #   Microsoft SSO via MSAL.js.
+    ├── auth-service.js                #   Microsoft SSO via MSAL.js.
     │                                  #   Sign-in, token refresh, current user.
     │                                  #   Returns plain user object.
+    |                                  #                              [existing ✅]
     │
     └── project-api.js                 #   REST API calls:
                                        #   loadProjects(), saveStudy(plainObj),

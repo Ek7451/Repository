@@ -1,0 +1,249 @@
+import { describe, expect, test, vi } from 'vitest';
+
+import {
+    buildObjText,
+    buildStudyResultsJsonPayload,
+    buildTierMetricsCsv
+} from '../../export/obj-csv-exporter.js';
+
+function createSolver() {
+    return {
+        tierIndex: 0,
+        rows: [
+            {
+                row_number: 1,
+                x: 10,
+                z: 1,
+                tread_depth: 2,
+                riser_height: 1,
+                c_value: 12,
+                sightline_angle: 30,
+                eye_x: 9.5,
+                eye_z: 5
+            },
+            {
+                row_number: 2,
+                x: 12,
+                z: 2,
+                tread_depth: 2,
+                riser_height: 1,
+                c_value: 2.5,
+                sightline_angle: 31,
+                eye_x: 11.5,
+                eye_z: 6
+            }
+        ]
+    };
+}
+
+describe('buildStudyResultsJsonPayload', () => {
+    test('builds study results from explicit runtime arguments and reconstructed tier layouts', () => {
+        const solver = createSolver();
+        const calculateRowLength = vi.fn(() => 40);
+        const generateTierAisleLayout = vi.fn(() => ({
+            tierIndex: 0,
+            aisleWidthFt: 4,
+            seatWidthIn: 20,
+            aisles: [{ pathIndex: 0 }, { pathIndex: 0 }],
+            targetAisles: 2,
+            forcedCount: 0,
+            sectionSummary: {
+                actualAisles: 2,
+                actualSections: 1,
+                allSectionPathsClosed: true,
+                avgBackRowSeatsPerSection: 12
+            }
+        }));
+        const getTierSectionMetricsOverlayData = vi.fn(() => ({
+            sectionLabels: [
+                { sectionNumber: 100, pathIndex: 0, slotIndex: 0, x: 1, y: 2 }
+            ],
+            rowSeatLabels: [
+                { rowIndex: 0, sectionNumber: 100, pathIndex: 0, slotIndex: 0, seatCount: 10 },
+                { rowIndex: 1, sectionNumber: 100, pathIndex: 0, slotIndex: 0, seatCount: 12 }
+            ]
+        }));
+
+        const payload = buildStudyResultsJsonPayload({
+            solvers: [solver],
+            sportName: 'Football',
+            profileType: 'Parabolic',
+            template: {
+                name: 'Football',
+                shape: 'rectangle',
+                field_length: 360,
+                field_width: 160,
+                runoff: 20
+            },
+            bowlConfig: {
+                width: 160,
+                type: 'end'
+            },
+            egressParams: {
+                seatWidthIn: 20,
+                minAisleWidthIn: 48,
+                maxAisleWidthIn: 72,
+                egressFactor: 0.2,
+                seatsBetweenAisles: 20
+            },
+            focalPointFt: { x: 0, z: 1 },
+            primaryTierParameters: {
+                targetCValue: 12,
+                firstRowDistance: 8,
+                firstRowElevation: 1,
+                treadDepth: 24,
+                riserHeight: 12,
+                numRows: 2,
+                eyeHeight: 4,
+                eyeSetback: 6
+            },
+            tierAisleLayouts: [],
+            offsetCorrection: 0,
+            fieldMetricsAdapter: {
+                calculateRowLength,
+                generateTierAisleLayout,
+                getTierSectionMetricsOverlayData
+            }
+        });
+
+        expect(calculateRowLength).toHaveBeenCalled();
+        expect(generateTierAisleLayout).toHaveBeenCalledTimes(1);
+        expect(getTierSectionMetricsOverlayData).toHaveBeenCalledTimes(1);
+        expect(payload).toMatchObject({
+            sport: 'Football',
+            profileType: 'Parabolic',
+            totals: {
+                enabledTierCount: 1,
+                totalOccupancy: 22,
+                totalAisleCenterlines: 2,
+                totalSections: 1
+            },
+            parameters: {
+                targetCValue: 12,
+                focalX: 0,
+                focalZ: 1
+            }
+        });
+        expect(payload.template).toMatchObject({
+            name: 'Football',
+            shape: 'rectangle',
+            fieldLengthFt: 360,
+            fieldWidthFt: 160
+        });
+        expect(payload.tiers[0].rows[0]).toMatchObject({
+            rowNumber: 1,
+            linearLengthFt: 40,
+            estimatedLinearSeats: 19
+        });
+        expect(payload.tiers[0].sections[0]).toMatchObject({
+            sectionNumber: 100,
+            occupancy: 22,
+            rowsInSection: 2,
+            frontRowSeats: 10,
+            backRowSeats: 12
+        });
+    });
+});
+
+describe('buildObjText', () => {
+    test('writes bowl mesh vertices and faces with stable index offsets', () => {
+        const obj = buildObjText({
+            bowlMeshes: [
+                {
+                    type: 'Mesh',
+                    geometry: {
+                        attributes: {
+                            position: { array: [0, 0, 0, 1, 0, 0, 0, 1, 0] }
+                        },
+                        index: { array: [0, 1, 2] }
+                    }
+                },
+                {
+                    type: 'Mesh',
+                    geometry: {
+                        attributes: {
+                            position: { array: [0, 0, 1, 1, 0, 1, 0, 1, 1] }
+                        },
+                        index: { array: [0, 1, 2] }
+                    }
+                }
+            ]
+        });
+
+        expect(obj).toContain('# Seating Bowl Study - OBJ Export');
+        expect(obj).toContain('o SeatingBowl');
+        expect(obj).toContain('v 0.0000 0.0000 0.0000');
+        expect(obj).toContain('v 0.0000 0.0000 1.0000');
+        expect(obj).toContain('f 1 2 3');
+        expect(obj).toContain('f 4 5 6');
+    });
+
+    test('skips malformed mesh data instead of emitting invalid coordinates', () => {
+        const obj = buildObjText({
+            bowlMeshes: [
+                {
+                    type: 'Mesh',
+                    geometry: {
+                        attributes: {
+                            position: { array: [0, 0, 0, Number.NaN, 0, 0, 0, 1, 0] }
+                        },
+                        index: { array: [0, 1, 2] }
+                    }
+                },
+                {
+                    type: 'Mesh',
+                    geometry: {
+                        attributes: {
+                            position: { array: [0, 0, 1, 1, 0, 1, 0, 1, 1] }
+                        },
+                        index: { array: [0, 1, 2] }
+                    }
+                }
+            ]
+        });
+
+        expect(obj).not.toContain('NaN');
+        expect(obj).not.toContain('Infinity');
+        expect(obj).toContain('f 1 2 3');
+    });
+});
+
+describe('buildTierMetricsCsv', () => {
+    test('writes tier row metrics from passed solver data', () => {
+        const csv = buildTierMetricsCsv({
+            solvers: [
+                {
+                    rows: [
+                        {
+                            row_number: 1,
+                            x: 10,
+                            z: 1,
+                            tread_depth: 2,
+                            riser_height: 1,
+                            c_value: 12,
+                            sightline_angle: 30,
+                            computedLength: 40,
+                            computedSeats: 24
+                        },
+                        {
+                            row_number: 2,
+                            x: 12,
+                            z: 2,
+                            tread_depth: 2,
+                            riser_height: 1,
+                            c_value: 2.5,
+                            sightline_angle: 31,
+                            computedLength: 42,
+                            computedSeats: 26
+                        }
+                    ]
+                }
+            ],
+            focalPointFt: { x: 0 }
+        });
+
+        expect(csv).toContain('Tier,Row,Riser (in),Elevation (ft),C-Value (in)');
+        expect(csv).toContain('1,1,12.00,1.00,N/A,24.00,8.00,30.00,40,24');
+        expect(csv).toContain('1,2,12.00,2.00,2.50,24.00,10.00,31.00,42,26');
+    });
+});

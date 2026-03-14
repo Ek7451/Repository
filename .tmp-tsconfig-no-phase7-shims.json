@@ -8,8 +8,14 @@
     "noEmit": true,
     "strict": false,
     "skipLibCheck": true,
-    "lib": ["ESNext", "DOM"],
-    "types": ["node", "vitest/globals"]
+    "lib": [
+      "ESNext",
+      "DOM"
+    ],
+    "types": [
+      "node",
+      "vitest/globals"
+    ]
   },
   "include": [
     "app.js",

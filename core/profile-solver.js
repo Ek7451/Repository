@@ -63,6 +63,8 @@ export class ProfileSolver {
         this.targetCFt = this.targetCValue / 12.0;
 
         this.rows = [];
+        this.tierIndex = 0;
+        this.tierBreakRow = 0;
     }
 
     /**
