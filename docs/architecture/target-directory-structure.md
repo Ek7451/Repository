@@ -19,14 +19,16 @@ seating-bowl/
 │
 ├── pages/                             # The two screens users navigate between
 │   │
-│   ├── dashboard/                     # ❶ PROJECT DASHBOARD  [NEW] ❌
-│   │   ├── dashboard.html             #   Landing page after login. ❌
-│   │   ├── dashboard.js               #   Shows project list, opens studies, ❌
-│   │   └── dashboard.css              #   displays key metrics per project. ❌
+│   ├── dashboard/                     # ❶ PROJECT DASHBOARD  [NEW] [existing ✅]
+│   │   ├── dashboard.html             #   Landing page after login. [existing ✅]
+│   │   ├── dashboard.js               #   Shows project list, opens studies, 
+|   |   |                                                             [existing ✅]
+│   │   └── dashboard.css              #   displays key metrics per project. 
+|   |                                                                 [existing ✅]
 │   │
-│   └── configurator/                  # ❷ SEATING BOWL CONFIGURATOR  ❌ 
-│       ├── index.html                 #   The main bowl design tool. ❌
-│       └── styles.css                 #   All existing UI lives here.❌
+│   └── configurator/                  # ❷ SEATING BOWL CONFIGURATOR  [existing ✅] 
+│       ├── index.html                 #   The main bowl design tool. [existing ✅]
+│       └── styles.css                 #   All existing UI lives here.[existing ✅]
 │
 │
 ├── core/                              # THE CALCULATION ENGINE
@@ -61,7 +63,7 @@ seating-bowl/
 │   │                                  #   toJSON() / fromJSON() for persistence.
 |   |                                  #                            [existing ✅]
 │   │
-│   └── project.js                     #   Wraps one or more studies: ❌
+│   └── project.js                     #   Wraps one or more studies: [existing ✅]
 │                                      #   { id, name, createdAt, studies: [...] }
 │                                      #   This is what gets stored in the DB.
 │
@@ -84,7 +86,15 @@ seating-bowl/
 │   |                                  #   3D camera views.
 │   |                                  #   (~200 lines from app.js)  [existing ✅]
 |   |
-│   ├── project-dashboard.js
+│   ├── project-dashboard.js           # [existing ✅]
+|   |                                  #
+|   |                                  #
+|   |
+|   |
+|   └── editor-shell.js                # [existing ✅]
+|                                      #
+|                                      #
+|   
 │
 ├── viz/                               # VISUALIZATION  [existing — rule tightened]
 │   │

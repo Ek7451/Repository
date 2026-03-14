@@ -73,9 +73,6 @@ describe('buildProfileDxf', () => {
 describe('buildPlanDxf', () => {
     test('writes field and runoff layers from passed arguments', () => {
         const dxf = buildPlanDxf({
-            solvers: [createSolver()],
-            sportName: 'Football',
-            bowlConfig: { width: 160 },
             template: {
                 shape: 'rectangle',
                 field_length: 100,
@@ -85,28 +82,40 @@ describe('buildPlanDxf', () => {
             },
             runoffFt: 10,
             visualFocalXFt: 0,
-            enabledTiers: [true],
-            tierAisleLayouts: [],
-            fieldAdapter: {
-                getBowlGeometry() {
-                    return [
+            tierPlanArtifacts: [
+                {
+                    tierIndex: 0,
+                    rowGeometries: [[
                         { cmd: 'moveTo', x: 0, y: 0 },
                         { cmd: 'lineTo', x: 10, y: 0 },
                         { cmd: 'closePath' }
-                    ];
+                    ]],
+                    aislePolygons: [
+                        {
+                            points: [
+                                { x: 1, y: 1 },
+                                { x: 2, y: 1 },
+                                { x: 2, y: 2 },
+                                { x: 1, y: 2 }
+                            ]
+                        }
+                    ],
+                    overlayData: {
+                        sectionLabels: [],
+                        rowSeatLabels: []
+                    }
                 }
-            }
+            ]
         });
 
         expect(dxf).toContain('Field_Edge');
         expect(dxf).toContain('Runoff');
+        expect(dxf).toContain('Tier_1_Plan');
+        expect(dxf).toContain('Tier_1_Aisles');
     });
 
     test('skips malformed plan entities instead of poisoning the file', () => {
         const dxf = buildPlanDxf({
-            solvers: [createSolver()],
-            sportName: 'Football',
-            bowlConfig: { width: 160 },
             template: {
                 shape: 'rectangle',
                 field_length: 100,
@@ -116,18 +125,22 @@ describe('buildPlanDxf', () => {
             },
             runoffFt: 10,
             visualFocalXFt: 0,
-            enabledTiers: [true],
-            tierAisleLayouts: [],
-            fieldAdapter: {
-                getBowlGeometry() {
-                    return [
+            tierPlanArtifacts: [
+                {
+                    tierIndex: 0,
+                    rowGeometries: [[
                         { cmd: 'moveTo', x: 0, y: 0 },
                         { cmd: 'lineTo', x: Number.NaN, y: 0 },
                         { cmd: 'arc', x: 0, y: 0, r: Infinity, sa: 0, ea: Math.PI / 2, ccw: false },
                         { cmd: 'closePath' }
-                    ];
+                    ]],
+                    aislePolygons: [],
+                    overlayData: {
+                        sectionLabels: [],
+                        rowSeatLabels: []
+                    }
                 }
-            }
+            ]
         });
 
         expect(dxf).not.toContain('NaN');

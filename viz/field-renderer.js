@@ -796,6 +796,10 @@ export class FieldRenderer {
         return segments;
     }
 
+    getBowlGeometrySegments(bowlConfig, offset) {
+        return this._getBowlGeometry(bowlConfig, offset);
+    }
+
     calculateRowLength(bowlConfig, offset) {
         const segments = this._getBowlGeometry(bowlConfig, offset);
         const clip = bowlConfig && bowlConfig.clip;

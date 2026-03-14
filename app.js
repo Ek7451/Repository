@@ -1,6 +1,7 @@
-import { DashboardPage } from './pages/dashboard-page.js';
+import { DashboardPage } from './pages/dashboard/dashboard.js';
 import { createAuthService } from './services/auth-service.js';
-import { createProjectsService } from './services/projects-service.js';
+import { createProjectsService } from './services/project-api.js';
+import { cloneProjectMetadata } from './state/project.js';
 import { SeatingBowlApp } from './ui/app.js';
 
 function getButtonElement(id) {
@@ -13,15 +14,6 @@ function getInputElement(id) {
 
 function getHtmlElement(id) {
     return /** @type {HTMLElement | null} */ (document.getElementById(id));
-}
-
-function cloneProjectMetadata(project = null) {
-    return {
-        id: typeof project?.id === 'string' ? project.id : null,
-        name: typeof project?.name === 'string' ? project.name : '',
-        createdAt: typeof project?.createdAt === 'string' ? project.createdAt : '',
-        updatedAt: typeof project?.updatedAt === 'string' ? project.updatedAt : ''
-    };
 }
 
 function normalizeDevBackend(value) {
@@ -45,6 +37,33 @@ function applyRuntimeQueryParams(url, runtimeConfig = {}) {
     url.searchParams.delete('devBackend');
 }
 
+function buildRouteUrl(relativePath, runtimeConfig, configure = null) {
+    const url = new URL(relativePath, import.meta.url);
+    url.search = '';
+    applyRuntimeQueryParams(url, runtimeConfig);
+    if (typeof configure === 'function') {
+        configure(url);
+    }
+    return url.toString();
+}
+
+function buildDashboardUrl(runtimeConfig) {
+    return buildRouteUrl('./pages/dashboard/dashboard.html', runtimeConfig);
+}
+
+function buildConfiguratorUrl(projectId, runtimeConfig) {
+    return buildRouteUrl('./pages/configurator/index.html', runtimeConfig, (url) => {
+        if (projectId) {
+            url.searchParams.set('project', projectId);
+        }
+    });
+}
+
+function getCurrentPage() {
+    const page = document.body?.dataset?.page;
+    return page === 'dashboard' || page === 'configurator' ? page : null;
+}
+
 function normalizeProjectStatus(status = {}) {
     const message = typeof status?.message === 'string' && status.message.trim()
         ? status.message.trim()
@@ -54,31 +73,6 @@ function normalizeProjectStatus(status = {}) {
         : 'default';
 
     return { message, tone };
-}
-
-function buildDashboardUrl(runtimeConfig) {
-    const url = new URL(window.location.href);
-    url.search = '';
-    applyRuntimeQueryParams(url, runtimeConfig);
-    return `${url.pathname}${url.search}${url.hash}`;
-}
-
-function buildEditorUrl(projectId, runtimeConfig) {
-    const url = new URL(window.location.href);
-    url.search = '';
-    applyRuntimeQueryParams(url, runtimeConfig);
-    url.searchParams.set('project', projectId);
-    return `${url.pathname}?${url.searchParams.toString()}${url.hash}`;
-}
-
-function setShellMode(mode) {
-    const dashboardShell = document.getElementById('dashboardShell');
-    const editorShell = document.getElementById('editorShell');
-    const showDashboard = mode === 'dashboard';
-
-    if (dashboardShell) dashboardShell.hidden = !showDashboard;
-    if (editorShell) editorShell.hidden = showDashboard;
-    document.body.classList.toggle('dashboard-mode', showDashboard);
 }
 
 function renderProjectStatus(status = {}) {
@@ -129,7 +123,7 @@ function renderProjectChrome(chrome = {}, shellState = {}) {
     saveBtn.disabled = isSaveBusy || !canSave;
 }
 
-function wireProjectShellControls(app, authService, projectsService, shellState, runtimeConfig) {
+function wireProjectShellControls(app, authService, projectApi, shellState, runtimeConfig) {
     const backBtn = getButtonElement('backToDashboardBtn');
     const saveBtn = getButtonElement('saveProjectBtn');
     const signOutBtn = getButtonElement('editorSignOutBtn');
@@ -165,7 +159,7 @@ function wireProjectShellControls(app, authService, projectsService, shellState,
         app.setProjectStatus('Saving project...', 'pending');
 
         try {
-            const savedProject = await projectsService.updateProject(
+            const savedProject = await projectApi.updateProject(
                 metadata.id,
                 app.getProjectSaveRequest()
             );
@@ -184,24 +178,30 @@ function wireProjectShellControls(app, authService, projectsService, shellState,
     });
 }
 
-async function bootAppShell() {
-    const runtimeConfig = resolveRuntimeConfig();
-    const authService = createAuthService({ devBackend: runtimeConfig.devBackend });
-    const projectsService = createProjectsService({ devBackend: runtimeConfig.devBackend });
+async function bootDashboardPage(runtimeConfig, authService, projectApi) {
+    const projectId = new URLSearchParams(window.location.search).get('project');
+    if (projectId) {
+        window.location.replace(buildConfiguratorUrl(projectId, runtimeConfig));
+        return;
+    }
+
     const dashboardPage = new DashboardPage({
         root: document.getElementById('dashboardPageRoot'),
         authService,
-        projectsService,
+        projectsService: projectApi,
         runtimeConfig,
-        onOpenProject: (projectId) => {
-            window.location.assign(buildEditorUrl(projectId, runtimeConfig));
+        onOpenProject: (nextProjectId) => {
+            window.location.assign(buildConfiguratorUrl(nextProjectId, runtimeConfig));
         }
     });
-    const projectId = new URLSearchParams(window.location.search).get('project');
 
+    await dashboardPage.show();
+}
+
+async function bootConfiguratorPage(runtimeConfig, authService, projectApi) {
+    const projectId = new URLSearchParams(window.location.search).get('project');
     if (!projectId) {
-        setShellMode('dashboard');
-        await dashboardPage.show();
+        window.location.replace(buildDashboardUrl(runtimeConfig));
         return;
     }
 
@@ -211,12 +211,12 @@ async function bootAppShell() {
         session = await authService.getSession();
     } catch (error) {
         console.error('Session bootstrap failed:', error);
-        window.location.assign(buildDashboardUrl(runtimeConfig));
+        window.location.replace(buildDashboardUrl(runtimeConfig));
         return;
     }
 
     if (!session) {
-        window.location.assign(buildDashboardUrl(runtimeConfig));
+        window.location.replace(buildDashboardUrl(runtimeConfig));
         return;
     }
 
@@ -237,17 +237,16 @@ async function bootAppShell() {
         }
     });
 
-    setShellMode('editor');
     shellState.chrome = app.getProjectChrome();
     renderProjectChrome(shellState.chrome, shellState);
     renderProjectStatus(app.getProjectStatus());
-    wireProjectShellControls(app, authService, projectsService, shellState, runtimeConfig);
+    wireProjectShellControls(app, authService, projectApi, shellState, runtimeConfig);
     app.setSession(session);
     await app.init();
     app.setProjectStatus('Loading project...', 'pending');
 
     try {
-        const project = await projectsService.getProject(projectId);
+        const project = await projectApi.getProject(projectId);
         app.loadProject(project);
     } catch (error) {
         console.error('Project load failed:', error);
@@ -262,4 +261,20 @@ async function bootAppShell() {
     }
 }
 
-bootAppShell().catch((err) => console.error('App init failed:', err));
+async function bootAppShell() {
+    const currentPage = getCurrentPage();
+    if (!currentPage) return;
+
+    const runtimeConfig = resolveRuntimeConfig();
+    const authService = createAuthService({ devBackend: runtimeConfig.devBackend });
+    const projectApi = createProjectsService({ devBackend: runtimeConfig.devBackend });
+
+    if (currentPage === 'dashboard') {
+        await bootDashboardPage(runtimeConfig, authService, projectApi);
+        return;
+    }
+
+    await bootConfiguratorPage(runtimeConfig, authService, projectApi);
+}
+
+bootAppShell().catch((error) => console.error('App init failed:', error));

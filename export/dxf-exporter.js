@@ -1,4 +1,3 @@
-const EDGE_SPORTS = ['Ice Hockey', 'Football', 'Concert', 'Soccer', 'Basketball'];
 const DXF_VERSION = 'AC1009';
 
 function isFiniteNumber(value) {
@@ -173,6 +172,58 @@ function appendDxfText(writer, layer, xFt, yFt, text, heightIn = 10) {
     });
 }
 
+function appendPlanSegments(writer, layer, segments = []) {
+    let lastX = null;
+    let lastY = null;
+    let startX = null;
+    let startY = null;
+
+    (segments || []).forEach((segment) => {
+        if (segment.cmd === 'moveTo') {
+            if (!isFiniteNumber(segment.x) || !isFiniteNumber(segment.y)) return;
+            lastX = segment.x;
+            lastY = segment.y;
+            startX = segment.x;
+            startY = segment.y;
+        } else if (segment.cmd === 'lineTo') {
+            if (lastX === null || lastY === null) return;
+            appendDxfLine(writer, layer, lastX * 12, lastY * 12, segment.x * 12, segment.y * 12);
+            if (isFiniteNumber(segment.x) && isFiniteNumber(segment.y)) {
+                lastX = segment.x;
+                lastY = segment.y;
+            }
+        } else if (segment.cmd === 'arc') {
+            if (
+                !isFiniteNumber(segment.x) ||
+                !isFiniteNumber(segment.y) ||
+                !isFiniteNumber(segment.r) ||
+                Number(segment.r) <= 0 ||
+                !isFiniteNumber(segment.sa) ||
+                !isFiniteNumber(segment.ea)
+            ) {
+                return;
+            }
+
+            let dxfSa = segment.ccw ? segment.ea : segment.sa;
+            let dxfEa = segment.ccw ? segment.sa : segment.ea;
+            let degSa = dxfSa * 180 / Math.PI;
+            let degEa = dxfEa * 180 / Math.PI;
+            degSa = ((degSa % 360) + 360) % 360;
+            degEa = ((degEa % 360) + 360) % 360;
+
+            writer.addArc(layer, segment.x * 12, segment.y * 12, segment.r * 12, degSa, degEa);
+
+            lastX = segment.x + segment.r * Math.cos(segment.ea);
+            lastY = segment.y + segment.r * Math.sin(segment.ea);
+        } else if (segment.cmd === 'closePath') {
+            if (lastX === null || lastY === null || startX === null || startY === null) return;
+            appendDxfLine(writer, layer, lastX * 12, lastY * 12, startX * 12, startY * 12);
+            lastX = startX;
+            lastY = startY;
+        }
+    });
+}
+
 function addDxfShape(writer, template, runoff, layer) {
     const shape = template?.shape || 'rectangle';
     const addLine = (x1, y1, x2, y2) => appendDxfLine(writer, layer, x1 * 12, y1 * 12, x2 * 12, y2 * 12);
@@ -310,19 +361,8 @@ export function buildProfileDxf({ solvers, structuralDepthFt = 0, focalPointFt =
     return writer.build();
 }
 
-export function buildPlanDxf({
-    solvers,
-    sportName,
-    bowlConfig,
-    template,
-    runoffFt = 0,
-    visualFocalXFt,
-    enabledTiers = [],
-    tierAisleLayouts = [],
-    fieldAdapter
-}) {
+export function buildPlanDxf({ template, runoffFt = 0, visualFocalXFt, tierPlanArtifacts = [] }) {
     const writer = createDxfWriter();
-    const tierAisleLayoutMap = new Map((tierAisleLayouts || []).map((layout) => [layout.tierIndex, layout]));
 
     addDxfShape(writer, template, 0, 'Field_Edge');
     addDxfShape(writer, template, runoffFt, 'Runoff');
@@ -334,102 +374,42 @@ export function buildPlanDxf({
     writer.addLine('Focal_Point', fpX, fpY - 24, fpX, fpY + 24);
     writer.addCircle('Focal_Point', fpX, fpY, 18);
 
-    const isEdgeSport = EDGE_SPORTS.includes(sportName);
-    const safeWidth = Number.isFinite(bowlConfig?.width) ? bowlConfig.width : 0;
-    const offsetCorrection = isEdgeSport ? 0 : (safeWidth / 2);
-
-    (solvers || []).forEach((solver, tierIndex) => {
-        if (enabledTiers[tierIndex] === false) return;
-        if (!solver?.rows) return;
-
+    (tierPlanArtifacts || []).forEach((artifact, index) => {
+        const tierIndex = Math.max(0, Math.floor(Number(artifact?.tierIndex) || index));
         const layer = `Tier_${tierIndex + 1}_Plan`;
         const aisleLayer = `Tier_${tierIndex + 1}_Aisles`;
         const sectionLabelLayer = `Tier_${tierIndex + 1}_Section_Labels`;
         const rowLabelLayer = `Tier_${tierIndex + 1}_Row_Seat_Counts`;
+        const rowGeometries = Array.isArray(artifact?.rowGeometries) ? artifact.rowGeometries : [];
+        const aislePolygons = Array.isArray(artifact?.aislePolygons) ? artifact.aislePolygons : [];
+        const overlay = artifact?.overlayData && typeof artifact.overlayData === 'object'
+            ? artifact.overlayData
+            : null;
+        const rowSeatLabels = Array.isArray(overlay?.rowSeatLabels) ? overlay.rowSeatLabels : [];
+        const sectionLabels = Array.isArray(overlay?.sectionLabels) ? overlay.sectionLabels : [];
 
-        solver.rows.forEach((row) => {
-            const offset = (row.x - row.tread_depth) - offsetCorrection;
-            const segments = fieldAdapter?.getBowlGeometry?.(bowlConfig, offset) || [];
+        rowGeometries.forEach((segments) => appendPlanSegments(writer, layer, segments));
 
-            let lastX = null;
-            let lastY = null;
-            let startX = null;
-            let startY = null;
-
-            segments.forEach((segment) => {
-                if (segment.cmd === 'moveTo') {
-                    if (!isFiniteNumber(segment.x) || !isFiniteNumber(segment.y)) return;
-                    lastX = segment.x;
-                    lastY = segment.y;
-                    startX = segment.x;
-                    startY = segment.y;
-                } else if (segment.cmd === 'lineTo') {
-                    if (lastX === null || lastY === null) return;
-                    appendDxfLine(writer, layer, lastX * 12, lastY * 12, segment.x * 12, segment.y * 12);
-                    if (isFiniteNumber(segment.x) && isFiniteNumber(segment.y)) {
-                        lastX = segment.x;
-                        lastY = segment.y;
-                    }
-                } else if (segment.cmd === 'arc') {
-                    if (
-                        !isFiniteNumber(segment.x) ||
-                        !isFiniteNumber(segment.y) ||
-                        !isFiniteNumber(segment.r) ||
-                        Number(segment.r) <= 0 ||
-                        !isFiniteNumber(segment.sa) ||
-                        !isFiniteNumber(segment.ea)
-                    ) {
-                        return;
-                    }
-
-                    let dxfSa = segment.ccw ? segment.ea : segment.sa;
-                    let dxfEa = segment.ccw ? segment.sa : segment.ea;
-                    let degSa = dxfSa * 180 / Math.PI;
-                    let degEa = dxfEa * 180 / Math.PI;
-                    degSa = ((degSa % 360) + 360) % 360;
-                    degEa = ((degEa % 360) + 360) % 360;
-
-                    writer.addArc(layer, segment.x * 12, segment.y * 12, segment.r * 12, degSa, degEa);
-
-                    lastX = segment.x + segment.r * Math.cos(segment.ea);
-                    lastY = segment.y + segment.r * Math.sin(segment.ea);
-                } else if (segment.cmd === 'closePath') {
-                    if (lastX === null || lastY === null || startX === null || startY === null) return;
-                    appendDxfLine(writer, layer, lastX * 12, lastY * 12, startX * 12, startY * 12);
-                    lastX = startX;
-                    lastY = startY;
-                }
-            });
+        aislePolygons.forEach((poly) => {
+            const pts = Array.isArray(poly.points) ? poly.points : [];
+            if (pts.length < 2) return;
+            for (let i = 0; i < pts.length; i++) {
+                const a = pts[i];
+                const b = pts[(i + 1) % pts.length];
+                appendDxfLine(writer, aisleLayer, a.x * 12, a.y * 12, b.x * 12, b.y * 12);
+            }
         });
 
-        const tierAisleLayout = tierAisleLayoutMap.get(tierIndex);
-        if (tierAisleLayout) {
-            const aislePolygons = fieldAdapter?.getTierAisleBandPolygons?.(solver, bowlConfig, tierAisleLayout, offsetCorrection) || [];
-            aislePolygons.forEach((poly) => {
-                const pts = Array.isArray(poly.points) ? poly.points : [];
-                if (pts.length < 2) return;
-                for (let i = 0; i < pts.length; i++) {
-                    const a = pts[i];
-                    const b = pts[(i + 1) % pts.length];
-                    appendDxfLine(writer, aisleLayer, a.x * 12, a.y * 12, b.x * 12, b.y * 12);
-                }
-            });
+        rowSeatLabels.forEach((label) => appendDxfText(writer, rowLabelLayer, label.x, label.y, label.text, 8));
 
-            const overlay = fieldAdapter?.getTierSectionMetricsOverlayData?.(solver, bowlConfig, tierAisleLayout, offsetCorrection);
-            const rowSeatLabels = Array.isArray(overlay?.rowSeatLabels) ? overlay.rowSeatLabels : [];
-            const sectionLabels = Array.isArray(overlay?.sectionLabels) ? overlay.sectionLabels : [];
-
-            rowSeatLabels.forEach((label) => appendDxfText(writer, rowLabelLayer, label.x, label.y, label.text, 8));
-
-            const stackOffsetFt = 1.0;
-            sectionLabels.forEach((label) => {
-                const hasOcc = !!label.occText;
-                appendDxfText(writer, sectionLabelLayer, label.x, label.y + (hasOcc ? stackOffsetFt : 0), label.text, hasOcc ? 12 : 13);
-                if (hasOcc) {
-                    appendDxfText(writer, sectionLabelLayer, label.x, label.y - stackOffsetFt, label.occText, 9);
-                }
-            });
-        }
+        const stackOffsetFt = 1.0;
+        sectionLabels.forEach((label) => {
+            const hasOcc = !!label.occText;
+            appendDxfText(writer, sectionLabelLayer, label.x, label.y + (hasOcc ? stackOffsetFt : 0), label.text, hasOcc ? 12 : 13);
+            if (hasOcc) {
+                appendDxfText(writer, sectionLabelLayer, label.x, label.y - stackOffsetFt, label.occText, 9);
+            }
+        });
     });
 
     return writer.build();

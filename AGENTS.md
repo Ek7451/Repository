@@ -2,13 +2,6 @@
 
 This repo is being refactored in phases. Follow the audit roadmap, not the final architecture diagram.
 
-## Phase order
-
-1. Phase 6: stats panel normalization
-2. Phase 7: app bootstrap and editor controller
-3. Phase 8: residual export alignment 
-4. Phase 9: productization hardening 
-
 Do not start services, dashboard, or page restructuring before AppState is complete and verified.
 
 ## Protected modules

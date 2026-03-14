@@ -1,5 +1,3 @@
-import { ProfileSolver } from '../core/profile-solver.js';
-
 function getTierIndex(solver, fallbackIndex = 0) {
     const tierIndex = Number(solver?.tierIndex);
     return Number.isInteger(tierIndex) ? tierIndex : fallbackIndex;
@@ -12,61 +10,13 @@ function createEmptyOverlay() {
     };
 }
 
-function calculateTierMetricsForExport(solver, bowlConfig, egressParams, offsetCorrection, fieldMetricsAdapter) {
-    if (typeof fieldMetricsAdapter?.calculateRowLength !== 'function') return null;
-
-    return ProfileSolver.calculateTierMetrics(
-        solver,
-        bowlConfig,
-        {
-            calculateRowLength: (...args) => fieldMetricsAdapter.calculateRowLength(...args)
-        },
-        egressParams,
-        offsetCorrection
-    );
-}
-
-function ensureTierLayout({
-    solver,
-    fallbackIndex,
-    bowlConfig,
-    egressParams,
-    offsetCorrection,
-    fieldMetricsAdapter,
-    tierLayoutByIndex,
-    estMetrics
-}) {
-    const tierIndex = getTierIndex(solver, fallbackIndex);
-    let layout = tierLayoutByIndex.get(tierIndex);
-    if (layout) return layout;
-    if (typeof fieldMetricsAdapter?.generateTierAisleLayout !== 'function') return null;
-
-    try {
-        const resolvedMetrics = estMetrics || calculateTierMetricsForExport(
-            solver,
-            bowlConfig,
-            egressParams,
-            offsetCorrection,
-            fieldMetricsAdapter
-        );
-        if (!resolvedMetrics) return null;
-
-        layout = fieldMetricsAdapter.generateTierAisleLayout(
-            solver,
-            bowlConfig,
-            resolvedMetrics,
-            offsetCorrection,
-            egressParams
-        );
-        if (layout) {
-            layout.tierIndex = tierIndex;
-            tierLayoutByIndex.set(tierIndex, layout);
-        }
-    } catch (error) {
-        console.warn('Failed to build tier aisle layout for JSON export', error);
-    }
-
-    return layout || null;
+function buildTierArtifactMap(tierArtifacts = []) {
+    const artifactMap = new Map();
+    (tierArtifacts || []).forEach((artifact) => {
+        const tierIndex = Math.max(0, Math.floor(Number(artifact?.tierIndex) || 0));
+        artifactMap.set(tierIndex, artifact);
+    });
+    return artifactMap;
 }
 
 function summarizeValues(values) {
@@ -90,46 +40,16 @@ function summarizeValues(values) {
 function buildTierExportRecord({
     solver,
     fallbackIndex,
-    bowlConfig,
     egressParams,
-    offsetCorrection,
-    fieldMetricsAdapter,
-    tierLayoutByIndex
+    tierArtifactMap
 }) {
     const tierIndex = getTierIndex(solver, fallbackIndex);
     const tierNumber = tierIndex + 1;
     const rows = Array.isArray(solver?.rows) ? solver.rows : [];
-    const estMetrics = calculateTierMetricsForExport(
-        solver,
-        bowlConfig,
-        egressParams,
-        offsetCorrection,
-        fieldMetricsAdapter
-    );
-    const tierLayout = ensureTierLayout({
-        solver,
-        fallbackIndex,
-        bowlConfig,
-        egressParams,
-        offsetCorrection,
-        fieldMetricsAdapter,
-        tierLayoutByIndex,
-        estMetrics
-    });
-
-    let overlay = createEmptyOverlay();
-    if (tierLayout && typeof fieldMetricsAdapter?.getTierSectionMetricsOverlayData === 'function') {
-        try {
-            overlay = fieldMetricsAdapter.getTierSectionMetricsOverlayData(
-                solver,
-                bowlConfig,
-                tierLayout,
-                offsetCorrection
-            ) || overlay;
-        } catch (error) {
-            console.warn(`Failed to build section metrics overlay data for tier ${tierNumber}`, error);
-        }
-    }
+    const tierArtifact = tierArtifactMap instanceof Map ? tierArtifactMap.get(tierIndex) : null;
+    const estMetrics = tierArtifact?.tierMetrics ?? null;
+    const tierLayout = tierArtifact?.tierLayout ?? null;
+    const overlay = tierArtifact?.overlayData ?? createEmptyOverlay();
 
     const rowSeatLabels = Array.isArray(overlay.rowSeatLabels) ? overlay.rowSeatLabels.slice() : [];
     const sectionLabels = Array.isArray(overlay.sectionLabels) ? overlay.sectionLabels.slice() : [];
@@ -334,25 +254,17 @@ export function buildStudyResultsJsonPayload({
     egressParams,
     focalPointFt,
     primaryTierParameters,
-    tierAisleLayouts = [],
-    offsetCorrection = 0,
-    fieldMetricsAdapter
+    tierArtifacts = []
 }) {
     const activeSolvers = (solvers || []).filter((solver) => solver && Array.isArray(solver.rows) && solver.rows.length > 0);
     if (activeSolvers.length === 0) return null;
 
-    const tierLayoutByIndex = new Map((tierAisleLayouts || []).map((layout) => [
-        getTierIndex(layout, 0),
-        layout
-    ]));
+    const tierArtifactMap = buildTierArtifactMap(tierArtifacts);
     const tierExports = activeSolvers.map((solver, index) => buildTierExportRecord({
         solver,
         fallbackIndex: index,
-        bowlConfig,
         egressParams,
-        offsetCorrection,
-        fieldMetricsAdapter,
-        tierLayoutByIndex
+        tierArtifactMap
     }));
     const totalOccupancyAllTiers = tierExports.reduce((acc, tier) => acc + (Number(tier.totalOccupancy) || 0), 0);
     const totalAislesAllTiers = tierExports.reduce((acc, tier) => acc + (Number(tier.actualLayout?.aisleCenterlineCount) || 0), 0);

@@ -21,18 +21,29 @@ export function getRhinoExportOffsetCorrection(bowlConfig, sportName) {
     return EDGE_SPORTS.includes(sportName) ? 0 : (safeWidth / 2);
 }
 
-function exportRhinoTierSeatBreps(rhino, model, solver, bowlConfig, offsetCorrection, tierIndex, layerIndex, scene3DAdapter) {
-    if (!solver?.rows || solver.rows.length === 0) return 0;
+function getTierArtifactMap(tierArtifacts = []) {
+    const artifactMap = new Map();
+    (tierArtifacts || []).forEach((artifact, index) => {
+        const tierIndex = Number(artifact?.tierIndex);
+        artifactMap.set(Number.isInteger(tierIndex) ? tierIndex : index, artifact);
+    });
+    return artifactMap;
+}
 
-    const pathCache = new Map();
-    const getSubpathsForOffset = (offset) => {
-        const key = Number(offset).toFixed(6);
-        if (!pathCache.has(key)) {
-            const raw = scene3DAdapter.getBowlGeometrySegments(bowlConfig, offset);
-            pathCache.set(key, parseBowlGeometrySubpaths(raw));
-        }
-        return pathCache.get(key);
-    };
+function createTierSubpathLookup(tierArtifact) {
+    const subpathMap = new Map();
+    (tierArtifact?.bowlGeometryByOffset || []).forEach((entry) => {
+        const offsetFt = Number(entry?.offsetFt);
+        if (!Number.isFinite(offsetFt)) return;
+        subpathMap.set(offsetFt.toFixed(6), parseBowlGeometrySubpaths(entry?.segments));
+    });
+
+    return (offset) => subpathMap.get(Number(offset).toFixed(6)) || [];
+}
+
+function exportRhinoTierSeatBreps(rhino, model, solver, offsetCorrection, tierIndex, layerIndex, tierArtifact) {
+    if (!solver?.rows || solver.rows.length === 0) return 0;
+    const getSubpathsForOffset = createTierSubpathLookup(tierArtifact);
 
     let count = 0;
     solver.rows.forEach((row) => {
@@ -56,20 +67,11 @@ function exportRhinoTierSeatBreps(rhino, model, solver, bowlConfig, offsetCorrec
     return count;
 }
 
-function exportRhinoTierStructuralBreps(rhino, model, solver, bowlConfig, offsetCorrection, structuralDepthFt, tierIndex, layerIndex, scene3DAdapter) {
+function exportRhinoTierStructuralBreps(rhino, model, solver, offsetCorrection, tierIndex, layerIndex, tierArtifact) {
     if (!solver?.rows || solver.rows.length === 0) return 0;
-    const profile = scene3DAdapter.buildClosedStructuralProfile?.(solver, structuralDepthFt, tierIndex);
+    const profile = tierArtifact?.structuralProfile;
     if (!Array.isArray(profile) || profile.length < 2) return 0;
-
-    const pathCache = new Map();
-    const getSubpathsForOffset = (offset) => {
-        const key = Number(offset).toFixed(6);
-        if (!pathCache.has(key)) {
-            const raw = scene3DAdapter.getBowlGeometrySegments(bowlConfig, offset);
-            pathCache.set(key, parseBowlGeometrySubpaths(raw));
-        }
-        return pathCache.get(key);
-    };
+    const getSubpathsForOffset = createTierSubpathLookup(tierArtifact);
 
     let count = 0;
     for (let i = 0; i < profile.length - 1; i++) {
@@ -88,10 +90,7 @@ function exportRhinoTierStructuralBreps(rhino, model, solver, bowlConfig, offset
     return count;
 }
 
-function exportRhinoBrepBowl(rhino, model, solvers, bowlConfig, offsetCorrection, tierLayerIndices, scene3DAdapter) {
-    if (typeof scene3DAdapter?.getBowlGeometrySegments !== 'function') {
-        throw new Error('3D bowl segment generator is unavailable');
-    }
+function exportRhinoBrepBowl(rhino, model, solvers, bowlConfig, offsetCorrection, tierLayerIndices, tierArtifactMap) {
     if (!Array.isArray(solvers) || solvers.length === 0) return 0;
 
     let count = 0;
@@ -102,26 +101,26 @@ function exportRhinoBrepBowl(rhino, model, solvers, bowlConfig, offsetCorrection
         const tierLayerIndex = Array.isArray(tierLayerIndices) ? tierLayerIndices[idx] : undefined;
         const rawTierIndex = Number(solver?.tierIndex);
         const solverTierIndex = Number.isInteger(rawTierIndex) ? rawTierIndex : idx;
+        const tierArtifact = tierArtifactMap instanceof Map ? tierArtifactMap.get(solverTierIndex) : null;
+        if (!tierArtifact) return;
 
-        if (structuralDepthFt > 0 && typeof scene3DAdapter.buildClosedStructuralProfile === 'function') {
+        if (structuralDepthFt > 0 && Array.isArray(tierArtifact?.structuralProfile) && tierArtifact.structuralProfile.length > 1) {
             count += exportRhinoTierStructuralBreps(
-                rhino, model, solver, bowlConfig, offsetCorrection, structuralDepthFt,
-                solverTierIndex, tierLayerIndex, scene3DAdapter
+                rhino, model, solver, offsetCorrection, solverTierIndex, tierLayerIndex, tierArtifact
             );
             return;
         }
 
         count += exportRhinoTierSeatBreps(
-            rhino, model, solver, bowlConfig, offsetCorrection,
-            solverTierIndex, tierLayerIndex, scene3DAdapter
+            rhino, model, solver, offsetCorrection, solverTierIndex, tierLayerIndex, tierArtifact
         );
     });
 
     return count;
 }
 
-function exportRhinoAisleBreps(rhino, model, tierLayerSets, scene3DAdapter) {
-    const aisleMeshes = scene3DAdapter?.aisleMeshes;
+function exportRhinoAisleBreps(rhino, model, tierLayerSets, sceneExportData) {
+    const aisleMeshes = sceneExportData?.aisleMeshes;
     if (!Array.isArray(aisleMeshes) || aisleMeshes.length === 0) return 0;
 
     let count = 0;
@@ -144,8 +143,8 @@ function getRhinoNativeSpectatorBlockLimit(nativeSpectatorBlockLimit) {
     return 750;
 }
 
-function countRhinoSpectatorBlocksForExport(scene3DAdapter) {
-    const seatMeshes = scene3DAdapter?.seatMeshes;
+function countRhinoSpectatorBlocksForExport(sceneExportData) {
+    const seatMeshes = sceneExportData?.seatMeshes;
     if (!Array.isArray(seatMeshes) || seatMeshes.length === 0) return 0;
 
     let count = 0;
@@ -156,8 +155,8 @@ function countRhinoSpectatorBlocksForExport(scene3DAdapter) {
     return count;
 }
 
-function exportRhinoSpectatorBreps(rhino, model, tierLayerSets, scene3DAdapter) {
-    const seatMeshes = scene3DAdapter?.seatMeshes;
+function exportRhinoSpectatorBreps(rhino, model, tierLayerSets, sceneExportData) {
+    const seatMeshes = sceneExportData?.seatMeshes;
     if (!Array.isArray(seatMeshes) || seatMeshes.length === 0) return 0;
 
     let count = 0;
@@ -168,15 +167,15 @@ function exportRhinoSpectatorBreps(rhino, model, tierLayerSets, scene3DAdapter) 
         const layerIndex = getRhinoTierLayerIndex(tierLayerSets, 'spectators', tierIndex, meshIndex);
         const tierLabel = getRhinoTierLabel(tierIndex, meshIndex);
         count += exportRhinoSpectatorBlocksFromInstancedMesh(
-            rhino, model, scene3DAdapter.THREE, mesh, `Tier ${tierLabel} Spectator`, layerIndex
+            rhino, model, sceneExportData.THREE, mesh, `Tier ${tierLabel} Spectator`, layerIndex
         );
     });
 
     return count;
 }
 
-function exportRhinoSpectatorMeshes(rhino, model, tierLayerSets, scene3DAdapter) {
-    const seatMeshes = scene3DAdapter?.seatMeshes;
+function exportRhinoSpectatorMeshes(rhino, model, tierLayerSets, sceneExportData) {
+    const seatMeshes = sceneExportData?.seatMeshes;
     if (!Array.isArray(seatMeshes) || seatMeshes.length === 0) return 0;
 
     let count = 0;
@@ -188,7 +187,7 @@ function exportRhinoSpectatorMeshes(rhino, model, tierLayerSets, scene3DAdapter)
         const tierLabel = getRhinoTierLabel(tierIndex, meshIndex);
         const instanceCount = Math.max(0, Number(mesh.count) || 0);
         for (let instIdx = 0; instIdx < instanceCount; instIdx++) {
-            const rhinoMesh = createRhinoMeshFromThreeInstancedMeshInstance(rhino, scene3DAdapter.THREE, mesh, instIdx);
+            const rhinoMesh = createRhinoMeshFromThreeInstancedMeshInstance(rhino, sceneExportData.THREE, mesh, instIdx);
             if (!rhinoMesh) continue;
             count += addRhinoModelObject(rhino, model, rhinoMesh, `Tier ${tierLabel} Spectator ${instIdx + 1}`, layerIndex);
             if (typeof rhinoMesh.destroy === 'function') rhinoMesh.destroy();
@@ -198,8 +197,8 @@ function exportRhinoSpectatorMeshes(rhino, model, tierLayerSets, scene3DAdapter)
     return count;
 }
 
-function exportRhinoSpectatorsAdaptive(rhino, model, tierLayerSets, scene3DAdapter, nativeSpectatorBlockLimit) {
-    const blockCount = countRhinoSpectatorBlocksForExport(scene3DAdapter);
+function exportRhinoSpectatorsAdaptive(rhino, model, tierLayerSets, sceneExportData, nativeSpectatorBlockLimit) {
+    const blockCount = countRhinoSpectatorBlocksForExport(sceneExportData);
     if (blockCount <= 0) return 0;
 
     const nativeLimit = getRhinoNativeSpectatorBlockLimit(nativeSpectatorBlockLimit);
@@ -208,10 +207,10 @@ function exportRhinoSpectatorsAdaptive(rhino, model, tierLayerSets, scene3DAdapt
             `Rhino spectator export: ${blockCount} blocks exceeds native Brep safe limit (${nativeLimit}); ` +
             'exporting spectators as Rhino mesh by tier to avoid rhino3dm abort.'
         );
-        return exportRhinoSpectatorMeshes(rhino, model, tierLayerSets, scene3DAdapter);
+        return exportRhinoSpectatorMeshes(rhino, model, tierLayerSets, sceneExportData);
     }
 
-    return exportRhinoSpectatorBreps(rhino, model, tierLayerSets, scene3DAdapter);
+    return exportRhinoSpectatorBreps(rhino, model, tierLayerSets, sceneExportData);
 }
 
 export async function exportRhinoModel({
@@ -219,7 +218,8 @@ export async function exportRhinoModel({
     solvers,
     bowlConfig,
     sportName,
-    scene3DAdapter,
+    tierArtifacts = [],
+    sceneExportData,
     nativeSpectatorBlockLimit
 }) {
     const model = new rhino.File3dm();
@@ -239,17 +239,20 @@ export async function exportRhinoModel({
         const offsetCorrection = getRhinoExportOffsetCorrection(bowlConfig, sportName);
         const tierLayerSets = ensureRhinoTierCategoryLayers(rhino, model, solvers);
         const bowlTierLayerIndices = Array.isArray(tierLayerSets?.bowl) ? tierLayerSets.bowl : [];
+        const tierArtifactMap = getTierArtifactMap(tierArtifacts);
 
         let bowlExportedCount = exportRhinoBrepBowl(
-            rhino, model, solvers, bowlConfig, offsetCorrection, bowlTierLayerIndices, scene3DAdapter
+            rhino, model, solvers, bowlConfig, offsetCorrection, bowlTierLayerIndices, tierArtifactMap
         );
         let exportedCount = bowlExportedCount;
-        exportedCount += exportRhinoAisleBreps(rhino, model, tierLayerSets, scene3DAdapter);
-        exportedCount += exportRhinoSpectatorsAdaptive(rhino, model, tierLayerSets, scene3DAdapter, nativeSpectatorBlockLimit);
+        exportedCount += exportRhinoAisleBreps(rhino, model, tierLayerSets, sceneExportData);
+        exportedCount += exportRhinoSpectatorsAdaptive(
+            rhino, model, tierLayerSets, sceneExportData, nativeSpectatorBlockLimit
+        );
 
         if (bowlExportedCount === 0) {
             console.warn('Direct Brep export produced no geometry, falling back to Rhino mesh export');
-            (scene3DAdapter?.bowlMeshes || []).forEach((mesh, meshIndex) => {
+            (sceneExportData?.bowlMeshes || []).forEach((mesh, meshIndex) => {
                 const rhinoMesh = createRhinoMeshFromThreeMesh(rhino, mesh);
                 if (!rhinoMesh) return;
                 const tierIndex = getRhinoTierIndexFromObject(mesh, meshIndex);

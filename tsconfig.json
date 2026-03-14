@@ -14,7 +14,7 @@
   "include": [
     "app.js",
     "ui/app.js",
-    "pages/dashboard-page.js",
+    "pages/dashboard/dashboard.js",
     "services/**/*.js",
     "state/**/*.js",
     "core/sightline-calc.js",

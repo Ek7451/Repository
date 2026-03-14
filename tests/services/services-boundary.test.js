@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAuthService } from '../../services/auth-service.js';
-import { createProjectsService } from '../../services/projects-service.js';
+import { createProjectsService } from '../../services/project-api.js';
 
 class MemoryStorage {
     constructor() {

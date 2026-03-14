@@ -5,16 +5,17 @@
 
 import { getSportNames, getTemplate } from '../core/sports-templates.js';
 import { ProfileSolver } from '../core/profile-solver.js';
-import { SightlineAnalyzer, getCValueQuality } from '../core/sightline-calc.js';
 import { FieldRenderer } from '../viz/field-renderer.js';
 import { ProfileRenderer } from '../viz/profile-renderer.js';
 import { DEFAULT_STARTUP_PROFILE } from '../core/default-starting-profile.js';
 import { buildPlanDxf, buildProfileDxf } from '../export/dxf-exporter.js';
 import { buildObjText, buildStudyResultsJsonPayload, buildTierMetricsCsv } from '../export/obj-csv-exporter.js';
-import { exportRhinoModel, getRhinoExportOffsetCorrection } from '../export/rhino/rhino-exporter.js';
+import { exportRhinoModel } from '../export/rhino/rhino-exporter.js';
 import { AppState } from '../state/app-state.js';
+import { buildProjectSaveRequest, cloneProjectMetadata } from '../state/project.js';
 import { CameraBookmarks } from './camera-bookmarks.js';
-import { StatsPanel } from './stats-panel.js';
+import { EditorShell } from './editor-shell.js';
+import { buildStatsViewModel, StatsPanel } from './stats-panel.js';
 // Scene3D is imported lazily in _init3DAsync to avoid blocking if Three.js CDN is unavailable
 
 const EDGE_SPORTS = ['Ice Hockey', 'Football', 'Concert', 'Soccer', 'Basketball'];
@@ -104,10 +105,6 @@ function getInputElement(id) {
     return /** @type {HTMLInputElement | null} */ (document.getElementById(id));
 }
 
-function getButtonElement(id) {
-    return /** @type {HTMLButtonElement | null} */ (document.getElementById(id));
-}
-
 function getSelectElement(id) {
     return /** @type {HTMLSelectElement | null} */ (document.getElementById(id));
 }
@@ -116,27 +113,10 @@ function getCanvasElement(id) {
     return /** @type {HTMLCanvasElement | null} */ (document.getElementById(id));
 }
 
-function getAnchorElement(id) {
-    return /** @type {HTMLAnchorElement | null} */ (document.getElementById(id));
-}
-
-function getTargetElement(target) {
-    return target instanceof Element ? target : null;
-}
-
 function cloneSessionDto(session) {
     return session && typeof session === 'object'
         ? { ...session }
         : null;
-}
-
-function cloneProjectMetadata(project = null) {
-    return {
-        id: typeof project?.id === 'string' ? project.id : null,
-        name: typeof project?.name === 'string' ? project.name : '',
-        createdAt: typeof project?.createdAt === 'string' ? project.createdAt : '',
-        updatedAt: typeof project?.updatedAt === 'string' ? project.updatedAt : ''
-    };
 }
 
 function normalizeProjectStatus(message, tone = 'default') {
@@ -148,6 +128,11 @@ function normalizeProjectStatus(message, tone = 'default') {
             ? tone.trim()
             : 'default'
     };
+}
+
+function getSolverTierIndex(solver, fallbackIndex = 0) {
+    const tierIndex = Number(solver?.tierIndex);
+    return Number.isInteger(tierIndex) ? tierIndex : fallbackIndex;
 }
 
 function buildProjectChromeSnapshot(projectMetadata, session, deriveProjectName) {
@@ -183,6 +168,7 @@ export class SeatingBowlApp {
         this._rhino3dmPromise = null;
         this.cameraBookmarks = null;
         this.statsPanel = null;
+        this.editorShell = null;
 
         // Track tier count to implement progressive stacking
         this._lastTierCount = 1; // Default
@@ -191,8 +177,6 @@ export class SeatingBowlApp {
         this._tier2Initialized = false;
         this._tier3Initialized = false;
 
-        this._themeStorageKey = 'jlg-seating-theme';
-        this._theme = 'light';
         this._session = null;
         this._projectMetadata = cloneProjectMetadata();
         this._projectStatus = normalizeProjectStatus();
@@ -202,7 +186,6 @@ export class SeatingBowlApp {
         this._onStatusChanged = typeof callbacks.onStatusChanged === 'function'
             ? callbacks.onStatusChanged
             : null;
-        this._editorShellUiCleanup = null;
     }
 
     async init() {
@@ -214,12 +197,9 @@ export class SeatingBowlApp {
             this.fieldRenderer = new FieldRenderer(getCanvasElement('fieldCanvas'));
             this.profileRenderer = new ProfileRenderer(getCanvasElement('profileCanvas'));
 
-            // Initialize theme state before first render
-            this._initTheme();
-
             // Populate sport dropdown
             this._populateSports();
-            this._initEditorShellUi();
+            this._initEditorShell();
 
             // Wire up events (must happen before update)
             this._wireEvents();
@@ -233,9 +213,6 @@ export class SeatingBowlApp {
             this._refreshProjectChrome();
             this.setProjectStatus('Project persistence ready');
 
-            // Initialize tooltips
-            this._initTooltips();
-
             // Initial render
             this.update();
 
@@ -244,7 +221,7 @@ export class SeatingBowlApp {
             if (tc) this._lastTierCount = parseInt(tc.value) || 1;
 
             // Set initial view state (hides Field Setup on Profile tab)
-            requestAnimationFrame(() => this._applyUrlViewOverride());
+            requestAnimationFrame(() => this.editorShell?.applyUrlViewOverride());
 
             // 3D scene is initialized lazily when user clicks the 3D tab
 
@@ -254,8 +231,8 @@ export class SeatingBowlApp {
     }
 
     destroy() {
-        this._editorShellUiCleanup?.();
-        this._editorShellUiCleanup = null;
+        this.editorShell?.destroy();
+        this.editorShell = null;
         this.cameraBookmarks?.destroy();
         this.cameraBookmarks = null;
         this.scene3D?.dispose?.();
@@ -269,8 +246,6 @@ export class SeatingBowlApp {
             clearTimeout(this._debounceTimer);
             this._debounceTimer = null;
         }
-        clearTimeout(this._feedbackBtnCopyFallbackTimer);
-        clearTimeout(this._feedbackBtnResetTimer);
         this._onProjectChromeChanged = null;
         this._onStatusChanged = null;
     }
@@ -311,10 +286,10 @@ export class SeatingBowlApp {
         this._projectMetadata.name = name;
         this._refreshProjectChrome();
 
-        return {
+        return buildProjectSaveRequest({
             name,
             state: this.state.toJSON()
-        };
+        });
     }
 
     setProjectStatus(message, tone = 'default') {
@@ -348,28 +323,38 @@ export class SeatingBowlApp {
         this._onStatusChanged?.(this.getProjectStatus());
     }
 
-    _getSavedTheme() {
-        try {
-            const stored = localStorage.getItem(this._themeStorageKey);
-            if (stored === 'dark' || stored === 'light') return stored;
-        } catch {
-            // Ignore localStorage access errors (private mode / policy restrictions)
-        }
-
-        const domTheme = document.documentElement?.getAttribute('data-theme');
-        return domTheme === 'dark' ? 'dark' : 'light';
+    _initEditorShell() {
+        this.editorShell?.destroy();
+        this.editorShell = new EditorShell({
+            themeStorageKey: 'jlg-seating-theme',
+            onThemeChanged: (theme, options = {}) => {
+                this._handleThemeChanged(theme, options);
+            },
+            onViewTabChanged: (tab) => {
+                this._handleViewTabChanged(tab);
+            },
+            onResultsTabChanged: (tab) => {
+                this.state.ui.activeResultsTab = tab;
+            },
+            onExportRequested: (kind) => this._buildExportDescriptor(kind),
+            onConfigImported: ({ text }) => {
+                this._loadConfigText(text);
+            },
+            onScene3DResizeRequested: () => {
+                this.scene3D?.forceResize();
+            }
+        });
+        this.editorShell.init();
     }
 
-    _initTheme() {
-        this._applyTheme(this._getSavedTheme(), { persist: false, rerender: false });
-
-        const themeToggleBtn = getButtonElement('themeToggleBtn');
-        if (!themeToggleBtn) return;
-
-        themeToggleBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this._toggleTheme();
-        });
+    _handleThemeChanged(theme, { rerender = true } = {}) {
+        void theme;
+        if (this.scene3D && typeof this.scene3D.applyTheme === 'function') {
+            this.scene3D.applyTheme();
+        }
+        if (rerender && this.fieldRenderer && this.profileRenderer) {
+            this.update();
+        }
     }
 
     _initCameraBookmarks() {
@@ -393,10 +378,13 @@ export class SeatingBowlApp {
                 this._restoreCameraBookmark(this.state.bookmarks[index]);
             },
             exportBookmarkImage: (index, fallbackName = null) => {
-                this._export3DImage(this.state.bookmarks[index]?.name ?? fallbackName);
+                const descriptor = this._build3DImageExportDescriptor(this.state.bookmarks[index]?.name ?? fallbackName);
+                if (descriptor) {
+                    this.editorShell?.download(descriptor);
+                }
             },
             onLayoutChanged: () => {
-                this._ensure3DContainerSize();
+                this.editorShell?.ensure3DContainerSize();
                 this.scene3D?.forceResize();
             }
         });
@@ -409,60 +397,12 @@ export class SeatingBowlApp {
         });
     }
 
-    _toggleTheme() {
-        this._applyTheme(this._theme === 'dark' ? 'light' : 'dark');
-    }
-
-    _applyTheme(theme, { persist = true, rerender = true } = {}) {
-        const nextTheme = theme === 'dark' ? 'dark' : 'light';
-        this._theme = nextTheme;
-
-        document.documentElement.setAttribute('data-theme', nextTheme);
-        if (document.body) {
-            document.body.classList.toggle('theme-dark', nextTheme === 'dark');
-        }
-
-        if (persist) {
-            try {
-                localStorage.setItem(this._themeStorageKey, nextTheme);
-            } catch {
-                // Ignore localStorage access errors
-            }
-        }
-
-        this._refreshThemeToggleButton();
-
-        if (this.scene3D && typeof this.scene3D.applyTheme === 'function') {
-            this.scene3D.applyTheme();
-        }
-
-        if (rerender && this.fieldRenderer && this.profileRenderer) {
-            this.update();
-        }
-    }
-
-    _refreshThemeToggleButton() {
-        const themeToggleBtn = document.getElementById('themeToggleBtn');
-        if (!themeToggleBtn) return;
-
-        const isDark = this._theme === 'dark';
-        const nextModeLabel = isDark ? 'light' : 'dark';
-        themeToggleBtn.setAttribute('aria-pressed', String(isDark));
-        themeToggleBtn.setAttribute('aria-label', `Toggle dark mode (currently ${this._theme})`);
-        themeToggleBtn.setAttribute('title', `Switch to ${nextModeLabel} mode`);
-
-        const label = themeToggleBtn.querySelector('.theme-toggle-label');
-        if (label) {
-            label.textContent = `Switch to ${nextModeLabel} mode`;
-        }
-    }
-
     async _init3DAsync() {
         if (this._scene3dReady || this._scene3dLoading) return;
         this._scene3dLoading = true;
 
         const container3d = document.getElementById('scene3dContainer');
-        this._ensure3DContainerSize();
+        this.editorShell?.ensure3DContainerSize();
         try {
             // Show loading indicator
             container3d.innerHTML = '<div class="loading-3d"><div class="spinner"></div><span>Loading 3D engine...</span></div>';
@@ -527,108 +467,6 @@ export class SeatingBowlApp {
             option.value = name;
             option.textContent = name;
             select.appendChild(option);
-        }
-    }
-
-    _initEditorShellUi() {
-        if (this._editorShellUiCleanup) return;
-
-        const cleanup = [];
-        const rightSidebar = /** @type {HTMLElement | null} */ (document.querySelector('.right-sidebar'));
-        const toggleResultsBtn = getButtonElement('toggleResultsBtn');
-        if (toggleResultsBtn && rightSidebar) {
-            const handleToggleResults = () => {
-                rightSidebar.classList.toggle('collapsed');
-                setTimeout(() => window.dispatchEvent(new Event('resize')), 300);
-            };
-            toggleResultsBtn.dataset.resultsToggleBound = 'app';
-            toggleResultsBtn.addEventListener('click', handleToggleResults);
-            cleanup.push(() => toggleResultsBtn.removeEventListener('click', handleToggleResults));
-        }
-
-        const leftSidebar = /** @type {HTMLElement | null} */ (document.querySelector('.left-sidebar'));
-        const resizer = getHtmlElement('leftSidebarResizer');
-        if (resizer && leftSidebar) {
-            let isResizing = false;
-            const handleMouseDown = (e) => {
-                isResizing = true;
-                resizer.classList.add('resizing');
-                document.body.style.cursor = 'col-resize';
-                e.preventDefault();
-            };
-            const handleMouseMove = (e) => {
-                if (!isResizing) return;
-                let newWidth = e.clientX;
-                if (newWidth < 250) newWidth = 250;
-                if (newWidth > 500) newWidth = 500;
-                leftSidebar.style.width = `${newWidth}px`;
-                leftSidebar.style.minWidth = `${newWidth}px`;
-            };
-            const handleMouseUp = () => {
-                if (!isResizing) return;
-                isResizing = false;
-                resizer.classList.remove('resizing');
-                document.body.style.cursor = '';
-                window.dispatchEvent(new Event('resize'));
-            };
-            resizer.addEventListener('mousedown', handleMouseDown);
-            document.addEventListener('mousemove', handleMouseMove);
-            document.addEventListener('mouseup', handleMouseUp);
-            cleanup.push(() => resizer.removeEventListener('mousedown', handleMouseDown));
-            cleanup.push(() => document.removeEventListener('mousemove', handleMouseMove));
-            cleanup.push(() => document.removeEventListener('mouseup', handleMouseUp));
-        }
-
-        const rightResizer = getHtmlElement('rightSidebarResizer');
-        if (rightResizer && rightSidebar) {
-            let isRightResizing = false;
-            const handleMouseDown = (e) => {
-                isRightResizing = true;
-                rightResizer.classList.add('resizing');
-                document.body.style.cursor = 'col-resize';
-                e.preventDefault();
-            };
-            const handleMouseMove = (e) => {
-                if (!isRightResizing) return;
-                let newWidth = window.innerWidth - e.clientX;
-                if (newWidth < 250) newWidth = 250;
-                if (newWidth > 1000) newWidth = 1000;
-                if (newWidth > 250 && rightSidebar.classList.contains('collapsed')) {
-                    rightSidebar.classList.remove('collapsed');
-                }
-                rightSidebar.style.width = `${newWidth}px`;
-                rightSidebar.style.minWidth = `${newWidth}px`;
-            };
-            const handleMouseUp = () => {
-                if (!isRightResizing) return;
-                isRightResizing = false;
-                rightResizer.classList.remove('resizing');
-                document.body.style.cursor = '';
-                window.dispatchEvent(new Event('resize'));
-            };
-            rightResizer.addEventListener('mousedown', handleMouseDown);
-            document.addEventListener('mousemove', handleMouseMove);
-            document.addEventListener('mouseup', handleMouseUp);
-            cleanup.push(() => rightResizer.removeEventListener('mousedown', handleMouseDown));
-            cleanup.push(() => document.removeEventListener('mousemove', handleMouseMove));
-            cleanup.push(() => document.removeEventListener('mouseup', handleMouseUp));
-        }
-
-        this._editorShellUiCleanup = () => {
-            cleanup.forEach((dispose) => dispose());
-        };
-    }
-
-    _applyUrlViewOverride() {
-        try {
-            const params = new URLSearchParams(window.location.search);
-            const view = params.get('view');
-            if (!view) return;
-            if (view === 'profile' || view === 'field' || view === 'scene3d') {
-                this._switchViewTab(view);
-            }
-        } catch {
-            // Ignore malformed URLs in normal interactive use.
         }
     }
 
@@ -782,8 +620,13 @@ export class SeatingBowlApp {
             section.classList.toggle('tier-disabled', !enabled);
         });
 
-        this._switchViewTab(this.state.ui.activeViewTab);
-        this._switchResultsTab(this.state.ui.activeResultsTab);
+        this.editorShell?.syncFromState({
+            activeViewTab: this.state.ui.activeViewTab,
+            activeResultsTab: this.state.ui.activeResultsTab
+        });
+        if (this.state.ui.activeViewTab === 'scene3d') {
+            this._handleViewTabChanged('scene3d');
+        }
     }
 
     _wireEvents() {
@@ -856,116 +699,6 @@ export class SeatingBowlApp {
             this._bindSelectControl(id);
         });
 
-        // View tab buttons
-        document.querySelectorAll('.view-tab-btn').forEach(btn => {
-            const button = /** @type {HTMLButtonElement} */ (btn);
-            button.addEventListener('click', () => {
-                this._switchViewTab(button.dataset.tab);
-            });
-        });
-
-        document.querySelectorAll('.results-tab-btn').forEach(btn => {
-            const button = /** @type {HTMLButtonElement} */ (btn);
-            button.addEventListener('click', () => {
-                this._switchResultsTab(button.dataset.target);
-            });
-        });
-
-        const feedbackBtn = getAnchorElement('feedbackBtn');
-        if (feedbackBtn) {
-            const feedbackEmail = 'eklinger@jlgarchitects.com';
-            const baseLabel = feedbackBtn.textContent?.trim() || 'Feedback';
-            const feedbackHref = feedbackBtn.getAttribute('href') || `mailto:${feedbackEmail}`;
-            feedbackBtn.addEventListener('click', (e) => {
-                // Force mailto navigation explicitly (some environments don't honor the anchor default reliably).
-                e.preventDefault();
-                try {
-                    window.location.href = feedbackHref;
-                } catch {
-                    // Ignore and continue to clipboard fallback below.
-                }
-
-                // Fallback: if no mail client took focus, copy the email address for manual paste.
-                clearTimeout(this._feedbackBtnCopyFallbackTimer);
-                this._feedbackBtnCopyFallbackTimer = setTimeout(async () => {
-                    if (!document.hasFocus()) return;
-                    let copied = false;
-                    try {
-                        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-                            await navigator.clipboard.writeText(feedbackEmail);
-                            copied = true;
-                        }
-                    } catch {
-                        copied = false;
-                    }
-                    if (!copied) return;
-                    feedbackBtn.textContent = 'Email Copied';
-                    clearTimeout(this._feedbackBtnResetTimer);
-                    this._feedbackBtnResetTimer = setTimeout(() => {
-                        feedbackBtn.textContent = baseLabel;
-                    }, 1600);
-                }, 700);
-            });
-        }
-
-        window.addEventListener('resize', () => {
-            const panel = document.getElementById('scene3dPanel');
-            if (panel && panel.classList.contains('active') && this.scene3D) {
-                this._ensure3DContainerSize();
-                this.scene3D.forceResize();
-            }
-        });
-
-        // Export buttons (now in export menu)
-        const exportBtn = getButtonElement('exportBtn');
-        const exportObjBtn = getButtonElement('exportObjBtn');
-        const exportRhinoBtn = getButtonElement('exportRhinoBtn');
-        const exportDxfBtn = getButtonElement('exportDxfBtn');
-        const exportPlanDxfBtn = getButtonElement('exportPlanDxfBtn');
-        const exportCsvBtn = getButtonElement('exportCsvBtn');
-        const exportConfigBtn = getButtonElement('exportConfigBtn');
-        const loadConfigBtn = getButtonElement('loadConfigBtn');
-        const configFileInput = getInputElement('configFileInput');
-
-        if (exportBtn) exportBtn.addEventListener('click', () => this._exportJSON());
-        if (exportObjBtn) exportObjBtn.addEventListener('click', () => this._exportOBJ());
-        if (exportRhinoBtn) exportRhinoBtn.addEventListener('click', () => this._export3DM());
-        if (exportDxfBtn) exportDxfBtn.addEventListener('click', () => this._exportDXF());
-        if (exportPlanDxfBtn) exportPlanDxfBtn.addEventListener('click', () => this._exportPlanDXF());
-        if (exportCsvBtn) exportCsvBtn.addEventListener('click', () => this._exportCSV());
-        if (exportConfigBtn) exportConfigBtn.addEventListener('click', () => this._exportConfig());
-        if (loadConfigBtn) loadConfigBtn.addEventListener('click', () => configFileInput && configFileInput.click());
-        if (configFileInput) configFileInput.addEventListener('change', (e) => this._loadConfig(e));
-
-        // Export menu toggle + auto-collapse behavior
-        const exportMenuPanel = /** @type {HTMLElement | null} */ (document.querySelector('.export-menu-panel'));
-        const exportMenuHeader = /** @type {HTMLButtonElement | null} */ (document.querySelector('.export-header-btn'));
-        if (exportMenuHeader && exportMenuPanel) {
-            exportMenuHeader.addEventListener('click', (e) => {
-                e.stopPropagation();
-                exportMenuPanel.classList.toggle('collapsed');
-            });
-
-            // Auto-collapse when any export item is clicked
-            exportMenuPanel.querySelectorAll('.export-item').forEach(item => {
-                item.addEventListener('click', () => {
-                    setTimeout(() => exportMenuPanel.classList.add('collapsed'), 150);
-                });
-            });
-
-            // Auto-collapse when clicking outside the export menu
-            document.addEventListener('click', (e) => {
-                if (!(e.target instanceof Node)) return;
-                if (!exportMenuPanel.classList.contains('collapsed') &&
-                    !exportMenuPanel.contains(e.target)) {
-                    exportMenuPanel.classList.add('collapsed');
-                }
-            });
-
-            // Prevent clicks inside menu body from bubbling to document
-            exportMenuPanel.addEventListener('click', (e) => e.stopPropagation());
-        }
-
         // Clip Plane controls
         this._bindCheckboxControl('enableClipPlane', (enabled) => {
             const controls = getHtmlElement('clipPlaneControls');
@@ -994,108 +727,6 @@ export class SeatingBowlApp {
         if (sightlinesBtn) sightlinesBtn.addEventListener('change', () => syncSightlinesToggles(sightlinesBtn));
         if (sightlinesBtnField) sightlinesBtnField.addEventListener('change', () => syncSightlinesToggles(sightlinesBtnField));
         this._bindCheckboxControl('toggleSectionMetricsBtn');
-
-        // Collapsible sections
-        // Collapsible sections (Event Delegation to handle dynamic content)
-        // Collapsible sections
-        // Collapsible sections (Event Delegation to handle dynamic content)
-        document.body.addEventListener('click', (e) => {
-            const target = getTargetElement(e.target);
-            if (!target) return;
-            // 1. If clicking the TOGGLE (checkbox) or LABEL, do NOT toggle collapse.
-            if (target.closest('.header-toggle')) {
-                return;
-            }
-
-            // 2. If clicking anywhere else in the HEADER, toggle collapse.
-            const header = target.closest('.section-header');
-            if (header && header.parentElement.classList.contains('collapsible')) {
-                header.parentElement.classList.toggle('collapsed');
-            }
-        });
-    }
-
-    _initTooltips() {
-        // Create container if missing
-        let tooltip = document.getElementById('tooltip-container');
-        if (!tooltip) {
-            tooltip = document.createElement('div');
-            tooltip.id = 'tooltip-container';
-            document.body.appendChild(tooltip);
-        }
-
-        let activeIcon = null;
-
-        document.body.addEventListener('mouseover', (e) => {
-            const target = getTargetElement(e.target);
-            if (!target) return;
-            const icon = target.closest('.info-icon');
-            if (!icon) return;
-
-            const text = icon.getAttribute('data-tooltip');
-            if (!text) return;
-
-            activeIcon = icon;
-            tooltip.innerHTML = text;
-            tooltip.classList.add('visible');
-
-            // Position it
-            const rect = icon.getBoundingClientRect();
-            const tipRect = tooltip.getBoundingClientRect();
-
-            // Default: Top of icon
-            let top = rect.top - tipRect.height - 8;
-            let left = rect.left + (rect.width - tipRect.width) / 2;
-
-            // Boundary checks
-            // If top is off-screen, move to bottom
-            if (top < 10) {
-                top = rect.bottom + 8;
-            }
-
-            // If left is off-screen
-            if (left < 10) {
-                left = 10;
-            } else if (left + tipRect.width > window.innerWidth - 10) {
-                left = window.innerWidth - tipRect.width - 10;
-            }
-
-            tooltip.style.top = `${top}px`;
-            tooltip.style.left = `${left}px`;
-        });
-
-        document.body.addEventListener('mouseout', (e) => {
-            const target = getTargetElement(e.target);
-            if (!target) return;
-            const icon = target.closest('.info-icon');
-            if (icon && icon === activeIcon) {
-                tooltip.classList.remove('visible');
-                activeIcon = null;
-            }
-        });
-    }
-
-    /**
-     * Sync a slider value to its paired number input.
-     * Convention: slider id = "fooSlider", input id = "fooInput"
-     */
-    _syncSliderToInput(slider) {
-        const inputId = slider.id.replace('Slider', 'Input');
-        const input = getInputElement(inputId);
-        if (input) {
-            input.value = slider.value;
-        }
-    }
-
-    /**
-     * Sync a number input value to its paired slider.
-     */
-    _syncInputToSlider(numInput) {
-        const sliderId = numInput.id.replace('Input', 'Slider');
-        const slider = getInputElement(sliderId);
-        if (slider) {
-            slider.value = numInput.value;
-        }
     }
 
     _onSportChange() {
@@ -1143,68 +774,10 @@ export class SeatingBowlApp {
         this._applyStateToDom();
     }
 
-    _switchViewTab(tab) {
+    _handleViewTabChanged(tab) {
         const nextTab = ['profile', 'field', 'scene3d'].includes(tab) ? tab : 'profile';
         this.state.ui.activeViewTab = nextTab;
 
-        // Update tab buttons
-        document.querySelectorAll('.view-tab-btn').forEach(b => b.classList.remove('active'));
-        const activeBtn = document.querySelector(`.view-tab-btn[data-tab="${nextTab}"]`);
-        if (activeBtn) activeBtn.classList.add('active');
-
-        // Update panels
-        document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
-        const activePanel = document.getElementById(`${nextTab}Panel`);
-        if (activePanel) activePanel.classList.add('active');
-
-        // Helper to toggle visibility
-        const toggle = (id, show) => {
-            const el = document.getElementById(id);
-            if (el) el.style.display = show ? 'block' : 'none';
-        };
-
-        const set3DExportButtonState = (button) => {
-            if (!button) return;
-            button.disabled = nextTab !== 'scene3d';
-            if (nextTab === 'scene3d') {
-                button.style.opacity = '1';
-                button.style.cursor = 'pointer';
-            } else {
-                button.style.opacity = '0.5';
-                button.style.cursor = 'not-allowed';
-            }
-        };
-        set3DExportButtonState(document.getElementById('exportObjBtn'));
-        set3DExportButtonState(document.getElementById('exportRhinoBtn'));
-
-        // Context-sensitive controls
-        if (nextTab === 'profile') {
-            toggle('fieldSetupSection', true); // Show Field Setup!
-            toggle('profileParamsSection', true);
-            toggle('focalPointSection', true);
-            toggle('additionalTiersSection', true);
-            toggle('planViewControls', false);
-            toggle('resultsSection', true);
-            toggle('bowlConfigSection', true);
-        } else if (nextTab === 'field') {
-            toggle('fieldSetupSection', true);
-            toggle('profileParamsSection', false);
-            toggle('focalPointSection', true);
-            toggle('additionalTiersSection', false);
-            toggle('planViewControls', true);
-            toggle('resultsSection', true);
-            toggle('bowlConfigSection', true);
-        } else if (nextTab === 'scene3d') {
-            toggle('fieldSetupSection', true);
-            toggle('profileParamsSection', false);
-            toggle('focalPointSection', false);
-            toggle('additionalTiersSection', false);
-            toggle('planViewControls', false);
-            toggle('resultsSection', true);
-            toggle('bowlConfigSection', true);
-        }
-
-        // After switching, resize canvas and re-render
         requestAnimationFrame(() => {
             if (nextTab === 'field') {
                 const canvas = getCanvasElement('fieldCanvas');
@@ -1215,7 +788,10 @@ export class SeatingBowlApp {
                     canvas.height = rect.height;
                 }
                 this.update();
-            } else if (nextTab === 'profile') {
+                return;
+            }
+
+            if (nextTab === 'profile') {
                 const canvas = getCanvasElement('profileCanvas');
                 const parent = canvas?.parentElement;
                 const rect = parent?.getBoundingClientRect();
@@ -1224,64 +800,17 @@ export class SeatingBowlApp {
                     canvas.height = rect.height;
                 }
                 this.update();
-            } else if (nextTab === 'scene3d') {
-                this._ensure3DContainerSize();
-                // Lazy init: only load 3D when user first clicks the tab
-                if (!this._scene3dReady) {
-                    this._init3DAsync();
-                } else if (this.scene3D) {
-                    this.scene3D.forceResize();
-                    this._update3D();
-                }
+                return;
+            }
+
+            this.editorShell?.ensure3DContainerSize();
+            if (!this._scene3dReady) {
+                void this._init3DAsync();
+            } else if (this.scene3D) {
+                this.scene3D.forceResize();
+                this._update3D();
             }
         });
-    }
-
-    _switchResultsTab(targetId) {
-        const nextTarget = targetId === 'detailsTab' ? 'detailsTab' : 'statsTab';
-        this.state.ui.activeResultsTab = nextTarget;
-
-        const tabBtns = document.querySelectorAll('.results-tab-btn');
-        const tabPanels = document.querySelectorAll('.results-tab-panel');
-
-        tabBtns.forEach((btn) => {
-            btn.classList.toggle('active', btn.getAttribute('data-target') === nextTarget);
-        });
-        tabPanels.forEach((panel) => {
-            panel.classList.toggle('active', panel.id === nextTarget);
-            if (panel.id === nextTarget) {
-                panel.scrollTop = 0;
-            }
-        });
-
-        const rightSidebar = /** @type {HTMLElement | null} */ (document.querySelector('.right-sidebar'));
-        if (rightSidebar && rightSidebar.classList.contains('collapsed')) {
-            rightSidebar.classList.remove('collapsed');
-            setTimeout(() => window.dispatchEvent(new Event('resize')), 300);
-        }
-    }
-
-    _ensure3DContainerSize() {
-        const panel = getHtmlElement('scene3dPanel');
-        const container = getHtmlElement('scene3dContainer');
-        if (!panel || !container) return;
-        const bar = getHtmlElement('cameraBookmarksBar');
-        const panelRect = panel.getBoundingClientRect();
-        const barRect = bar ? bar.getBoundingClientRect() : null;
-        const panelH = Math.floor(panelRect.height || 0);
-        const barH = Math.ceil(barRect ? barRect.height : 0);
-        const targetH = Math.max(120, panelH - barH);
-        if (panelH > 50) {
-            container.style.height = `${targetH}px`;
-            return;
-        }
-
-        // Fallback when layout is not resolved yet.
-        const viewContainer = document.querySelector('.view-container');
-        const vr = viewContainer ? viewContainer.getBoundingClientRect() : null;
-        const fallbackH = Math.floor((vr && vr.height) ? vr.height : window.innerHeight);
-        const fallbackTarget = Math.max(120, fallbackH - barH);
-        if (fallbackTarget > 50) container.style.height = `${fallbackTarget}px`;
     }
 
     _scheduleUpdate() {
@@ -1432,7 +961,7 @@ export class SeatingBowlApp {
             this._update3D();
 
             // Update stats
-            this._updateStats(this._buildStatsViewModel({
+            this._updateStats(buildStatsViewModel({
                 solvers,
                 focalPointFt,
                 bowlConfig,
@@ -1450,7 +979,7 @@ export class SeatingBowlApp {
         try {
             const panel = document.getElementById('scene3dPanel');
             if (panel && panel.classList.contains('active')) {
-                this._ensure3DContainerSize();
+                this.editorShell?.ensure3DContainerSize();
                 this.scene3D.forceResize();
             }
 
@@ -1494,267 +1023,139 @@ export class SeatingBowlApp {
         this.statsPanel?.update(viewModel);
     }
 
-    _buildStatsViewModel({
-        solvers = [],
-        focalPointFt = { x: 0, z: 0 },
-        bowlConfig = {},
-        egressParams = {},
-        tierMetricsByIndex = new Map(),
-        tierAisleLayouts = []
-    } = {}) {
-        const activeSolvers = (solvers || []).filter((solver) => solver && Array.isArray(solver.rows) && solver.rows.length > 0);
-        if (!activeSolvers.length) return null;
-
-        const rowsForStats = [];
-        activeSolvers.forEach((solver) => {
-            if (!solver.rows || solver.rows.length === 0) return;
-            if (solver.rows.length > 1) {
-                rowsForStats.push(...solver.rows.slice(1));
-                return;
-            }
-            rowsForStats.push(solver.rows[0]);
-        });
-
-        let qualityDistribution = { Excellent: 0, Good: 0, Acceptable: 0, Poor: 0 };
-        let totalRows = 0;
-        let averageCValueDisplay = '0.00';
-
-        if (rowsForStats.length > 0) {
-            const analyzer = new SightlineAnalyzer(
-                rowsForStats,
-                Number(focalPointFt?.x) || 0,
-                Number(focalPointFt?.z) || 0
-            );
-            analyzer.analyze();
-            const stats = analyzer.getStatistics();
-
-            if (stats) {
-                qualityDistribution = stats.qualityDistribution || qualityDistribution;
-                totalRows = Math.max(0, Number(stats.totalRows) || 0);
-                averageCValueDisplay = Number.isFinite(stats.avgC) ? stats.avgC.toFixed(2) : '0.00';
-            }
-        }
-
-        const tierLayoutByIndex = new Map((tierAisleLayouts || []).map((layout) => [
-            Math.max(0, Math.floor(Number(layout?.tierIndex) || 0)),
-            layout
-        ]));
-        const safeBowlConfig = /** @type {any} */ (bowlConfig);
-        const isMirroredSidesMode = String(safeBowlConfig?.type || '').toLowerCase() === 'sides';
-
-        const tiers = activeSolvers.map((solver, loopIndex) => this._buildTierStatsViewModel({
-            solver,
-            loopIndex,
-            focalPointFt,
-            egressParams,
-            tierMetricsByIndex,
-            tierLayoutByIndex,
-            isMirroredSidesMode
-        }));
-        const totalOccupancy = tiers.reduce((sum, tier) => sum + Math.max(0, Number(tier?.occupancy?.capacity) || 0), 0);
-
-        return {
-            summary: {
-                totalRows,
-                totalOccupancy,
-                averageCValueDisplay,
-                qualityDistribution: [
-                    { label: 'Excellent', count: Math.max(0, Number(qualityDistribution.Excellent) || 0) },
-                    { label: 'Good', count: Math.max(0, Number(qualityDistribution.Good) || 0) },
-                    { label: 'Acceptable', count: Math.max(0, Number(qualityDistribution.Acceptable) || 0) },
-                    { label: 'Poor', count: Math.max(0, Number(qualityDistribution.Poor) || 0) }
-                ]
-            },
-            tiers
-        };
+    _getActiveSolvers() {
+        return (this._solvers && this._solvers.length ? this._solvers : (this._solver ? [this._solver] : []))
+            .filter((solver) => solver && Array.isArray(solver.rows) && solver.rows.length > 0);
     }
 
-    _buildTierStatsViewModel({
-        solver,
-        loopIndex,
-        focalPointFt,
-        egressParams,
-        tierMetricsByIndex,
-        tierLayoutByIndex,
-        isMirroredSidesMode
-    }) {
-        const tierIndex = Number.isInteger(Number(solver?.tierIndex)) ? Number(solver.tierIndex) : loopIndex;
-        const tierNumber = tierIndex + 1;
-        const baseMetrics = tierMetricsByIndex instanceof Map
-            ? (tierMetricsByIndex.get(tierIndex) || null)
-            : null;
-        const metrics = this._reconcileTierMetricsForDisplay(
-            solver,
-            loopIndex,
-            baseMetrics,
-            tierLayoutByIndex,
-            egressParams
-        );
-        const accentColor = tierIndex === 0
-            ? 'var(--accent-blue)'
-            : (tierIndex === 1 ? 'var(--accent-cyan)' : 'var(--accent-purple)');
+    _getSceneExportData() {
+        if (!this.scene3D) return null;
+        if (typeof this.scene3D.getExportSceneData !== 'function') return null;
+        return this.scene3D.getExportSceneData();
+    }
 
-        const rows = (solver?.rows || []).map((row, rowIndex) => {
-            const isFirstRow = rowIndex === 0;
-            const tierOneFirstRow = tierIndex === 0 && isFirstRow;
-            const rowZ = Number.isFinite(Number(row?.z)) ? Number(row.z) : 0;
-            const riserHeight = Number.isFinite(Number(row?.riser_height)) ? Number(row.riser_height) : 0;
-            const treadDepth = Number.isFinite(Number(row?.tread_depth)) ? Number(row.tread_depth) : 0;
-            const rowX = Number.isFinite(Number(row?.x)) ? Number(row.x) : 0;
-            const cValue = Number.isFinite(Number(row?.c_value)) ? Number(row.c_value) : null;
-            const sightlineAngle = Number.isFinite(Number(row?.sightline_angle)) ? Number(row.sightline_angle) : 0;
-            const totalLength = Number.isFinite(Number(row?.computedLength)) ? Number(row.computedLength) : 0;
-            const totalSeats = Number.isFinite(Number(row?.computedSeats)) ? Number(row.computedSeats) : 0;
-            const lengthPerSide = Number.isFinite(Number(row?.computedLengthPerSide))
-                ? Number(row.computedLengthPerSide)
-                : null;
-            const seatsPerSide = Number.isFinite(Number(row?.computedSeatsPerSide))
-                ? Number(row.computedSeatsPerSide)
-                : null;
-            const cValueQuality = !isFirstRow && cValue !== null ? getCValueQuality(cValue) : null;
-            const riserInches = tierOneFirstRow ? (rowZ * 12) : (riserHeight * 12);
+    _buildTierRuntimeArtifacts(solvers, bowlConfig, egressParams) {
+        if (!this.fieldRenderer) return [];
+
+        const offsetCorrection = this._getOffsetCorrection(bowlConfig, this.state.sport);
+        const tierLayoutMap = new Map(
+            (this._tierAisleLayouts || []).map((layout, index) => [getSolverTierIndex(layout, index), layout])
+        );
+
+        return (solvers || []).map((solver, index) => {
+            if (!solver?.rows || solver.rows.length === 0) return null;
+
+            const tierIndex = getSolverTierIndex(solver, index);
+            const tierMetrics = ProfileSolver.calculateTierMetrics(
+                solver,
+                bowlConfig,
+                this.fieldRenderer,
+                egressParams,
+                offsetCorrection
+            );
+
+            let tierLayout = tierLayoutMap.get(tierIndex) || null;
+            if (!tierLayout && tierMetrics) {
+                tierLayout = this.fieldRenderer.generateTierAisleLayout(
+                    solver,
+                    bowlConfig,
+                    tierMetrics,
+                    offsetCorrection,
+                    egressParams
+                );
+                if (tierLayout) {
+                    tierLayout.tierIndex = tierIndex;
+                }
+            }
+
+            const overlayData = tierLayout
+                ? this.fieldRenderer.getTierSectionMetricsOverlayData(solver, bowlConfig, tierLayout, offsetCorrection)
+                : { sectionLabels: [], rowSeatLabels: [] };
+            const aislePolygons = tierLayout
+                ? this.fieldRenderer.getTierAisleBandPolygons(solver, bowlConfig, tierLayout, offsetCorrection)
+                : [];
+            const rowGeometries = solver.rows.map((row) => {
+                const frontOffset = (row.x - row.tread_depth) - offsetCorrection;
+                return this.fieldRenderer.getBowlGeometrySegments(bowlConfig, frontOffset);
+            });
 
             return {
-                rowNumber: Number.isFinite(Number(row?.row_number)) ? Number(row.row_number) : (rowIndex + 1),
-                riserDisplay: `${riserInches.toFixed(2)}"`,
-                riserWarning: !tierOneFirstRow && riserInches >= 22,
-                elevationDisplay: `${rowZ.toFixed(2)}'`,
-                cValueDisplay: !isFirstRow && cValue !== null ? `${cValue.toFixed(2)}"` : 'N/A',
-                cValueColor: isFirstRow ? 'var(--text-muted)' : (cValueQuality?.color || 'var(--text-primary)'),
-                treadDisplay: `${(treadDepth * 12).toFixed(2)}"`,
-                distToFocalDisplay: `${((rowX - treadDepth) - (Number(focalPointFt?.x) || 0)).toFixed(2)}'`,
-                angleDisplay: `${sightlineAngle.toFixed(2)}&deg;`,
-                rowLengthDisplay: isMirroredSidesMode && lengthPerSide !== null
-                    ? `${totalLength.toFixed(0)}' (${lengthPerSide.toFixed(0)}'/side)`
-                    : `${totalLength.toFixed(0)}'`,
-                rowSeatsDisplay: isMirroredSidesMode && seatsPerSide !== null
-                    ? `${totalSeats.toLocaleString()} (${seatsPerSide.toLocaleString()}/side)`
-                    : `${totalSeats.toLocaleString()}`
+                tierIndex,
+                tierMetrics,
+                tierLayout,
+                overlayData,
+                aislePolygons,
+                rowGeometries
             };
-        });
-
-        let egress = null;
-        if (metrics) {
-            const totalLen = parseFloat(metrics.totalRowLength) || 0;
-            const seatLen = parseFloat(metrics.totalSeatingLength) || 0;
-            const aisleLen = parseFloat(metrics.totalAisleLength) || 0;
-            const mirrorRuns = Math.max(1, Math.floor(Number(metrics.mirroredSideRuns) || 1));
-            const isMirroredSides = mirrorRuns > 1;
-            const displayAisles = isMirroredSides
-                ? (Math.max(0, Number(metrics.numAisles) || 0) * mirrorRuns)
-                : Math.max(0, Number(metrics.numAisles) || 0);
-            const displaySections = isMirroredSides
-                ? (Math.max(0, Number(metrics.numSections) || 0) * mirrorRuns)
-                : Math.max(0, Number(metrics.numSections) || 0);
-            const displayTotalLen = isMirroredSides ? (totalLen * mirrorRuns) : totalLen;
-            const displaySeatLen = isMirroredSides ? (seatLen * mirrorRuns) : seatLen;
-            const displayAisleLen = isMirroredSides ? (aisleLen * mirrorRuns) : aisleLen;
-            const displaySeatsPerRow = isMirroredSides
-                ? Math.round((Number(metrics.seatsPerRow) || 0) * mirrorRuns)
-                : Math.round(Number(metrics.seatsPerRow) || 0);
-            const blocksAddedForEgress = Math.max(0, Number(metrics.blocksAddedForEgress) || 0);
-
-            egress = {
-                tierLabel: `TIER ${tierNumber}`,
-                headerSuffix: isMirroredSides ? ' &bull; Both Sides' : '',
-                originalHeaderSuffix: isMirroredSides ? ' &bull; Both Sides (Combined Counts)' : '',
-                countsTag: isMirroredSides ? ' (both sides)' : '',
-                linearQuantitiesTag: isMirroredSides ? ' (combined both sides)' : '',
-                perSideMirrorNote: isMirroredSides
-                    ? ' Counts and linear quantities shown combined for both sides. Width/load checks remain per aisle.'
-                    : '',
-                displayAisles,
-                displaySections,
-                displayTotalLen,
-                displaySeatLen,
-                displayAisleLen,
-                displaySeatsPerRow,
-                totalSeatingPercentage: totalLen > 0 ? ((seatLen / totalLen) * 100).toFixed(0) : '0',
-                totalAislePercentage: totalLen > 0 ? ((aisleLen / totalLen) * 100).toFixed(0) : '0',
-                capacityWidth: metrics.capacityWidth,
-                occupantsPerSection: metrics.occupantsPerSection,
-                seatsPerBlock: metrics.seatsPerBlock,
-                occupantsPerAisleLine: metrics.occupantsPerAisleLine,
-                aisleWidth: metrics.aisleWidth,
-                minimumWidth: metrics.minimumWidth,
-                maximumWidth: metrics.maximumWidth,
-                governingWidth: metrics.governingWidth,
-                blocksAddedForEgress,
-                egressFactor: egressParams.egressFactor,
-                warningText: blocksAddedForEgress > 0
-                    ? `Limit Forced: Clamped to Max Aisle (${metrics.maximumWidth}")`
-                    : (metrics.converged === false ? 'Warning: Layout did not converge.' : '')
-            };
-        }
-
-        return {
-            tierIndex,
-            tierNumber,
-            title: `Tier ${tierNumber} Details`,
-            sectionClass: `tier-section-${tierNumber}`,
-            occupancy: {
-                label: `Tier ${tierNumber}`,
-                color: accentColor,
-                capacity: Math.max(0, Number(metrics?.capacity) || 0)
-            },
-            egress,
-            rows
-        };
+        }).filter(Boolean);
     }
 
-    _reconcileTierMetricsForDisplay(solver, loopIndex, metrics, tierLayoutByIndex, egressParams) {
-        if (!metrics) return metrics;
-        const tierIdx = solver && solver.tierIndex !== undefined ? solver.tierIndex : loopIndex;
-        const layout = tierLayoutByIndex instanceof Map
-            ? tierLayoutByIndex.get(Math.max(0, Math.floor(Number(tierIdx) || 0)))
-            : null;
-        const summary = layout?.sectionSummary;
-        if (!summary) return metrics;
+    _buildRhinoTierArtifacts(solvers, bowlConfig, sportName) {
+        if (!this.scene3D) return [];
 
-        const out = { ...metrics };
-        const actualSections = Math.max(0, Math.floor(Number(summary.actualSections) || 0));
-        const actualAisles = Math.max(0, Math.floor(Number(summary.actualAisles) || 0));
-        const avgBackRowSeats = Number(summary.avgBackRowSeatsPerSection);
-        const egressFactorVal = Number(egressParams?.egressFactor);
-        const totalCapacity = Math.max(0, Number(metrics.capacity) || 0);
+        const offsetCorrection = this._getOffsetCorrection(bowlConfig, sportName);
+        const structuralDepthFt = Math.max(0, (Number(bowlConfig?.structuralDepth) || 0) / 12.0);
 
-        if (summary.allSectionPathsClosed === true && actualSections > 0) {
-            out.numSections = actualSections;
-            out.numAisles = actualAisles > 0 ? actualAisles : actualSections;
+        return (solvers || []).map((solver, index) => {
+            if (!solver?.rows || solver.rows.length === 0) return null;
 
-            if (Number.isFinite(avgBackRowSeats)) {
-                out.seatsPerBlock = avgBackRowSeats.toFixed(1);
+            const tierIndex = getSolverTierIndex(solver, index);
+            const offsetSet = new Set();
+            solver.rows.forEach((row) => {
+                offsetSet.add((row.x - row.tread_depth) - offsetCorrection);
+                offsetSet.add(row.x - offsetCorrection);
+            });
+
+            let structuralProfile = null;
+            if (structuralDepthFt > 0 && typeof this.scene3D?.buildClosedStructuralProfile === 'function') {
+                structuralProfile = this.scene3D.buildClosedStructuralProfile(solver, structuralDepthFt, tierIndex);
+                if (Array.isArray(structuralProfile)) {
+                    structuralProfile.forEach((point) => {
+                        if (point && Number.isFinite(point.x)) {
+                            offsetSet.add(point.x - offsetCorrection);
+                        }
+                    });
+                }
             }
 
-            const avgOccupantsPerSection = totalCapacity / actualSections;
-            out.occupantsPerSection = Math.round(avgOccupantsPerSection);
-            const aisleLoad = actualSections <= 1 ? (avgOccupantsPerSection * 0.5) : avgOccupantsPerSection;
-            out.occupantsPerAisleLine = Math.round(aisleLoad);
+            const bowlGeometryByOffset = Array.from(offsetSet)
+                .filter((offset) => Number.isFinite(offset))
+                .map((offsetFt) => ({
+                    offsetFt,
+                    segments: this.scene3D.getBowlGeometrySegments(bowlConfig, offsetFt)
+                }));
 
-            if (Number.isFinite(egressFactorVal)) {
-                out.capacityWidth = (aisleLoad * egressFactorVal).toFixed(1);
-            }
-        }
-
-        return out;
+            return {
+                tierIndex,
+                structuralProfile: Array.isArray(structuralProfile) ? structuralProfile : null,
+                bowlGeometryByOffset
+            };
+        }).filter(Boolean);
     }
 
-    _exportJSON() {
-        const solvers = (this._solvers && this._solvers.length ? this._solvers : (this._solver ? [this._solver] : []))
-            .filter(s => s && Array.isArray(s.rows) && s.rows.length > 0);
+    async _buildExportDescriptor(kind) {
+        if (kind === 'json') return this._buildJsonExportDescriptor();
+        if (kind === 'obj') return this._buildObjExportDescriptor();
+        if (kind === 'rhino') return this._buildRhinoExportDescriptor();
+        if (kind === 'profile-dxf') return this._buildProfileDxfExportDescriptor();
+        if (kind === 'plan-dxf') return this._buildPlanDxfExportDescriptor();
+        if (kind === 'csv') return this._buildCsvExportDescriptor();
+        if (kind === 'config') return this._buildConfigExportDescriptor();
+        return null;
+    }
+
+    _buildJsonExportDescriptor() {
+        const solvers = this._getActiveSolvers();
         if (!solvers.length) {
             console.warn('No solver data to export');
-            return;
+            return null;
         }
 
         const bowlConfig = this._getBowlConfig();
         const egressParams = this._getEgressParams();
         const focalPointFt = this._getFocalPointFt();
-        const offsetCorrection = getRhinoExportOffsetCorrection(
-            bowlConfig,
-            this.state.sport
-        );
-        const data = buildStudyResultsJsonPayload({
+        const tierArtifacts = this._buildTierRuntimeArtifacts(solvers, bowlConfig, egressParams);
+        const payload = buildStudyResultsJsonPayload({
             solvers,
             sportName: this.state.sport,
             profileType: this.state.tiers[0]?.profileType || 'Parabolic',
@@ -1772,100 +1173,67 @@ export class SeatingBowlApp {
                 eyeHeight: this.state.tiers[0]?.eyeHeight ?? 0,
                 eyeSetback: this.state.tiers[0]?.eyeSetback ?? 0
             },
-            tierAisleLayouts: this._tierAisleLayouts || [],
-            offsetCorrection,
-            fieldMetricsAdapter: {
-                calculateRowLength: (...args) => this.fieldRenderer?.calculateRowLength(...args) ?? 0,
-                generateTierAisleLayout: (...args) => this.fieldRenderer?.generateTierAisleLayout(...args) ?? null,
-                getTierSectionMetricsOverlayData: (...args) => this.fieldRenderer?.getTierSectionMetricsOverlayData(...args) ?? null
-            }
+            tierArtifacts
         });
-        if (!data) {
+        if (!payload) {
             console.warn('No solver data to export');
-            return;
+            return null;
         }
 
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `seating - study - ${data.sport.toLowerCase().replace(/\s/g, '-')}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        return {
+            filename: `seating - study - ${payload.sport.toLowerCase().replace(/\s/g, '-')}.json`,
+            content: JSON.stringify(payload, null, 2),
+            type: 'application/json'
+        };
     }
 
-    _exportOBJ() {
-        if (!this.scene3D || !this.scene3D.bowlGroup || this.scene3D.bowlGroup.children.length === 0) {
+    _buildObjExportDescriptor() {
+        const sceneExportData = this._getSceneExportData();
+        if (!sceneExportData?.bowlMeshes?.length) {
             console.warn('No 3D data to export');
-            return;
+            return null;
         }
 
-        const output = buildObjText({
-            bowlMeshes: this.scene3D?.bowlGroup?.children ?? [],
-            objectName: 'SeatingBowl'
+        return {
+            filename: `seating - study - ${this.state.sport.toLowerCase().replace(/\s/g, '-')}.obj`,
+            content: buildObjText({
+                bowlMeshes: sceneExportData.bowlMeshes,
+                objectName: 'SeatingBowl'
+            }),
+            type: 'text/plain'
+        };
+    }
+
+    async _buildRhinoExportDescriptor() {
+        const sceneExportData = this._getSceneExportData();
+        if (!sceneExportData?.bowlMeshes?.length) {
+            console.warn('No 3D data to export');
+            return null;
+        }
+
+        const rhino = await this._loadRhino3dm();
+        const solvers = this._getActiveSolvers();
+        const bowlConfig = this._getBowlConfig();
+        const sportName = this.state.sport;
+        const result = await exportRhinoModel({
+            rhino,
+            solvers,
+            bowlConfig,
+            sportName,
+            nativeSpectatorBlockLimit: Number(globalThis?.__SBS_RHINO_NATIVE_SPECTATOR_MAX_BLOCKS),
+            tierArtifacts: this._buildRhinoTierArtifacts(solvers, bowlConfig, sportName),
+            sceneExportData
         });
 
-        const blob = new Blob([output], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        const sportName = this.state.sport;
-        a.download = `seating - study - ${sportName.toLowerCase().replace(/\s/g, '-')}.obj`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }
-
-    async _export3DM() {
-        if (!this.scene3D || !this.scene3D.bowlGroup || this.scene3D.bowlGroup.children.length === 0) {
-            console.warn('No 3D data to export');
-            return;
+        if (!result?.bytes || result.exportedCount === 0) {
+            console.warn('No valid 3D geometry found for Rhino export');
+            return null;
         }
 
-        try {
-            const rhino = await this._loadRhino3dm();
-            const solvers = this._solvers || (this._solver ? [this._solver] : []);
-            const bowlConfig = this._getBowlConfig();
-            const sportName = this.state.sport;
-            const result = await exportRhinoModel({
-                rhino,
-                solvers,
-                bowlConfig,
-                sportName,
-                nativeSpectatorBlockLimit: Number(globalThis?.__SBS_RHINO_NATIVE_SPECTATOR_MAX_BLOCKS),
-                scene3DAdapter: {
-                    bowlMeshes: this.scene3D?.bowlGroup?.children ?? [],
-                    aisleMeshes: this.scene3D?.aisleGroup?.children ?? [],
-                    seatMeshes: this.scene3D?.seatGroup?.children ?? [],
-                    THREE: this.scene3D?.THREE,
-                    getBowlGeometrySegments: (config, offset) => this.scene3D._getBowlGeometrySegments(config, offset),
-                    buildClosedStructuralProfile: (solver, depthFt, tierIndex) =>
-                        this.scene3D?._buildClosedStructuralProfile?.(solver, depthFt, tierIndex)
-                }
-            });
-
-            if (!result?.bytes || result.exportedCount === 0) {
-                console.warn('No valid 3D geometry found for Rhino export');
-                return;
-            }
-
-            const blob = new Blob([result.bytes], { type: 'model/vnd.rhino' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `seating - study - ${sportName.toLowerCase().replace(/\s/g, '-')}.3dm`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        } catch (err) {
-            console.error('Rhino export failed:', err);
-            const reason = err && err.message ? err.message : String(err);
-            alert(`Rhino export failed: ${reason}`);
-        }
+        return {
+            filename: `seating - study - ${sportName.toLowerCase().replace(/\s/g, '-')}.3dm`,
+            blob: new Blob([result.bytes], { type: 'model/vnd.rhino' })
+        };
     }
 
 
@@ -1956,108 +1324,86 @@ export class SeatingBowlApp {
         });
     }
 
-    _exportDXF() {
-        if (!this._solvers || this._solvers.length === 0) {
+    _buildProfileDxfExportDescriptor() {
+        const solvers = this._getActiveSolvers();
+        if (!solvers.length) {
             console.warn('No 2D profile data to export');
-            return;
+            return null;
         }
 
-        const dxf = buildProfileDxf({
-            solvers: this._solvers,
-            structuralDepthFt: (this.state.bowl.structuralDepth || 0) / 12.0,
-            focalPointFt: this._getFocalPointFt()
-        });
-
-        const blob = new Blob([dxf], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        const sportName = this.state.sport;
-        a.download = `SeatingProfile_${sportName.toLowerCase().replace(/\\s/g, '-')}.dxf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }
-
-    _exportPlanDXF() {
-        if (!this._solvers || this._solvers.length === 0 || !this._currentTemplate) {
-            console.warn('No Plan data to export');
-            return;
-        }
-
-        const sportName = this.state.sport;
-        const runoffDist = this._getRunoffDistance();
-        const dxf = buildPlanDxf({
-            solvers: this._solvers,
-            sportName,
-            bowlConfig: this._getBowlConfig(),
-            template: this._currentTemplate,
-            runoffFt: runoffDist,
-            visualFocalXFt: this._getFocalPointFt().x,
-            enabledTiers: this.state.tiers.map((tier) => !!tier.enabled),
-            tierAisleLayouts: this._tierAisleLayouts || [],
-            fieldAdapter: {
-                getBowlGeometry: (config, offset) => this.fieldRenderer?._getBowlGeometry(config, offset) || [],
-                getTierAisleBandPolygons: (...args) => this.fieldRenderer?.getTierAisleBandPolygons(...args) || [],
-                getTierSectionMetricsOverlayData: (...args) => this.fieldRenderer?.getTierSectionMetricsOverlayData(...args)
-            }
-        });
-
-        const blob = new Blob([dxf], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `SeatingPlan_${sportName.toLowerCase().replace(/\\s/g, '-')}.dxf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }
-
-    // ========== CSV EXPORT ==========
-    _exportCSV() {
-        if (!this._solvers || this._solvers.length === 0) { console.warn('No data for CSV'); return; }
-        const sportName = this.state.sport;
-        const csv = buildTierMetricsCsv({
-            solvers: this._solvers,
-            focalPointFt: this._getFocalPointFt()
-        });
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `tier-metrics-${sportName.toLowerCase().replace(/\s/g, '-')}.csv`;
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }
-
-    // ========== CONFIG SAVE/LOAD ==========
-    _exportConfig() {
-        const config = this.state.toJSON();
-        const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `bowl-config-${config.sport.toLowerCase().replace(/\s/g, '-')}.json`;
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }
-
-    _loadConfig(event) {
-        const target = /** @type {HTMLInputElement | null} */ (event.target);
-        const file = target?.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const result = typeof e.target?.result === 'string' ? e.target.result : '';
-                const config = JSON.parse(result);
-                this._loadStateFromConfig(config, { logSuccess: true });
-            } catch (err) { console.error('Failed to load config:', err); }
+        return {
+            filename: `SeatingProfile_${this.state.sport.toLowerCase().replace(/\s/g, '-')}.dxf`,
+            content: buildProfileDxf({
+                solvers,
+                structuralDepthFt: (this.state.bowl.structuralDepth || 0) / 12.0,
+                focalPointFt: this._getFocalPointFt()
+            }),
+            type: 'text/plain'
         };
-        reader.readAsText(file);
-        target.value = ''; // Reset
+    }
+
+    _buildPlanDxfExportDescriptor() {
+        const solvers = this._getActiveSolvers();
+        if (!solvers.length || !this._currentTemplate) {
+            console.warn('No Plan data to export');
+            return null;
+        }
+
+        const bowlConfig = this._getBowlConfig();
+        const egressParams = this._getEgressParams();
+        const tierPlanArtifacts = this._buildTierRuntimeArtifacts(solvers, bowlConfig, egressParams).map((artifact) => ({
+            tierIndex: artifact.tierIndex,
+            rowGeometries: artifact.rowGeometries,
+            aislePolygons: artifact.aislePolygons,
+            overlayData: artifact.overlayData
+        }));
+
+        return {
+            filename: `SeatingPlan_${this.state.sport.toLowerCase().replace(/\s/g, '-')}.dxf`,
+            content: buildPlanDxf({
+                template: this._currentTemplate,
+                runoffFt: this._getRunoffDistance(),
+                visualFocalXFt: this._getFocalPointFt().x,
+                tierPlanArtifacts
+            }),
+            type: 'text/plain'
+        };
+    }
+
+    _buildCsvExportDescriptor() {
+        const solvers = this._getActiveSolvers();
+        if (!solvers.length) {
+            console.warn('No data for CSV');
+            return null;
+        }
+
+        return {
+            filename: `tier-metrics-${this.state.sport.toLowerCase().replace(/\s/g, '-')}.csv`,
+            content: buildTierMetricsCsv({
+                solvers,
+                focalPointFt: this._getFocalPointFt()
+            }),
+            type: 'text/csv'
+        };
+    }
+
+    _buildConfigExportDescriptor() {
+        const config = this.state.toJSON();
+        return {
+            filename: `bowl-config-${config.sport.toLowerCase().replace(/\s/g, '-')}.json`,
+            content: JSON.stringify(config, null, 2),
+            type: 'application/json'
+        };
+    }
+
+    _loadConfigText(text) {
+        try {
+            const config = JSON.parse(text);
+            this._loadStateFromConfig(config, { logSuccess: true });
+        } catch (err) {
+            console.error('Failed to load config:', err);
+            throw err;
+        }
     }
 
     _loadStateFromConfig(config, options = {}) {
@@ -2142,7 +1488,7 @@ export class SeatingBowlApp {
     }
 
     _computeBowlBounds(bowlConfig, offset) {
-        const segments = this.fieldRenderer._getBowlGeometry(bowlConfig, offset);
+        const segments = this.fieldRenderer?.getBowlGeometrySegments(bowlConfig, offset) || [];
         if (!segments || !segments.length) return null;
 
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -2236,15 +1582,15 @@ export class SeatingBowlApp {
         controls.update();
     }
 
-    _export3DImage(viewName = null) {
+    _build3DImageExportDescriptor(viewName = null) {
         if (!this.scene3D || !this.scene3D.renderer) return;
         this.scene3D.renderer.render(this.scene3D.scene, this.scene3D.camera);
         const dataUrl = this.scene3D.renderer.domElement.toDataURL('image/png');
-        const a = document.createElement('a');
-        a.href = dataUrl;
         const sportName = this.state.sport;
         const suffix = viewName ? `-${viewName.toLowerCase().replace(/\s/g, '-')}` : '';
-        a.download = `3d-view-${sportName.toLowerCase().replace(/\s/g, '-')}${suffix}.png`;
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        return {
+            filename: `3d-view-${sportName.toLowerCase().replace(/\s/g, '-')}${suffix}.png`,
+            dataUrl
+        };
     }
 }

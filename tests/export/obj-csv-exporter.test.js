@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 import {
     buildObjText,
@@ -19,7 +19,9 @@ function createSolver() {
                 c_value: 12,
                 sightline_angle: 30,
                 eye_x: 9.5,
-                eye_z: 5
+                eye_z: 5,
+                computedLength: 40,
+                computedSeats: 19
             },
             {
                 row_number: 2,
@@ -30,39 +32,51 @@ function createSolver() {
                 c_value: 2.5,
                 sightline_angle: 31,
                 eye_x: 11.5,
-                eye_z: 6
+                eye_z: 6,
+                computedLength: 42,
+                computedSeats: 21
             }
         ]
     };
 }
 
 describe('buildStudyResultsJsonPayload', () => {
-    test('builds study results from explicit runtime arguments and reconstructed tier layouts', () => {
+    test('builds study results from explicit tier artifacts', () => {
         const solver = createSolver();
-        const calculateRowLength = vi.fn(() => 40);
-        const generateTierAisleLayout = vi.fn(() => ({
+        const tierArtifacts = [{
             tierIndex: 0,
-            aisleWidthFt: 4,
-            seatWidthIn: 20,
-            aisles: [{ pathIndex: 0 }, { pathIndex: 0 }],
-            targetAisles: 2,
-            forcedCount: 0,
-            sectionSummary: {
-                actualAisles: 2,
-                actualSections: 1,
-                allSectionPathsClosed: true,
-                avgBackRowSeatsPerSection: 12
+            tierMetrics: {
+                requiredWidth: 48,
+                aisleWidth: 48,
+                numAisles: 2,
+                numSections: 1,
+                seatsPerRow: 22,
+                occupantsPerSection: 22
+            },
+            tierLayout: {
+                tierIndex: 0,
+                aisleWidthFt: 4,
+                seatWidthIn: 20,
+                aisles: [{ pathIndex: 0 }, { pathIndex: 0 }],
+                targetAisles: 2,
+                forcedCount: 0,
+                sectionSummary: {
+                    actualAisles: 2,
+                    actualSections: 1,
+                    allSectionPathsClosed: true,
+                    avgBackRowSeatsPerSection: 12
+                }
+            },
+            overlayData: {
+                sectionLabels: [
+                    { sectionNumber: 100, pathIndex: 0, slotIndex: 0, x: 1, y: 2 }
+                ],
+                rowSeatLabels: [
+                    { rowIndex: 0, sectionNumber: 100, pathIndex: 0, slotIndex: 0, seatCount: 10 },
+                    { rowIndex: 1, sectionNumber: 100, pathIndex: 0, slotIndex: 0, seatCount: 12 }
+                ]
             }
-        }));
-        const getTierSectionMetricsOverlayData = vi.fn(() => ({
-            sectionLabels: [
-                { sectionNumber: 100, pathIndex: 0, slotIndex: 0, x: 1, y: 2 }
-            ],
-            rowSeatLabels: [
-                { rowIndex: 0, sectionNumber: 100, pathIndex: 0, slotIndex: 0, seatCount: 10 },
-                { rowIndex: 1, sectionNumber: 100, pathIndex: 0, slotIndex: 0, seatCount: 12 }
-            ]
-        }));
+        }];
 
         const payload = buildStudyResultsJsonPayload({
             solvers: [solver],
@@ -97,18 +111,9 @@ describe('buildStudyResultsJsonPayload', () => {
                 eyeHeight: 4,
                 eyeSetback: 6
             },
-            tierAisleLayouts: [],
-            offsetCorrection: 0,
-            fieldMetricsAdapter: {
-                calculateRowLength,
-                generateTierAisleLayout,
-                getTierSectionMetricsOverlayData
-            }
+            tierArtifacts
         });
 
-        expect(calculateRowLength).toHaveBeenCalled();
-        expect(generateTierAisleLayout).toHaveBeenCalledTimes(1);
-        expect(getTierSectionMetricsOverlayData).toHaveBeenCalledTimes(1);
         expect(payload).toMatchObject({
             sport: 'Football',
             profileType: 'Parabolic',
@@ -141,6 +146,11 @@ describe('buildStudyResultsJsonPayload', () => {
             rowsInSection: 2,
             frontRowSeats: 10,
             backRowSeats: 12
+        });
+        expect(payload.tiers[0].egressEstimate).toMatchObject({
+            requiredWidthIn: 48,
+            estimatedNumAisles: 2,
+            estimatedNumSections: 1
         });
     });
 });

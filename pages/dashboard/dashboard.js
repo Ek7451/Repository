@@ -1,5 +1,5 @@
-import { createDefaultAppStateData } from '../state/app-state.js';
-import { ProjectDashboard } from '../ui/project-dashboard.js';
+import { buildDefaultProjectCreateRequest } from '../../state/project.js';
+import { ProjectDashboard } from '../../ui/project-dashboard.js';
 
 export class DashboardPage {
     constructor({ root, authService, projectsService, runtimeConfig = null, onOpenProject }) {
@@ -112,12 +112,9 @@ export class DashboardPage {
         this._render();
 
         try {
-            const createdProject = await this.projectsService.createProject({
-                name: typeof project?.name === 'string' && project.name.trim()
-                    ? project.name.trim()
-                    : 'Untitled Seating Study',
-                state: createDefaultAppStateData()
-            });
+            const createdProject = await this.projectsService.createProject(
+                buildDefaultProjectCreateRequest(project)
+            );
 
             this.onOpenProject?.(createdProject.id);
         } catch (error) {

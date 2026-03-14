@@ -1106,6 +1106,10 @@ export class Scene3D {
         return this._dedupeProfilePoints(closed);
     }
 
+    buildClosedStructuralProfile(solver, structuralDepthFt, tierIdx = 0) {
+        return this._buildClosedStructuralProfile(solver, structuralDepthFt, tierIdx);
+    }
+
     _dedupeProfilePoints(points, epsilon = 1e-6) {
         if (!Array.isArray(points) || points.length === 0) return [];
         const out = [];
@@ -1119,6 +1123,15 @@ export class Scene3D {
         }
 
         return out;
+    }
+
+    getExportSceneData() {
+        return {
+            bowlMeshes: this.bowlGroup?.children ?? [],
+            aisleMeshes: this.aisleGroup?.children ?? [],
+            seatMeshes: this.seatGroup?.children ?? [],
+            THREE: this.THREE
+        };
     }
 
     _fitCameraToBowl() {
@@ -1222,6 +1235,10 @@ export class Scene3D {
         });
 
         return subpaths.filter(p => p.length > 0);
+    }
+
+    getBowlGeometrySegments(bowlConfig, offset) {
+        return this._getBowlGeometrySegments(bowlConfig, offset);
     }
 
     _getBowlGeometrySegments(bowlConfig, offset) {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { SeatingBowlApp } from '../../ui/app.js';
 
@@ -114,5 +114,62 @@ describe('SeatingBowlApp shell callbacks', () => {
         expect(saveRequest.name).toBe('Basketball Study');
         expect(saveRequest.state.sport).toBe('Basketball');
         expect(chromeUpdates.at(-1)?.name).toBe('Basketball Study');
+    });
+
+    it('uses the explicit scene export accessor without falling back to scene internals', () => {
+        const app = new SeatingBowlApp();
+        const exportSceneData = {
+            bowlMeshes: [{ id: 'bowl' }],
+            aisleMeshes: [{ id: 'aisle' }],
+            seatMeshes: [{ id: 'seat' }],
+            THREE: { Scene: function Scene() {} }
+        };
+        const getExportSceneData = vi.fn(() => exportSceneData);
+
+        app.scene3D = /** @type {any} */ ({
+            getExportSceneData,
+            bowlGroup: { children: ['private-bowl'] },
+            aisleGroup: { children: ['private-aisle'] },
+            seatGroup: { children: ['private-seat'] },
+            THREE: { Private: true }
+        });
+
+        expect(app._getSceneExportData()).toBe(exportSceneData);
+        expect(getExportSceneData).toHaveBeenCalledTimes(1);
+
+        app.scene3D = /** @type {any} */ ({
+            bowlGroup: { children: ['private-bowl'] },
+            aisleGroup: { children: ['private-aisle'] },
+            seatGroup: { children: ['private-seat'] },
+            THREE: { Private: true }
+        });
+
+        expect(app._getSceneExportData()).toBeNull();
+    });
+
+    it('replays the scene3d side effects when restored state opens directly to the 3D tab', () => {
+        const app = new SeatingBowlApp();
+        vi.stubGlobal('document', {
+            getElementById: () => null
+        });
+        app.editorShell = /** @type {any} */ ({
+            syncFromState: vi.fn()
+        });
+        app.state.ui.activeViewTab = 'scene3d';
+        app.state.ui.activeResultsTab = 'statsTab';
+
+        const handleViewTabChanged = vi
+            .spyOn(app, '_handleViewTabChanged')
+            .mockImplementation(() => {});
+
+        app._applyStateToDom();
+
+        expect(app.editorShell.syncFromState).toHaveBeenCalledWith({
+            activeViewTab: 'scene3d',
+            activeResultsTab: 'statsTab'
+        });
+        expect(handleViewTabChanged).toHaveBeenCalledWith('scene3d');
+
+        vi.unstubAllGlobals();
     });
 });
