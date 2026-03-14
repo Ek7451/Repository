@@ -516,6 +516,7 @@ export function sampleAisleBand(path, ratio, widthFt) {
 export function findChamferCornerAnchors(path) {
     if (!path || !path.parts || path.parts.length < 2 || path.length <= EPS) return [];
 
+    /** @type {Array<{u:number,ordinal?:number,dist:number,x:number,y:number}>} */
     const raw = [];
     const parts = path.parts;
     const count = parts.length;
@@ -558,7 +559,7 @@ export function findChamferCornerAnchors(path) {
     for (let i = 0; i < deduped.length; i++) {
         deduped[i].ordinal = i;
     }
-    return deduped;
+    return /** @type {Array<{u:number,ordinal:number,dist:number,x:number,y:number}>} */ (deduped);
 }
 
 /**

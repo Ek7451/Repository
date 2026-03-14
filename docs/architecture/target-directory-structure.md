@@ -19,14 +19,14 @@ seating-bowl/
 │
 ├── pages/                             # The two screens users navigate between
 │   │
-│   ├── dashboard/                     # ❶ PROJECT DASHBOARD  [NEW]
-│   │   ├── dashboard.html             #   Landing page after login.
-│   │   ├── dashboard.js               #   Shows project list, opens studies,
-│   │   └── dashboard.css              #   displays key metrics per project.
+│   ├── dashboard/                     # ❶ PROJECT DASHBOARD  [NEW] ❌
+│   │   ├── dashboard.html             #   Landing page after login. ❌
+│   │   ├── dashboard.js               #   Shows project list, opens studies, ❌
+│   │   └── dashboard.css              #   displays key metrics per project. ❌
 │   │
-│   └── configurator/                  # ❷ SEATING BOWL CONFIGURATOR  [existing]
-│       ├── index.html                 #   The main bowl design tool.
-│       └── styles.css                 #   All existing UI lives here.
+│   └── configurator/                  # ❷ SEATING BOWL CONFIGURATOR  ❌ 
+│       ├── index.html                 #   The main bowl design tool. ❌
+│       └── styles.css                 #   All existing UI lives here.❌
 │
 │
 ├── core/                              # THE CALCULATION ENGINE
@@ -61,7 +61,7 @@ seating-bowl/
 │   │                                  #   toJSON() / fromJSON() for persistence.
 |   |                                  #                            [existing ✅]
 │   │
-│   └── project.js                     #   Wraps one or more studies:
+│   └── project.js                     #   Wraps one or more studies: ❌
 │                                      #   { id, name, createdAt, studies: [...] }
 │                                      #   This is what gets stored in the DB.
 │
@@ -146,7 +146,7 @@ seating-bowl/
     │                                  #   Returns plain user object.
     |                                  #                              [existing ✅]
     │
-    └── project-api.js                 #   REST API calls:
+    └── project-api.js                 #   REST API calls: ❓
                                        #   loadProjects(), saveStudy(plainObj),
                                        #   createProject(), deleteProject().
                                        #   Accepts/returns plain JSON — not

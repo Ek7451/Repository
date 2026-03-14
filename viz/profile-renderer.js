@@ -119,6 +119,8 @@ export class ProfileRenderer {
         this._lastFocalZ = 0;
         this._lastOptions = {};
         this._lastAllRows = null;
+        this._lastMx = 0;
+        this._lastMy = 0;
 
         this._setupInteraction();
     }
@@ -143,6 +145,8 @@ export class ProfileRenderer {
             const rect = this.canvas.getBoundingClientRect();
             const mx = e.clientX - rect.left;
             const my = e.clientY - rect.top;
+            this._lastMx = mx;
+            this._lastMy = my;
 
             if (this._isPanning) {
                 const dx = e.clientX - this._panStartX;
@@ -242,9 +246,6 @@ export class ProfileRenderer {
     _rerender() {
         if (this._lastSolvers !== null && this._lastFocalX !== undefined) {
             this.renderMulti(this._lastSolvers, this._lastFocalX, this._lastFocalZ, this._lastOptions);
-        } else if (this._lastSolver && this._lastFocalX !== undefined) {
-            // Backward compat
-            this.renderMulti([this._lastSolver], this._lastFocalX, this._lastFocalZ, this._lastOptions);
         }
     }
 

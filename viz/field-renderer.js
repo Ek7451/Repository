@@ -10,7 +10,7 @@ import {
     samplePathPointByRatio,
     buildTierAisleLayout,
     resolveAisleStationRatios
-} from '../core/aisle-layout.js?v=9';
+} from '../core/aisle-layout.js';
 
 const FIELD_THEME_COLORS = {
     light: {
@@ -99,6 +99,38 @@ const FIELD_QUALITY_COLORS_DARK = {
     Acceptable: 'rgba(194, 126, 30, 0.86)',
     Poor: 'rgba(181, 74, 71, 0.86)'
 };
+
+/**
+ * @typedef {Object} BowlCornerPoints
+ * @property {{ x: number, y: number }} tr_start
+ * @property {{ x: number, y: number }} tr_end
+ * @property {{ x: number, y: number }} tr_center
+ * @property {{ x: number, y: number }} br_start
+ * @property {{ x: number, y: number }} br_end
+ * @property {{ x: number, y: number }} br_center
+ * @property {{ x: number, y: number }} bl_start
+ * @property {{ x: number, y: number }} bl_end
+ * @property {{ x: number, y: number }} bl_center
+ * @property {{ x: number, y: number }} tl_start
+ * @property {{ x: number, y: number }} tl_end
+ * @property {{ x: number, y: number }} tl_center
+ * @property {number} fixed_right
+ * @property {number} fixed_left
+ * @property {number} fixed_top
+ * @property {number} fixed_bottom
+ * @property {number} left
+ * @property {number} right
+ * @property {number} top
+ * @property {number} bottom
+ */
+
+/**
+ * @typedef {Object} BowlParams
+ * @property {BowlCornerPoints} pts
+ * @property {string} type
+ * @property {string} corner
+ * @property {number} r_eff
+ */
 
 function getActiveThemeName() {
     if (typeof document === 'undefined' || !document.documentElement) return 'light';
@@ -233,6 +265,20 @@ export class FieldRenderer {
         this._setupInteraction();
     }
 
+    _rerenderFromLastArgs() {
+        if (!this._lastArgs) return;
+        this.render(
+            this._lastArgs[0],
+            this._lastArgs[1],
+            this._lastArgs[2],
+            this._lastArgs[3],
+            this._lastArgs[4],
+            this._lastArgs[5],
+            this._lastArgs[6],
+            this._lastArgs[7]
+        );
+    }
+
     _setupInteraction() {
         this.canvas.addEventListener('mousedown', (e) => {
             if (e.button === 1 || e.button === 0) { // Middle or Left
@@ -254,7 +300,7 @@ export class FieldRenderer {
                 this._userHasZoomed = true;
 
                 if (this._lastArgs) {
-                    this.render(...this._lastArgs);
+                    this._rerenderFromLastArgs();
                 }
             }
         });
@@ -311,7 +357,7 @@ export class FieldRenderer {
             this._panY = newTy - cy - (baseTy - cy) * this._userZoom;
 
             this._userHasZoomed = true;
-            this.render(...this._lastArgs);
+            this._rerenderFromLastArgs();
         }, { passive: false });
 
         this.canvas.addEventListener('dblclick', () => {
@@ -320,7 +366,7 @@ export class FieldRenderer {
             this._panY = 0;
             this._userHasZoomed = false;
             if (this._lastArgs) {
-                this.render(...this._lastArgs);
+                this._rerenderFromLastArgs();
             }
         });
 
@@ -336,7 +382,7 @@ export class FieldRenderer {
                     this._panY = 0;
                     this._userHasZoomed = false;
                     if (this._lastArgs) {
-                        this.render(...this._lastArgs);
+                        this._rerenderFromLastArgs();
                     }
                 }
                 this._middleClickTime = now;
@@ -559,7 +605,7 @@ export class FieldRenderer {
      * Generate the path for a specific "buffer" (offset) from the focal center.
      * @param {Object} bowlConfig - { width, length, cornerType, cornerRadius, type }
      * @param {number} offset - Distance from the focal center line (row.x)
-     * @returns {Path2D}
+     * @returns {BowlParams}
      */
     _getBowlParams(bowlConfig, offset) {
         // Bowl Config Defaults

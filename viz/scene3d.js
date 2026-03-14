@@ -5,7 +5,7 @@
 
 import * as THREE from '../lib/three.module.js';
 import { OrbitControls } from '../lib/OrbitControls.js';
-import { buildGeometryPaths, sampleAisleBand, resolveAisleStationRatios, samplePathPointByRatio } from '../core/aisle-layout.js?v=7';
+import { buildGeometryPaths, sampleAisleBand, resolveAisleStationRatios, samplePathPointByRatio } from '../core/aisle-layout.js';
 
 const SCENE_THEME_COLORS = {
     light: {
@@ -61,23 +61,37 @@ export class Scene3D {
      */
     constructor(container) {
         this.container = container;
+        /** @type {any} */
         this.THREE = THREE;
+        /** @type {any} */
         this.scene = null;
+        /** @type {any} */
         this.camera = null;
+        /** @type {any} */
         this.renderer = null;
+        /** @type {any} */
         this.controls = null;
+        /** @type {any} */
         this.bowlGroup = null;
+        /** @type {any} */
         this.aisleGroup = null;
+        /** @type {any} */
         this.seatGroup = null;
+        /** @type {any} */
         this.fieldGroup = null;
         this._animId = null;
         this._initialized = false;
         this._cameraAutoFitted = false;
         this.seatPreviewStats = null;
+        /** @type {any} */
         this._ambientLight = null;
+        /** @type {any} */
         this._dirLight = null;
+        /** @type {any} */
         this._hemiLight = null;
+        /** @type {any} */
         this._gridHelper = null;
+        /** @type {any} */
         this._shadowPlane = null;
     }
 
@@ -93,12 +107,12 @@ export class Scene3D {
         this.scene.fog = new THREE.FogExp2(BRAND_COLORS.sceneBg, 0.0);
 
         // Camera
-        this.camera = new THREE.PerspectiveCamera(50, w / h, 1, 5000);
+        this.camera = /** @type {any} */ (new THREE.PerspectiveCamera(50, w / h, 1, 5000));
         this.camera.position.set(200, 150, 300);
         this.camera.lookAt(0, 20, 0);
 
         // Renderer
-        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer = /** @type {any} */ (new THREE.WebGLRenderer({ antialias: true }));
         this.renderer.setSize(w, h, false);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         this.renderer.shadowMap.enabled = true;
@@ -121,7 +135,7 @@ export class Scene3D {
         this._ambientLight = new THREE.AmbientLight(0xffffff, BRAND_COLORS.ambientIntensity);
         this.scene.add(this._ambientLight);
 
-        this._dirLight = new THREE.DirectionalLight(0xffffff, BRAND_COLORS.dirIntensity);
+        this._dirLight = /** @type {any} */ (new THREE.DirectionalLight(0xffffff, BRAND_COLORS.dirIntensity));
         this._dirLight.position.set(150, 300, 150);
         this._dirLight.castShadow = true;
         this._dirLight.shadow.mapSize.width = 2048;
@@ -138,13 +152,13 @@ export class Scene3D {
         this.scene.add(this._hemiLight);
 
         // Keep a subtle reference grid so the 3D scene is always legible.
-        this._gridHelper = this._buildGridHelper();
+        this._gridHelper = /** @type {any} */ (this._buildGridHelper());
         this.scene.add(this._gridHelper);
 
         // Invisible shadow-catching plane instead of gray ground
         const shadowGeo = new THREE.PlaneGeometry(2000, 2000);
-        const shadowMat = new THREE.ShadowMaterial({ opacity: BRAND_COLORS.shadowOpacity });
-        this._shadowPlane = new THREE.Mesh(shadowGeo, shadowMat);
+        const shadowMat = /** @type {any} */ (new THREE.ShadowMaterial({ opacity: BRAND_COLORS.shadowOpacity }));
+        this._shadowPlane = /** @type {any} */ (new THREE.Mesh(shadowGeo, shadowMat));
         this._shadowPlane.rotation.x = -Math.PI / 2;
         this._shadowPlane.position.y = -0.05;
         this._shadowPlane.receiveShadow = true;
@@ -197,7 +211,7 @@ export class Scene3D {
     }
 
     _buildGridHelper() {
-        const grid = new this.THREE.GridHelper(1200, 24, BRAND_COLORS.gridMajor, BRAND_COLORS.gridMinor);
+        const grid = /** @type {any} */ (new this.THREE.GridHelper(1200, 24, BRAND_COLORS.gridMajor, BRAND_COLORS.gridMinor));
         grid.position.y = 0.01;
         return grid;
     }
@@ -300,7 +314,7 @@ export class Scene3D {
                 roughness: 0.7,
                 side: THREE.DoubleSide
             });
-            const fieldMesh = new THREE.Mesh(fieldGeo, fieldMat);
+            const fieldMesh = /** @type {any} */ (new THREE.Mesh(fieldGeo, fieldMat));
             fieldMesh.rotation.x = -Math.PI / 2;
             fieldMesh.position.y = 0.05;
             fieldMesh.receiveShadow = true;
@@ -334,7 +348,7 @@ export class Scene3D {
             emissive: 0x6a430a,
             emissiveIntensity: 0.45
         });
-        const marker = new THREE.Mesh(markerGeo, markerMat);
+        const marker = /** @type {any} */ (new THREE.Mesh(markerGeo, markerMat));
         const focalElev = Number.isFinite(Number(focalZ)) ? Number(focalZ) : 0;
         marker.position.set(fx, focalElev, -fy);
         this.fieldGroup.add(marker);
@@ -403,9 +417,12 @@ export class Scene3D {
 
     /**
      * Update the seating bowl.
-     * @param {ProfileSolver} solver - Solved ProfileSolver
-     * @param {Object} template - Sport template for positioning
-     * @param {number} arcSpanDeg - Arc span in degrees for bowl wrapping
+     * @param {Array|Object} solvers
+     * @param {Object} bowlConfig
+     * @param {Object} template
+     * @param {number} [offsetCorrection]
+     * @param {Array} [tierAisleLayouts]
+     * @param {Object|null} [seatPreviewOptions]
      */
     updateBowl(solvers, bowlConfig, template, offsetCorrection = 0, tierAisleLayouts = [], seatPreviewOptions = null) {
         if (!this._initialized || !this.THREE) return;
@@ -468,7 +485,7 @@ export class Scene3D {
                 clipShadows: true
             });
 
-            const mesh = new THREE.Mesh(geometry, material);
+            const mesh = /** @type {any} */ (new THREE.Mesh(geometry, material));
             mesh.castShadow = true;
             mesh.receiveShadow = true;
             mesh.userData = mesh.userData || {};
@@ -496,7 +513,7 @@ export class Scene3D {
                         clippingPlanes,
                         clipShadows: true
                     });
-                    const aisleMesh = new THREE.Mesh(aisleGeometry, aisleMaterial);
+                    const aisleMesh = /** @type {any} */ (new THREE.Mesh(aisleGeometry, aisleMaterial));
                     aisleMesh.renderOrder = 5;
                     aisleMesh.castShadow = false;
                     aisleMesh.receiveShadow = true;
@@ -857,7 +874,7 @@ export class Scene3D {
             clipShadows: true
         });
         const geometry = new THREE.BoxGeometry(seatSizeFt, seatSizeFt, seatSizeFt);
-        const mesh = new THREE.InstancedMesh(geometry, material, seatPlacements.length);
+        const mesh = /** @type {any} */ (new THREE.InstancedMesh(geometry, material, seatPlacements.length));
         if (THREE.DynamicDrawUsage !== undefined) {
             mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         }
@@ -865,7 +882,7 @@ export class Scene3D {
         mesh.receiveShadow = true;
         mesh.renderOrder = 4;
 
-        const dummy = new THREE.Object3D();
+        const dummy = /** @type {any} */ (new THREE.Object3D());
         for (let i = 0; i < seatPlacements.length; i++) {
             const p = seatPlacements[i];
             dummy.position.set(p.x, p.y, p.z);

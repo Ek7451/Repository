@@ -588,7 +588,7 @@
       "name": "Phase 6 Refactor",
       "sport": "Ice Hockey",
       "createdAt": "2026-03-14T16:52:42.948Z",
-      "updatedAt": "2026-03-14T16:56:18.872Z",
+      "updatedAt": "2026-03-14T20:42:09.810Z",
       "state": {
         "_version": "phase6-app-state",
         "sport": "Ice Hockey",
@@ -614,10 +614,10 @@
           "maxAisle": 72,
           "seatsBetweenAisles": 20,
           "egressFactor": 0.2,
-          "showSeatCubes3D": false
+          "showSeatCubes3D": true
         },
         "ui": {
-          "activeViewTab": "field",
+          "activeViewTab": "scene3d",
           "activeResultsTab": "statsTab"
         },
         "tiers": [
