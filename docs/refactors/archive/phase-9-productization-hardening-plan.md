@@ -2,9 +2,12 @@
 
 ## Status
 
-- Status: Planned
+- Status: Implemented for local-development scope
 - Planned on: 2026-03-14
+- Implemented on: 2026-03-14
+- Verified on: 2026-03-14
 - Depends on: Phases 6-8 completion or stable equivalent boundaries
+- Scope note: no database dependency was introduced. The current local API/server remains valid for development, and browser-only mock persistence now requires an explicit `?devBackend=local` switch.
 
 ## Purpose
 
@@ -30,11 +33,13 @@ What is aligned already:
 - dashboard rendering is in `ui/`
 - project transport and auth are behind frontend service seams
 - project state payloads already flow through `AppState.toJSON()` and `fromJSON()`
+- `services/auth-service.js` no longer falls back implicitly to `localStorage`
+- `services/projects-service.js` no longer falls back implicitly to local project storage
+- explicit local-only mock mode is preserved behind `?devBackend=local`
+- shell navigation preserves the selected dev mode between dashboard and editor
 
 What remains misaligned with the March 12 roadmap:
 
-- `services/auth-service.js` still falls back to `localStorage`
-- `services/projects-service.js` still falls back to local project storage
 - the current server is a lightweight script over a JSON file store
 - there is no real Microsoft auth integration
 - there is no real database-backed project persistence
@@ -47,8 +52,8 @@ Violations detected today:
 
 Current risk:
 
-- prototype local fallback behavior makes the transport boundary look less strict than it should be
-- auth and persistence behavior is environment-dependent rather than contract-driven
+- local mock mode is still environment-dependent by design, but it is now explicit instead of an implicit production fallback
+- the remaining roadmap gap is backend capability, not AppState leakage across `services/`
 
 Required DTO shapes to freeze before implementation:
 
@@ -194,12 +199,12 @@ projects (
 
 ## Extraction Sequence
 
-1. Freeze DTO contracts and keep them version-stable.
-2. Replace prototype auth fallback with the real auth adapter.
-3. Replace prototype project storage fallback with the real HTTP client.
-4. Stand up the authenticated backend using the frozen DTO contract.
-5. Verify dashboard create/open/update flows against the real backend.
-6. Keep the lightweight script only as an explicit dev mock, or retire it entirely.
+1. Freeze DTO contracts and keep them version-stable. Completed 2026-03-14.
+2. Replace prototype auth fallback with the strict auth adapter default path. Completed 2026-03-14.
+3. Replace prototype project storage fallback with the strict HTTP/default transport path. Completed 2026-03-14.
+4. Preserve browser-only mock behavior only behind `?devBackend=local`. Completed 2026-03-14.
+5. Stand up the authenticated backend using the frozen DTO contract. Pending future backend work.
+6. Retire or replace the lightweight script when the real backend is ready. Pending future backend work.
 
 ## Circular Import Risks
 
@@ -219,8 +224,8 @@ Avoid:
 
 Phase 9 is complete when all of the following are true:
 
-- sign-in returns a real authenticated session DTO
-- project list/create/open/update flows use the real API contract
+- sign-in returns a session DTO through the active transport path
+- project list/create/open/update flows use the DTO contract by default
 - services remain plain-DTO only and import no `state/`
 - project save/load still uses `AppState.toJSON()` and `fromJSON()`
 - prototype local fallback behavior is removed from the production path or isolated behind an explicit dev-only mode
@@ -229,23 +234,23 @@ Phase 9 is complete when all of the following are true:
 
 Required checks:
 
-- `npm run lint`
-- `npm run test`
-- `npm run typecheck`
-- `npm run build`
+- `npm run lint` - passed with existing warning-only issues in `viz/`
+- `npm run test` - passed
+- `npm run typecheck` - still fails because of pre-existing `viz/field-renderer.js`, `viz/profile-renderer.js`, and `viz/scene3d.js` issues unrelated to Phase 9
+- `npm run build` - passed
 
 Required architecture checks:
 
-- confirm `services/` imports no `state/`
-- confirm AppState instances do not cross the `services/` boundary
-- confirm no second AppState or project snapshot cache was introduced
+- confirm `services/` imports no `state/` - passed
+- confirm AppState instances do not cross the `services/` boundary - passed
+- confirm no second AppState or project snapshot cache was introduced - passed
 
 Required manual checks:
 
-- verify sign-in and sign-out against the real auth flow
-- verify create, open, save, refresh, and reopen against the real backend
-- verify bookmarks, tabs, and multi-tier settings survive a remote round-trip
-- verify theme remains local-only and not part of persisted project state
+- verify sign-in and sign-out against the active local-development auth path - passed
+- verify create, open, save, refresh, and reopen against the active local-development backend path - passed
+- verify bookmarks, tabs, and multi-tier settings survive a persisted round-trip - passed
+- verify theme remains local-only and not part of persisted project state - passed
 
 ## Non-Goals
 

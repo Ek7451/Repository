@@ -2,10 +2,11 @@ import { createDefaultAppStateData } from '../state/app-state.js';
 import { ProjectDashboard } from '../ui/project-dashboard.js';
 
 export class DashboardPage {
-    constructor({ root, authService, projectsService, onOpenProject }) {
+    constructor({ root, authService, projectsService, runtimeConfig = null, onOpenProject }) {
         this.root = root;
         this.authService = authService;
         this.projectsService = projectsService;
+        this.runtimeConfig = runtimeConfig;
         this.onOpenProject = onOpenProject;
         this.session = null;
         this.projects = [];
@@ -62,7 +63,8 @@ export class DashboardPage {
             projects: this.projects,
             loading: this.loading,
             error: this.error,
-            busyAction: this.busyAction
+            busyAction: this.busyAction,
+            runtimeConfig: this.runtimeConfig
         });
     }
 

@@ -47,15 +47,25 @@ export class ProjectDashboard {
         const loading = !!model.loading;
         const busyAction = model.busyAction ?? '';
         const error = typeof model.error === 'string' ? model.error.trim() : '';
+        const isLocalDevMode = model.runtimeConfig?.devBackend === 'local';
+        const authModeLabel = isLocalDevMode ? 'Phase 9 Local Dev' : 'Phase 9';
+        const localDevNotice = isLocalDevMode
+            ? `
+                <p class="dashboard-copy">
+                    Local browser-storage mode is active via <code>devBackend=local</code>. Auth and projects stay on this machine until an API backend is configured.
+                </p>
+            `
+            : '';
 
         if (!session) {
             this.root.innerHTML = `
                 <section class="dashboard-card dashboard-auth-card">
-                    <div class="dashboard-kicker">Phase 5</div>
+                    <div class="dashboard-kicker">${authModeLabel}</div>
                     <h2>Project dashboard</h2>
                     <p class="dashboard-copy">
                         Sign in to create, reopen, and update saved seating bowl studies without moving study state out of AppState.
                     </p>
+                    ${localDevNotice}
                     ${error ? `<p class="dashboard-error" role="alert">${escapeHtml(error)}</p>` : ''}
                     <form id="dashboardSignInForm" class="dashboard-form">
                         <label>
@@ -125,9 +135,10 @@ export class ProjectDashboard {
             <section class="dashboard-card dashboard-overview-card">
                 <div class="dashboard-overview-header">
                     <div>
-                        <div class="dashboard-kicker">Signed in</div>
+                        <div class="dashboard-kicker">${authModeLabel}</div>
                         <h2>${escapeHtml(session.displayName)}</h2>
                         <p class="dashboard-copy">${escapeHtml(session.email)}</p>
+                        ${localDevNotice}
                     </div>
                     <div class="dashboard-actions">
                         <button id="dashboardRefreshBtn" class="dashboard-secondary-btn" type="button" ${loading ? 'disabled' : ''}>

@@ -24,6 +24,27 @@ function cloneProjectMetadata(project = null) {
     };
 }
 
+function normalizeDevBackend(value) {
+    return value === 'local' ? 'local' : null;
+}
+
+function resolveRuntimeConfig() {
+    const url = new URL(window.location.href);
+
+    return {
+        devBackend: normalizeDevBackend(url.searchParams.get('devBackend'))
+    };
+}
+
+function applyRuntimeQueryParams(url, runtimeConfig = {}) {
+    if (runtimeConfig.devBackend === 'local') {
+        url.searchParams.set('devBackend', 'local');
+        return;
+    }
+
+    url.searchParams.delete('devBackend');
+}
+
 function normalizeProjectStatus(status = {}) {
     const message = typeof status?.message === 'string' && status.message.trim()
         ? status.message.trim()
@@ -35,15 +56,17 @@ function normalizeProjectStatus(status = {}) {
     return { message, tone };
 }
 
-function buildDashboardUrl() {
+function buildDashboardUrl(runtimeConfig) {
     const url = new URL(window.location.href);
     url.search = '';
+    applyRuntimeQueryParams(url, runtimeConfig);
     return `${url.pathname}${url.search}${url.hash}`;
 }
 
-function buildEditorUrl(projectId) {
+function buildEditorUrl(projectId, runtimeConfig) {
     const url = new URL(window.location.href);
     url.search = '';
+    applyRuntimeQueryParams(url, runtimeConfig);
     url.searchParams.set('project', projectId);
     return `${url.pathname}?${url.searchParams.toString()}${url.hash}`;
 }
@@ -106,7 +129,7 @@ function renderProjectChrome(chrome = {}, shellState = {}) {
     saveBtn.disabled = isSaveBusy || !canSave;
 }
 
-function wireProjectShellControls(app, authService, projectsService, shellState) {
+function wireProjectShellControls(app, authService, projectsService, shellState, runtimeConfig) {
     const backBtn = getButtonElement('backToDashboardBtn');
     const saveBtn = getButtonElement('saveProjectBtn');
     const signOutBtn = getButtonElement('editorSignOutBtn');
@@ -115,7 +138,7 @@ function wireProjectShellControls(app, authService, projectsService, shellState)
 
     backBtn?.addEventListener('click', () => {
         app.destroy?.();
-        window.location.assign(buildDashboardUrl());
+        window.location.assign(buildDashboardUrl(runtimeConfig));
     });
 
     signOutBtn?.addEventListener('click', async () => {
@@ -125,7 +148,7 @@ function wireProjectShellControls(app, authService, projectsService, shellState)
             console.error('Sign-out failed:', error);
         } finally {
             app.destroy?.();
-            window.location.assign(buildDashboardUrl());
+            window.location.assign(buildDashboardUrl(runtimeConfig));
         }
     });
 
@@ -162,14 +185,16 @@ function wireProjectShellControls(app, authService, projectsService, shellState)
 }
 
 async function bootAppShell() {
-    const authService = createAuthService();
-    const projectsService = createProjectsService();
+    const runtimeConfig = resolveRuntimeConfig();
+    const authService = createAuthService({ devBackend: runtimeConfig.devBackend });
+    const projectsService = createProjectsService({ devBackend: runtimeConfig.devBackend });
     const dashboardPage = new DashboardPage({
         root: document.getElementById('dashboardPageRoot'),
         authService,
         projectsService,
+        runtimeConfig,
         onOpenProject: (projectId) => {
-            window.location.assign(buildEditorUrl(projectId));
+            window.location.assign(buildEditorUrl(projectId, runtimeConfig));
         }
     });
     const projectId = new URLSearchParams(window.location.search).get('project');
@@ -180,9 +205,18 @@ async function bootAppShell() {
         return;
     }
 
-    const session = await authService.getSession();
+    let session = null;
+
+    try {
+        session = await authService.getSession();
+    } catch (error) {
+        console.error('Session bootstrap failed:', error);
+        window.location.assign(buildDashboardUrl(runtimeConfig));
+        return;
+    }
+
     if (!session) {
-        window.location.assign(buildDashboardUrl());
+        window.location.assign(buildDashboardUrl(runtimeConfig));
         return;
     }
 
@@ -207,7 +241,7 @@ async function bootAppShell() {
     shellState.chrome = app.getProjectChrome();
     renderProjectChrome(shellState.chrome, shellState);
     renderProjectStatus(app.getProjectStatus());
-    wireProjectShellControls(app, authService, projectsService, shellState);
+    wireProjectShellControls(app, authService, projectsService, shellState, runtimeConfig);
     app.setSession(session);
     await app.init();
     app.setProjectStatus('Loading project...', 'pending');
@@ -223,7 +257,7 @@ async function bootAppShell() {
         );
         window.setTimeout(() => {
             app.destroy?.();
-            window.location.assign(buildDashboardUrl());
+            window.location.assign(buildDashboardUrl(runtimeConfig));
         }, 900);
     }
 }
