@@ -5,17 +5,23 @@
 
 import { getSportNames, getTemplate } from '../core/sports-templates.js';
 import { ProfileSolver } from '../core/profile-solver.js';
+import { SightlineAnalyzer, getCValueQuality } from '../core/sightline-calc.js';
 import { FieldRenderer } from '../viz/field-renderer.js';
 import { ProfileRenderer } from '../viz/profile-renderer.js';
 import { DEFAULT_STARTUP_PROFILE } from '../core/default-starting-profile.js';
-import { buildPlanDxf, buildProfileDxf } from '../export/dxf-exporter.js';
-import { buildObjText, buildStudyResultsJsonPayload, buildTierMetricsCsv } from '../export/obj-csv-exporter.js';
-import { exportRhinoModel } from '../export/rhino/rhino-exporter.js';
+import { buildPlanDxfExportDescriptor, buildProfileDxfExportDescriptor } from '../export/dxf-exporter.js';
+import {
+    buildConfigExportDescriptor,
+    buildObjExportDescriptor,
+    buildStudyResultsJsonExportDescriptor,
+    buildTierMetricsCsvExportDescriptor
+} from '../export/obj-csv-exporter.js';
+import { buildRhinoExportDescriptor } from '../export/rhino/rhino-exporter.js';
 import { AppState } from '../state/app-state.js';
 import { buildProjectSaveRequest, cloneProjectMetadata } from '../state/project.js';
 import { CameraBookmarks } from './camera-bookmarks.js';
 import { EditorShell } from './editor-shell.js';
-import { buildStatsViewModel, StatsPanel } from './stats-panel.js';
+import { StatsPanel } from './stats-panel.js';
 // Scene3D is imported lazily in _init3DAsync to avoid blocking if Three.js CDN is unavailable
 
 const EDGE_SPORTS = ['Ice Hockey', 'Football', 'Concert', 'Soccer', 'Basketball'];
@@ -119,6 +125,10 @@ function cloneSessionDto(session) {
         : null;
 }
 
+function normalizeThemeName(theme) {
+    return theme === 'dark' ? 'dark' : 'light';
+}
+
 function normalizeProjectStatus(message, tone = 'default') {
     return {
         message: typeof message === 'string' && message.trim()
@@ -133,6 +143,251 @@ function normalizeProjectStatus(message, tone = 'default') {
 function getSolverTierIndex(solver, fallbackIndex = 0) {
     const tierIndex = Number(solver?.tierIndex);
     return Number.isInteger(tierIndex) ? tierIndex : fallbackIndex;
+}
+
+function reconcileTierMetricsForStats(solver, loopIndex, metrics, tierLayoutByIndex, egressParams) {
+    if (!metrics) return metrics;
+    const tierIdx = solver && solver.tierIndex !== undefined ? solver.tierIndex : loopIndex;
+    const layout = tierLayoutByIndex instanceof Map
+        ? tierLayoutByIndex.get(Math.max(0, Math.floor(Number(tierIdx) || 0)))
+        : null;
+    const summary = layout?.sectionSummary;
+    if (!summary) return metrics;
+
+    const nextMetrics = { ...metrics };
+    const actualSections = Math.max(0, Math.floor(Number(summary.actualSections) || 0));
+    const actualAisles = Math.max(0, Math.floor(Number(summary.actualAisles) || 0));
+    const avgBackRowSeats = Number(summary.avgBackRowSeatsPerSection);
+    const egressFactorVal = Number(egressParams?.egressFactor);
+    const totalCapacity = Math.max(0, Number(metrics.capacity) || 0);
+
+    if (summary.allSectionPathsClosed === true && actualSections > 0) {
+        nextMetrics.numSections = actualSections;
+        nextMetrics.numAisles = actualAisles > 0 ? actualAisles : actualSections;
+
+        if (Number.isFinite(avgBackRowSeats)) {
+            nextMetrics.seatsPerBlock = avgBackRowSeats.toFixed(1);
+        }
+
+        const avgOccupantsPerSection = totalCapacity / actualSections;
+        nextMetrics.occupantsPerSection = Math.round(avgOccupantsPerSection);
+        const aisleLoad = actualSections <= 1 ? (avgOccupantsPerSection * 0.5) : avgOccupantsPerSection;
+        nextMetrics.occupantsPerAisleLine = Math.round(aisleLoad);
+
+        if (Number.isFinite(egressFactorVal)) {
+            nextMetrics.capacityWidth = (aisleLoad * egressFactorVal).toFixed(1);
+        }
+    }
+
+    return nextMetrics;
+}
+
+function buildTierStatsViewModel({
+    solver,
+    loopIndex,
+    focalPointFt,
+    egressParams,
+    tierMetricsByIndex,
+    tierLayoutByIndex,
+    isMirroredSidesMode
+}) {
+    const tierIndex = Number.isInteger(Number(solver?.tierIndex)) ? Number(solver.tierIndex) : loopIndex;
+    const tierNumber = tierIndex + 1;
+    const baseMetrics = tierMetricsByIndex instanceof Map
+        ? (tierMetricsByIndex.get(tierIndex) || null)
+        : null;
+    const metrics = reconcileTierMetricsForStats(
+        solver,
+        loopIndex,
+        baseMetrics,
+        tierLayoutByIndex,
+        egressParams
+    );
+    const accentColor = tierIndex === 0
+        ? 'var(--accent-blue)'
+        : (tierIndex === 1 ? 'var(--accent-cyan)' : 'var(--accent-purple)');
+
+    const rows = (solver?.rows || []).map((row, rowIndex) => {
+        const isFirstRow = rowIndex === 0;
+        const tierOneFirstRow = tierIndex === 0 && isFirstRow;
+        const rowZ = Number.isFinite(Number(row?.z)) ? Number(row.z) : 0;
+        const riserHeight = Number.isFinite(Number(row?.riser_height)) ? Number(row.riser_height) : 0;
+        const treadDepth = Number.isFinite(Number(row?.tread_depth)) ? Number(row.tread_depth) : 0;
+        const rowX = Number.isFinite(Number(row?.x)) ? Number(row.x) : 0;
+        const cValue = Number.isFinite(Number(row?.c_value)) ? Number(row.c_value) : null;
+        const sightlineAngle = Number.isFinite(Number(row?.sightline_angle)) ? Number(row.sightline_angle) : 0;
+        const totalLength = Number.isFinite(Number(row?.computedLength)) ? Number(row.computedLength) : 0;
+        const totalSeats = Number.isFinite(Number(row?.computedSeats)) ? Number(row.computedSeats) : 0;
+        const lengthPerSide = Number.isFinite(Number(row?.computedLengthPerSide))
+            ? Number(row.computedLengthPerSide)
+            : null;
+        const seatsPerSide = Number.isFinite(Number(row?.computedSeatsPerSide))
+            ? Number(row.computedSeatsPerSide)
+            : null;
+        const cValueQuality = !isFirstRow && cValue !== null ? getCValueQuality(cValue) : null;
+        const riserInches = tierOneFirstRow ? (rowZ * 12) : (riserHeight * 12);
+
+        return {
+            rowNumber: Number.isFinite(Number(row?.row_number)) ? Number(row.row_number) : (rowIndex + 1),
+            riserDisplay: `${riserInches.toFixed(2)}"`,
+            riserWarning: !tierOneFirstRow && riserInches >= 22,
+            elevationDisplay: `${rowZ.toFixed(2)}'`,
+            cValueDisplay: !isFirstRow && cValue !== null ? `${cValue.toFixed(2)}"` : 'N/A',
+            cValueColor: isFirstRow ? 'var(--text-muted)' : (cValueQuality?.color || 'var(--text-primary)'),
+            treadDisplay: `${(treadDepth * 12).toFixed(2)}"`,
+            distToFocalDisplay: `${((rowX - treadDepth) - (Number(focalPointFt?.x) || 0)).toFixed(2)}'`,
+            angleDisplay: `${sightlineAngle.toFixed(2)}&deg;`,
+            rowLengthDisplay: isMirroredSidesMode && lengthPerSide !== null
+                ? `${totalLength.toFixed(0)}' (${lengthPerSide.toFixed(0)}'/side)`
+                : `${totalLength.toFixed(0)}'`,
+            rowSeatsDisplay: isMirroredSidesMode && seatsPerSide !== null
+                ? `${totalSeats.toLocaleString()} (${seatsPerSide.toLocaleString()}/side)`
+                : `${totalSeats.toLocaleString()}`
+        };
+    });
+
+    let egress = null;
+    if (metrics) {
+        const totalLen = parseFloat(metrics.totalRowLength) || 0;
+        const seatLen = parseFloat(metrics.totalSeatingLength) || 0;
+        const aisleLen = parseFloat(metrics.totalAisleLength) || 0;
+        const mirrorRuns = Math.max(1, Math.floor(Number(metrics.mirroredSideRuns) || 1));
+        const isMirroredSides = mirrorRuns > 1;
+        const displayAisles = isMirroredSides
+            ? (Math.max(0, Number(metrics.numAisles) || 0) * mirrorRuns)
+            : Math.max(0, Number(metrics.numAisles) || 0);
+        const displaySections = isMirroredSides
+            ? (Math.max(0, Number(metrics.numSections) || 0) * mirrorRuns)
+            : Math.max(0, Number(metrics.numSections) || 0);
+        const displayTotalLen = isMirroredSides ? (totalLen * mirrorRuns) : totalLen;
+        const displaySeatLen = isMirroredSides ? (seatLen * mirrorRuns) : seatLen;
+        const displayAisleLen = isMirroredSides ? (aisleLen * mirrorRuns) : aisleLen;
+        const displaySeatsPerRow = isMirroredSides
+            ? Math.round((Number(metrics.seatsPerRow) || 0) * mirrorRuns)
+            : Math.round(Number(metrics.seatsPerRow) || 0);
+        const blocksAddedForEgress = Math.max(0, Number(metrics.blocksAddedForEgress) || 0);
+
+        egress = {
+            tierLabel: `TIER ${tierNumber}`,
+            headerSuffix: isMirroredSides ? ' &bull; Both Sides' : '',
+            originalHeaderSuffix: isMirroredSides ? ' &bull; Both Sides (Combined Counts)' : '',
+            countsTag: isMirroredSides ? ' (both sides)' : '',
+            linearQuantitiesTag: isMirroredSides ? ' (combined both sides)' : '',
+            perSideMirrorNote: isMirroredSides
+                ? ' Counts and linear quantities shown combined for both sides. Width/load checks remain per aisle.'
+                : '',
+            displayAisles,
+            displaySections,
+            displayTotalLen,
+            displaySeatLen,
+            displayAisleLen,
+            displaySeatsPerRow,
+            totalSeatingPercentage: totalLen > 0 ? ((seatLen / totalLen) * 100).toFixed(0) : '0',
+            totalAislePercentage: totalLen > 0 ? ((aisleLen / totalLen) * 100).toFixed(0) : '0',
+            capacityWidth: metrics.capacityWidth,
+            occupantsPerSection: metrics.occupantsPerSection,
+            seatsPerBlock: metrics.seatsPerBlock,
+            occupantsPerAisleLine: metrics.occupantsPerAisleLine,
+            aisleWidth: metrics.aisleWidth,
+            minimumWidth: metrics.minimumWidth,
+            maximumWidth: metrics.maximumWidth,
+            governingWidth: metrics.governingWidth,
+            blocksAddedForEgress,
+            egressFactor: egressParams.egressFactor,
+            warningText: blocksAddedForEgress > 0
+                ? `Limit Forced: Clamped to Max Aisle (${metrics.maximumWidth}")`
+                : (metrics.converged === false ? 'Warning: Layout did not converge.' : '')
+        };
+    }
+
+    return {
+        tierIndex,
+        tierNumber,
+        title: `Tier ${tierNumber} Details`,
+        sectionClass: `tier-section-${tierNumber}`,
+        occupancy: {
+            label: `Tier ${tierNumber}`,
+            color: accentColor,
+            capacity: Math.max(0, Number(metrics?.capacity) || 0)
+        },
+        egress,
+        rows
+    };
+}
+
+function buildStatsViewModel({
+    solvers = [],
+    focalPointFt = { x: 0, z: 0 },
+    bowlConfig = {},
+    egressParams = {},
+    tierMetricsByIndex = new Map(),
+    tierAisleLayouts = []
+} = {}) {
+    const activeSolvers = (solvers || []).filter((solver) => solver && Array.isArray(solver.rows) && solver.rows.length > 0);
+    if (!activeSolvers.length) return null;
+
+    const rowsForStats = [];
+    activeSolvers.forEach((solver) => {
+        if (!solver.rows || solver.rows.length === 0) return;
+        if (solver.rows.length > 1) {
+            rowsForStats.push(...solver.rows.slice(1));
+            return;
+        }
+        rowsForStats.push(solver.rows[0]);
+    });
+
+    let qualityDistribution = { Excellent: 0, Good: 0, Acceptable: 0, Poor: 0 };
+    let totalRows = 0;
+    let averageCValueDisplay = '0.00';
+
+    if (rowsForStats.length > 0) {
+        const analyzer = new SightlineAnalyzer(
+            rowsForStats,
+            Number(focalPointFt?.x) || 0,
+            Number(focalPointFt?.z) || 0
+        );
+        analyzer.analyze();
+        const stats = analyzer.getStatistics();
+
+        if (stats) {
+            qualityDistribution = stats.qualityDistribution || qualityDistribution;
+            totalRows = Math.max(0, Number(stats.totalRows) || 0);
+            averageCValueDisplay = Number.isFinite(stats.avgC) ? stats.avgC.toFixed(2) : '0.00';
+        }
+    }
+
+    const tierLayoutByIndex = new Map((tierAisleLayouts || []).map((layout) => [
+        Math.max(0, Math.floor(Number(layout?.tierIndex) || 0)),
+        layout
+    ]));
+    const safeBowlConfig = /** @type {any} */ (bowlConfig);
+    const isMirroredSidesMode = String(safeBowlConfig?.type || '').toLowerCase() === 'sides';
+
+    const tiers = activeSolvers.map((solver, loopIndex) => buildTierStatsViewModel({
+        solver,
+        loopIndex,
+        focalPointFt,
+        egressParams,
+        tierMetricsByIndex,
+        tierLayoutByIndex,
+        isMirroredSidesMode
+    }));
+    const totalOccupancy = tiers.reduce((sum, tier) => sum + Math.max(0, Number(tier?.occupancy?.capacity) || 0), 0);
+
+    return {
+        summary: {
+            totalRows,
+            totalOccupancy,
+            averageCValueDisplay,
+            qualityDistribution: [
+                { label: 'Excellent', count: Math.max(0, Number(qualityDistribution.Excellent) || 0) },
+                { label: 'Good', count: Math.max(0, Number(qualityDistribution.Good) || 0) },
+                { label: 'Acceptable', count: Math.max(0, Number(qualityDistribution.Acceptable) || 0) },
+                { label: 'Poor', count: Math.max(0, Number(qualityDistribution.Poor) || 0) }
+            ]
+        },
+        tiers
+    };
 }
 
 function buildProjectChromeSnapshot(projectMetadata, session, deriveProjectName) {
@@ -193,13 +448,15 @@ export class SeatingBowlApp {
             // Setup canvases
             this._setupCanvases();
 
-            // Init 2D renderers
-            this.fieldRenderer = new FieldRenderer(getCanvasElement('fieldCanvas'));
-            this.profileRenderer = new ProfileRenderer(getCanvasElement('profileCanvas'));
-
             // Populate sport dropdown
             this._populateSports();
             this._initEditorShell();
+
+            const activeTheme = this._getActiveThemeName();
+
+            // Init 2D renderers
+            this.fieldRenderer = new FieldRenderer(getCanvasElement('fieldCanvas'), { theme: activeTheme });
+            this.profileRenderer = new ProfileRenderer(getCanvasElement('profileCanvas'), { theme: activeTheme });
 
             // Wire up events (must happen before update)
             this._wireEvents();
@@ -348,13 +605,22 @@ export class SeatingBowlApp {
     }
 
     _handleThemeChanged(theme, { rerender = true } = {}) {
-        void theme;
-        if (this.scene3D && typeof this.scene3D.applyTheme === 'function') {
-            this.scene3D.applyTheme();
-        }
+        this._applyThemeToVisualizers(theme);
         if (rerender && this.fieldRenderer && this.profileRenderer) {
             this.update();
         }
+    }
+
+    _getActiveThemeName() {
+        return normalizeThemeName(this.editorShell?.getTheme?.());
+    }
+
+    _applyThemeToVisualizers(theme = this._getActiveThemeName()) {
+        const nextTheme = normalizeThemeName(theme);
+        this.fieldRenderer?.setTheme?.(nextTheme);
+        this.profileRenderer?.setTheme?.(nextTheme);
+        this.scene3D?.applyTheme?.(nextTheme);
+        return nextTheme;
     }
 
     _initCameraBookmarks() {
@@ -413,11 +679,9 @@ export class SeatingBowlApp {
             // Clear loading indicator BEFORE Scene3D creates its canvas
             container3d.innerHTML = '';
 
-            this.scene3D = new Scene3D(container3d);
+            this.scene3D = new Scene3D(container3d, { theme: this._getActiveThemeName() });
             await this.scene3D.init();
-            if (typeof this.scene3D.applyTheme === 'function') {
-                this.scene3D.applyTheme();
-            }
+            this._applyThemeToVisualizers();
             this._scene3dReady = true;
 
             // Render 3D now that it's ready
@@ -961,7 +1225,7 @@ export class SeatingBowlApp {
             this._update3D();
 
             // Update stats
-            this._updateStats(buildStatsViewModel({
+            this._updateStats(this._buildStatsViewModel({
                 solvers,
                 focalPointFt,
                 bowlConfig,
@@ -1017,6 +1281,10 @@ export class SeatingBowlApp {
             egressFactor: this.state.occupancy.egressFactor,
             seatsBetweenAisles: this.state.occupancy.seatsBetweenAisles
         };
+    }
+
+    _buildStatsViewModel(input = {}) {
+        return buildStatsViewModel(input);
     }
 
     _updateStats(viewModel = null) {
@@ -1134,106 +1402,108 @@ export class SeatingBowlApp {
     }
 
     async _buildExportDescriptor(kind) {
-        if (kind === 'json') return this._buildJsonExportDescriptor();
-        if (kind === 'obj') return this._buildObjExportDescriptor();
-        if (kind === 'rhino') return this._buildRhinoExportDescriptor();
-        if (kind === 'profile-dxf') return this._buildProfileDxfExportDescriptor();
-        if (kind === 'plan-dxf') return this._buildPlanDxfExportDescriptor();
-        if (kind === 'csv') return this._buildCsvExportDescriptor();
-        if (kind === 'config') return this._buildConfigExportDescriptor();
-        return null;
-    }
-
-    _buildJsonExportDescriptor() {
         const solvers = this._getActiveSolvers();
-        if (!solvers.length) {
-            console.warn('No solver data to export');
-            return null;
-        }
-
-        const bowlConfig = this._getBowlConfig();
-        const egressParams = this._getEgressParams();
-        const focalPointFt = this._getFocalPointFt();
-        const tierArtifacts = this._buildTierRuntimeArtifacts(solvers, bowlConfig, egressParams);
-        const payload = buildStudyResultsJsonPayload({
-            solvers,
-            sportName: this.state.sport,
-            profileType: this.state.tiers[0]?.profileType || 'Parabolic',
-            template: this._currentTemplate,
-            bowlConfig,
-            egressParams,
-            focalPointFt,
-            primaryTierParameters: {
-                targetCValue: this.state.tiers[0]?.cValue ?? 0,
-                firstRowDistance: this.state.tiers[0]?.firstRowDist ?? 0,
-                firstRowElevation: this.state.tiers[0]?.firstRowElev ?? 0,
-                treadDepth: this.state.tiers[0]?.treadDepth ?? 0,
-                riserHeight: this.state.tiers[0]?.riserHeight ?? 0,
-                numRows: this.state.tiers[0]?.numRows ?? 0,
-                eyeHeight: this.state.tiers[0]?.eyeHeight ?? 0,
-                eyeSetback: this.state.tiers[0]?.eyeSetback ?? 0
-            },
-            tierArtifacts
-        });
-        if (!payload) {
-            console.warn('No solver data to export');
-            return null;
-        }
-
-        return {
-            filename: `seating - study - ${payload.sport.toLowerCase().replace(/\s/g, '-')}.json`,
-            content: JSON.stringify(payload, null, 2),
-            type: 'application/json'
-        };
-    }
-
-    _buildObjExportDescriptor() {
-        const sceneExportData = this._getSceneExportData();
-        if (!sceneExportData?.bowlMeshes?.length) {
-            console.warn('No 3D data to export');
-            return null;
-        }
-
-        return {
-            filename: `seating - study - ${this.state.sport.toLowerCase().replace(/\s/g, '-')}.obj`,
-            content: buildObjText({
-                bowlMeshes: sceneExportData.bowlMeshes,
-                objectName: 'SeatingBowl'
-            }),
-            type: 'text/plain'
-        };
-    }
-
-    async _buildRhinoExportDescriptor() {
-        const sceneExportData = this._getSceneExportData();
-        if (!sceneExportData?.bowlMeshes?.length) {
-            console.warn('No 3D data to export');
-            return null;
-        }
-
-        const rhino = await this._loadRhino3dm();
-        const solvers = this._getActiveSolvers();
-        const bowlConfig = this._getBowlConfig();
         const sportName = this.state.sport;
-        const result = await exportRhinoModel({
-            rhino,
-            solvers,
-            bowlConfig,
-            sportName,
-            nativeSpectatorBlockLimit: Number(globalThis?.__SBS_RHINO_NATIVE_SPECTATOR_MAX_BLOCKS),
-            tierArtifacts: this._buildRhinoTierArtifacts(solvers, bowlConfig, sportName),
-            sceneExportData
-        });
 
-        if (!result?.bytes || result.exportedCount === 0) {
-            console.warn('No valid 3D geometry found for Rhino export');
-            return null;
+        if (kind === 'json') {
+            const bowlConfig = this._getBowlConfig();
+            const egressParams = this._getEgressParams();
+            return buildStudyResultsJsonExportDescriptor({
+                solvers,
+                sportName,
+                profileType: this.state.tiers[0]?.profileType || 'Parabolic',
+                template: this._currentTemplate,
+                bowlConfig,
+                egressParams,
+                focalPointFt: this._getFocalPointFt(),
+                primaryTierParameters: {
+                    targetCValue: this.state.tiers[0]?.cValue ?? 0,
+                    firstRowDistance: this.state.tiers[0]?.firstRowDist ?? 0,
+                    firstRowElevation: this.state.tiers[0]?.firstRowElev ?? 0,
+                    treadDepth: this.state.tiers[0]?.treadDepth ?? 0,
+                    riserHeight: this.state.tiers[0]?.riserHeight ?? 0,
+                    numRows: this.state.tiers[0]?.numRows ?? 0,
+                    eyeHeight: this.state.tiers[0]?.eyeHeight ?? 0,
+                    eyeSetback: this.state.tiers[0]?.eyeSetback ?? 0
+                },
+                tierArtifacts: this._buildTierRuntimeArtifacts(solvers, bowlConfig, egressParams)
+            });
         }
 
-        return {
-            filename: `seating - study - ${sportName.toLowerCase().replace(/\s/g, '-')}.3dm`,
-            blob: new Blob([result.bytes], { type: 'model/vnd.rhino' })
-        };
+        if (kind === 'obj') {
+            return buildObjExportDescriptor({
+                bowlMeshes: this._getSceneExportData()?.bowlMeshes || [],
+                sportName,
+                objectName: 'SeatingBowl'
+            });
+        }
+
+        if (kind === 'rhino') {
+            const sceneExportData = this._getSceneExportData();
+            if (!sceneExportData?.bowlMeshes?.length) {
+                return buildRhinoExportDescriptor({
+                    sportName,
+                    sceneExportData
+                });
+            }
+
+            const bowlConfig = this._getBowlConfig();
+            const rhino = await this._loadRhino3dm();
+
+            return buildRhinoExportDescriptor({
+                rhino,
+                solvers,
+                bowlConfig,
+                sportName,
+                nativeSpectatorBlockLimit: Number(globalThis?.__SBS_RHINO_NATIVE_SPECTATOR_MAX_BLOCKS),
+                tierArtifacts: this._buildRhinoTierArtifacts(solvers, bowlConfig, sportName),
+                sceneExportData
+            });
+        }
+
+        if (kind === 'profile-dxf') {
+            return buildProfileDxfExportDescriptor({
+                solvers,
+                structuralDepthFt: (this.state.bowl.structuralDepth || 0) / 12.0,
+                focalPointFt: this._getFocalPointFt(),
+                sportName
+            });
+        }
+
+        if (kind === 'plan-dxf') {
+            const bowlConfig = this._getBowlConfig();
+            const egressParams = this._getEgressParams();
+            const tierPlanArtifacts = this._buildTierRuntimeArtifacts(solvers, bowlConfig, egressParams).map((artifact) => ({
+                tierIndex: artifact.tierIndex,
+                rowGeometries: artifact.rowGeometries,
+                aislePolygons: artifact.aislePolygons,
+                overlayData: artifact.overlayData
+            }));
+
+            return buildPlanDxfExportDescriptor({
+                template: this._currentTemplate,
+                runoffFt: this._getRunoffDistance(),
+                visualFocalXFt: this._getFocalPointFt().x,
+                tierPlanArtifacts,
+                sportName
+            });
+        }
+
+        if (kind === 'csv') {
+            return buildTierMetricsCsvExportDescriptor({
+                solvers,
+                focalPointFt: this._getFocalPointFt(),
+                sportName
+            });
+        }
+
+        if (kind === 'config') {
+            return buildConfigExportDescriptor({
+                config: this.state.toJSON()
+            });
+        }
+
+        return null;
     }
 
 
@@ -1322,78 +1592,6 @@ export class SeatingBowlApp {
             }, { once: true });
             document.head.appendChild(script);
         });
-    }
-
-    _buildProfileDxfExportDescriptor() {
-        const solvers = this._getActiveSolvers();
-        if (!solvers.length) {
-            console.warn('No 2D profile data to export');
-            return null;
-        }
-
-        return {
-            filename: `SeatingProfile_${this.state.sport.toLowerCase().replace(/\s/g, '-')}.dxf`,
-            content: buildProfileDxf({
-                solvers,
-                structuralDepthFt: (this.state.bowl.structuralDepth || 0) / 12.0,
-                focalPointFt: this._getFocalPointFt()
-            }),
-            type: 'text/plain'
-        };
-    }
-
-    _buildPlanDxfExportDescriptor() {
-        const solvers = this._getActiveSolvers();
-        if (!solvers.length || !this._currentTemplate) {
-            console.warn('No Plan data to export');
-            return null;
-        }
-
-        const bowlConfig = this._getBowlConfig();
-        const egressParams = this._getEgressParams();
-        const tierPlanArtifacts = this._buildTierRuntimeArtifacts(solvers, bowlConfig, egressParams).map((artifact) => ({
-            tierIndex: artifact.tierIndex,
-            rowGeometries: artifact.rowGeometries,
-            aislePolygons: artifact.aislePolygons,
-            overlayData: artifact.overlayData
-        }));
-
-        return {
-            filename: `SeatingPlan_${this.state.sport.toLowerCase().replace(/\s/g, '-')}.dxf`,
-            content: buildPlanDxf({
-                template: this._currentTemplate,
-                runoffFt: this._getRunoffDistance(),
-                visualFocalXFt: this._getFocalPointFt().x,
-                tierPlanArtifacts
-            }),
-            type: 'text/plain'
-        };
-    }
-
-    _buildCsvExportDescriptor() {
-        const solvers = this._getActiveSolvers();
-        if (!solvers.length) {
-            console.warn('No data for CSV');
-            return null;
-        }
-
-        return {
-            filename: `tier-metrics-${this.state.sport.toLowerCase().replace(/\s/g, '-')}.csv`,
-            content: buildTierMetricsCsv({
-                solvers,
-                focalPointFt: this._getFocalPointFt()
-            }),
-            type: 'text/csv'
-        };
-    }
-
-    _buildConfigExportDescriptor() {
-        const config = this.state.toJSON();
-        return {
-            filename: `bowl-config-${config.sport.toLowerCase().replace(/\s/g, '-')}.json`,
-            content: JSON.stringify(config, null, 2),
-            type: 'application/json'
-        };
     }
 
     _loadConfigText(text) {

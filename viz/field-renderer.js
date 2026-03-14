@@ -132,17 +132,16 @@ const FIELD_QUALITY_COLORS_DARK = {
  * @property {number} r_eff
  */
 
-function getActiveThemeName() {
-    if (typeof document === 'undefined' || !document.documentElement) return 'light';
-    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+function normalizeThemeName(theme) {
+    return theme === 'dark' ? 'dark' : 'light';
 }
 
 let BRAND_FIELD_COLORS = FIELD_THEME_COLORS.light;
 let TIER_PLAN_COLORS = FIELD_TIER_PLAN_COLORS.light;
 let ACTIVE_FIELD_THEME = 'light';
 
-function syncFieldThemeColors() {
-    const theme = getActiveThemeName();
+function syncFieldThemeColors(theme = 'light') {
+    theme = normalizeThemeName(theme);
     ACTIVE_FIELD_THEME = theme;
     BRAND_FIELD_COLORS = FIELD_THEME_COLORS[theme] || FIELD_THEME_COLORS.light;
     TIER_PLAN_COLORS = FIELD_TIER_PLAN_COLORS[theme] || FIELD_TIER_PLAN_COLORS.light;
@@ -248,10 +247,11 @@ export class FieldRenderer {
     /**
      * @param {HTMLCanvasElement} canvas
      */
-    constructor(canvas) {
+    constructor(canvas, options = {}) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.padding = 40;
+        this._theme = normalizeThemeName(options?.theme);
 
         // Zoom/pan state
         this._userZoom = 1.0;
@@ -263,6 +263,12 @@ export class FieldRenderer {
         this._panStartY = 0;
 
         this._setupInteraction();
+        syncFieldThemeColors(this._theme);
+    }
+
+    setTheme(theme) {
+        this._theme = normalizeThemeName(theme);
+        syncFieldThemeColors(this._theme);
     }
 
     _rerenderFromLastArgs() {
@@ -400,7 +406,7 @@ export class FieldRenderer {
     render(template, customRunoff, solvers, visibility, visualFocalX = 0, bowlConfig = null, offsetCorrection = 0, tierAisleLayouts = []) {
         // Cache args for re-render during interaction
         this._lastArgs = [template, customRunoff, solvers, visibility, visualFocalX, bowlConfig, offsetCorrection, tierAisleLayouts];
-        syncFieldThemeColors();
+        syncFieldThemeColors(this._theme);
 
         const ctx = this.ctx;
         const w = this.canvas.width;

@@ -1,9 +1,13 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import {
+    buildConfigExportDescriptor,
+    buildObjExportDescriptor,
     buildObjText,
+    buildStudyResultsJsonExportDescriptor,
     buildStudyResultsJsonPayload,
-    buildTierMetricsCsv
+    buildTierMetricsCsv,
+    buildTierMetricsCsvExportDescriptor
 } from '../../export/obj-csv-exporter.js';
 
 function createSolver() {
@@ -155,6 +159,64 @@ describe('buildStudyResultsJsonPayload', () => {
     });
 });
 
+describe('buildStudyResultsJsonExportDescriptor', () => {
+    test('wraps the study payload in a download descriptor', () => {
+        const descriptor = buildStudyResultsJsonExportDescriptor({
+            solvers: [createSolver()],
+            sportName: 'Football',
+            profileType: 'Parabolic',
+            template: {
+                name: 'Football',
+                shape: 'rectangle',
+                field_length: 360,
+                field_width: 160,
+                runoff: 20
+            },
+            bowlConfig: {
+                width: 160,
+                type: 'end'
+            },
+            egressParams: {
+                seatWidthIn: 20,
+                minAisleWidthIn: 48,
+                maxAisleWidthIn: 72,
+                egressFactor: 0.2,
+                seatsBetweenAisles: 20
+            },
+            focalPointFt: { x: 0, z: 1 },
+            primaryTierParameters: {
+                targetCValue: 12,
+                firstRowDistance: 8,
+                firstRowElevation: 1,
+                treadDepth: 24,
+                riserHeight: 12,
+                numRows: 2,
+                eyeHeight: 4,
+                eyeSetback: 6
+            },
+            tierArtifacts: []
+        });
+
+        expect(descriptor).toMatchObject({
+            filename: 'seating - study - football.json',
+            type: 'application/json'
+        });
+        expect(descriptor.content).toContain('"sport": "Football"');
+    });
+
+    test('returns null when there is no solver data', () => {
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        expect(buildStudyResultsJsonExportDescriptor({
+            solvers: [],
+            sportName: 'Football'
+        })).toBeNull();
+        expect(warnSpy).toHaveBeenCalledWith('No solver data to export');
+
+        warnSpy.mockRestore();
+    });
+});
+
 describe('buildObjText', () => {
     test('writes bowl mesh vertices and faces with stable index offsets', () => {
         const obj = buildObjText({
@@ -218,6 +280,31 @@ describe('buildObjText', () => {
     });
 });
 
+describe('buildObjExportDescriptor', () => {
+    test('wraps OBJ content with a stable filename', () => {
+        const descriptor = buildObjExportDescriptor({
+            sportName: 'Ice Hockey',
+            bowlMeshes: [
+                {
+                    type: 'Mesh',
+                    geometry: {
+                        attributes: {
+                            position: { array: [0, 0, 0, 1, 0, 0, 0, 1, 0] }
+                        },
+                        index: { array: [0, 1, 2] }
+                    }
+                }
+            ]
+        });
+
+        expect(descriptor).toMatchObject({
+            filename: 'seating - study - ice-hockey.obj',
+            type: 'text/plain'
+        });
+        expect(descriptor.content).toContain('o SeatingBowl');
+    });
+});
+
 describe('buildTierMetricsCsv', () => {
     test('writes tier row metrics from passed solver data', () => {
         const csv = buildTierMetricsCsv({
@@ -255,5 +342,38 @@ describe('buildTierMetricsCsv', () => {
         expect(csv).toContain('Tier,Row,Riser (in),Elevation (ft),C-Value (in)');
         expect(csv).toContain('1,1,12.00,1.00,N/A,24.00,8.00,30.00,40,24');
         expect(csv).toContain('1,2,12.00,2.00,2.50,24.00,10.00,31.00,42,26');
+    });
+});
+
+describe('buildTierMetricsCsvExportDescriptor', () => {
+    test('wraps CSV content with the sport-based filename', () => {
+        const descriptor = buildTierMetricsCsvExportDescriptor({
+            solvers: [{ rows: [{ row_number: 1, x: 10, z: 1, tread_depth: 2, riser_height: 1, computedLength: 40, computedSeats: 24 }] }],
+            focalPointFt: { x: 0 },
+            sportName: 'Soccer'
+        });
+
+        expect(descriptor).toMatchObject({
+            filename: 'tier-metrics-soccer.csv',
+            type: 'text/csv'
+        });
+        expect(descriptor.content).toContain('Tier,Row,Riser (in),Elevation (ft),C-Value (in)');
+    });
+});
+
+describe('buildConfigExportDescriptor', () => {
+    test('serializes passed config data without reading AppState directly', () => {
+        const descriptor = buildConfigExportDescriptor({
+            config: {
+                sport: 'Basketball',
+                tiers: [{ enabled: true }]
+            }
+        });
+
+        expect(descriptor).toMatchObject({
+            filename: 'bowl-config-basketball.json',
+            type: 'application/json'
+        });
+        expect(descriptor.content).toContain('"sport": "Basketball"');
     });
 });

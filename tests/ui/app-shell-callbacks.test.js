@@ -116,6 +116,25 @@ describe('SeatingBowlApp shell callbacks', () => {
         expect(chromeUpdates.at(-1)?.name).toBe('Basketball Study');
     });
 
+    it('pushes explicit theme state into visualizers without requiring viz to read the DOM', () => {
+        const app = new SeatingBowlApp();
+        const fieldRenderer = { setTheme: vi.fn() };
+        const profileRenderer = { setTheme: vi.fn() };
+        const scene3D = { applyTheme: vi.fn() };
+
+        app.fieldRenderer = /** @type {any} */ (fieldRenderer);
+        app.profileRenderer = /** @type {any} */ (profileRenderer);
+        app.scene3D = /** @type {any} */ (scene3D);
+        app.update = vi.fn();
+
+        app._handleThemeChanged('dark');
+
+        expect(fieldRenderer.setTheme).toHaveBeenCalledWith('dark');
+        expect(profileRenderer.setTheme).toHaveBeenCalledWith('dark');
+        expect(scene3D.applyTheme).toHaveBeenCalledWith('dark');
+        expect(app.update).toHaveBeenCalledTimes(1);
+    });
+
     it('uses the explicit scene export accessor without falling back to scene internals', () => {
         const app = new SeatingBowlApp();
         const exportSceneData = {
@@ -145,6 +164,16 @@ describe('SeatingBowlApp shell callbacks', () => {
         });
 
         expect(app._getSceneExportData()).toBeNull();
+    });
+
+    it('does not initialize rhino when there is no scene export geometry', async () => {
+        const app = new SeatingBowlApp();
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const loadRhino3dm = vi.spyOn(app, '_loadRhino3dm').mockResolvedValue(/** @type {any} */ ({}));
+
+        await expect(app._buildExportDescriptor('rhino')).resolves.toBeNull();
+        expect(loadRhino3dm).not.toHaveBeenCalled();
+        expect(warnSpy).toHaveBeenCalledWith('No 3D data to export');
     });
 
     it('replays the scene3d side effects when restored state opens directly to the 3D tab', () => {

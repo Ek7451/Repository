@@ -1,5 +1,10 @@
 const DXF_VERSION = 'AC1009';
 
+function slugifySportName(sportName) {
+    const normalized = String(sportName ?? '').trim().toLowerCase().replace(/\s+/g, '-');
+    return normalized || 'seating';
+}
+
 function isFiniteNumber(value) {
     return Number.isFinite(Number(value));
 }
@@ -361,6 +366,29 @@ export function buildProfileDxf({ solvers, structuralDepthFt = 0, focalPointFt =
     return writer.build();
 }
 
+export function buildProfileDxfExportDescriptor({
+    solvers = [],
+    structuralDepthFt = 0,
+    focalPointFt = { x: 0, z: 0 },
+    sportName = ''
+} = {}) {
+    const activeSolvers = (solvers || []).filter((solver) => solver && Array.isArray(solver.rows) && solver.rows.length > 0);
+    if (activeSolvers.length === 0) {
+        console.warn('No 2D profile data to export');
+        return null;
+    }
+
+    return {
+        filename: `SeatingProfile_${slugifySportName(sportName)}.dxf`,
+        content: buildProfileDxf({
+            solvers: activeSolvers,
+            structuralDepthFt,
+            focalPointFt
+        }),
+        type: 'text/plain'
+    };
+}
+
 export function buildPlanDxf({ template, runoffFt = 0, visualFocalXFt, tierPlanArtifacts = [] }) {
     const writer = createDxfWriter();
 
@@ -413,4 +441,28 @@ export function buildPlanDxf({ template, runoffFt = 0, visualFocalXFt, tierPlanA
     });
 
     return writer.build();
+}
+
+export function buildPlanDxfExportDescriptor({
+    template = null,
+    runoffFt = 0,
+    visualFocalXFt = undefined,
+    tierPlanArtifacts = [],
+    sportName = ''
+} = {}) {
+    if (!template || !Array.isArray(tierPlanArtifacts) || tierPlanArtifacts.length === 0) {
+        console.warn('No Plan data to export');
+        return null;
+    }
+
+    return {
+        filename: `SeatingPlan_${slugifySportName(sportName)}.dxf`,
+        content: buildPlanDxf({
+            template,
+            runoffFt,
+            visualFocalXFt,
+            tierPlanArtifacts
+        }),
+        type: 'text/plain'
+    };
 }

@@ -76,15 +76,15 @@ const PROFILE_THEME_COLORS = {
     }
 };
 
-function getActiveThemeName() {
-    if (typeof document === 'undefined' || !document.documentElement) return 'light';
-    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+function normalizeThemeName(theme) {
+    return theme === 'dark' ? 'dark' : 'light';
 }
 
 let BRAND_PROFILE_COLORS = PROFILE_THEME_COLORS.light;
 
-function syncProfileThemeColors() {
-    BRAND_PROFILE_COLORS = PROFILE_THEME_COLORS[getActiveThemeName()] || PROFILE_THEME_COLORS.light;
+function syncProfileThemeColors(theme = 'light') {
+    theme = normalizeThemeName(theme);
+    BRAND_PROFILE_COLORS = PROFILE_THEME_COLORS[theme] || PROFILE_THEME_COLORS.light;
 }
 
 const PROFILE_X_AXIS_LABEL_Y_OFFSET_PX = 72; // keep bottom scale clear of profile overlay toggle
@@ -93,11 +93,12 @@ export class ProfileRenderer {
     /**
      * @param {HTMLCanvasElement} canvas
      */
-    constructor(canvas) {
+    constructor(canvas, options = {}) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.padding = 60;
         this.hoveredRow = -1;
+        this._theme = normalizeThemeName(options?.theme);
 
         // --- Camera State (World Coordinates) ---
         // exact world coordinates of the center of the canvas
@@ -123,6 +124,12 @@ export class ProfileRenderer {
         this._lastMy = 0;
 
         this._setupInteraction();
+        syncProfileThemeColors(this._theme);
+    }
+
+    setTheme(theme) {
+        this._theme = normalizeThemeName(theme);
+        syncProfileThemeColors(this._theme);
     }
 
     _setupInteraction() {
@@ -305,7 +312,7 @@ export class ProfileRenderer {
      * Uses Camera State (_cameraX, _cameraZ, _pxPerFoot).
      */
     renderMulti(solvers, focalX, focalZ, options = {}) {
-        syncProfileThemeColors();
+        syncProfileThemeColors(this._theme);
         const ctx = this.ctx;
         const w = this.canvas.width;
         const h = this.canvas.height;

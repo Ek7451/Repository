@@ -3,6 +3,11 @@ function getTierIndex(solver, fallbackIndex = 0) {
     return Number.isInteger(tierIndex) ? tierIndex : fallbackIndex;
 }
 
+function slugifySportName(sportName) {
+    const normalized = String(sportName ?? '').trim().toLowerCase().replace(/\s+/g, '-');
+    return normalized || 'seating';
+}
+
 function createEmptyOverlay() {
     return {
         sectionLabels: [],
@@ -322,6 +327,40 @@ export function buildStudyResultsJsonPayload({
     };
 }
 
+export function buildStudyResultsJsonExportDescriptor({
+    solvers = [],
+    sportName = '',
+    profileType = 'Parabolic',
+    template = null,
+    bowlConfig = null,
+    egressParams = null,
+    focalPointFt = { x: 0, z: 0 },
+    primaryTierParameters = null,
+    tierArtifacts = []
+} = {}) {
+    const payload = buildStudyResultsJsonPayload({
+        solvers,
+        sportName,
+        profileType,
+        template,
+        bowlConfig,
+        egressParams,
+        focalPointFt,
+        primaryTierParameters,
+        tierArtifacts
+    });
+    if (!payload) {
+        console.warn('No solver data to export');
+        return null;
+    }
+
+    return {
+        filename: `seating - study - ${slugifySportName(payload.sport)}.json`,
+        content: JSON.stringify(payload, null, 2),
+        type: 'application/json'
+    };
+}
+
 export function buildObjText({ bowlMeshes = [], objectName = 'SeatingBowl' } = {}) {
     let output = '# Seating Bowl Study - OBJ Export\n';
     output += `o ${objectName}\n`;
@@ -377,6 +416,22 @@ export function buildObjText({ bowlMeshes = [], objectName = 'SeatingBowl' } = {
     return output;
 }
 
+export function buildObjExportDescriptor({ bowlMeshes = [], sportName = '', objectName = 'SeatingBowl' } = {}) {
+    if (!Array.isArray(bowlMeshes) || bowlMeshes.length === 0) {
+        console.warn('No 3D data to export');
+        return null;
+    }
+
+    return {
+        filename: `seating - study - ${slugifySportName(sportName)}.obj`,
+        content: buildObjText({
+            bowlMeshes,
+            objectName
+        }),
+        type: 'text/plain'
+    };
+}
+
 export function buildTierMetricsCsv({ solvers = [], focalPointFt = { x: 0 } } = {}) {
     let csv = 'Tier,Row,Riser (in),Elevation (ft),C-Value (in),Tread (in),Dist to Focal (ft),Sightline Angle (deg),Linear Length (ft),Seats\n';
     const focalXForDetails = Number(focalPointFt?.x) || 0;
@@ -401,4 +456,30 @@ export function buildTierMetricsCsv({ solvers = [], focalPointFt = { x: 0 } } = 
     });
 
     return csv;
+}
+
+export function buildTierMetricsCsvExportDescriptor({ solvers = [], focalPointFt = { x: 0 }, sportName = '' } = {}) {
+    const activeSolvers = (solvers || []).filter((solver) => solver && Array.isArray(solver.rows) && solver.rows.length > 0);
+    if (activeSolvers.length === 0) {
+        console.warn('No data for CSV');
+        return null;
+    }
+
+    return {
+        filename: `tier-metrics-${slugifySportName(sportName)}.csv`,
+        content: buildTierMetricsCsv({
+            solvers: activeSolvers,
+            focalPointFt
+        }),
+        type: 'text/csv'
+    };
+}
+
+export function buildConfigExportDescriptor({ config = null } = {}) {
+    const sportName = config && typeof config === 'object' ? config.sport : '';
+    return {
+        filename: `bowl-config-${slugifySportName(sportName)}.json`,
+        content: JSON.stringify(config ?? {}, null, 2),
+        type: 'application/json'
+    };
 }

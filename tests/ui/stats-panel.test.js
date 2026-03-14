@@ -1,6 +1,7 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
-import { buildStatsViewModel } from '../../ui/stats-panel.js';
+import { SeatingBowlApp } from '../../ui/app.js';
+import { StatsPanel } from '../../ui/stats-panel.js';
 
 function createRow(overrides = {}) {
     return {
@@ -63,7 +64,12 @@ function createTierLayout({ tierIndex = 0, sectionSummary = {} } = {}) {
     };
 }
 
-describe('buildStatsViewModel', () => {
+function buildStatsViewModel(input = {}) {
+    const app = new SeatingBowlApp();
+    return app._buildStatsViewModel(input);
+}
+
+describe('SeatingBowlApp._buildStatsViewModel', () => {
     test('builds a single-tier summary from explicit solver and layout inputs', () => {
         const solver = createSolver({
             rows: [
@@ -206,5 +212,62 @@ describe('buildStatsViewModel', () => {
 
         expect(forcedWidthViewModel.tiers[0].egress.warningText).toContain('Limit Forced');
         expect(nonConvergedViewModel.tiers[0].egress.warningText).toContain('did not converge');
+    });
+});
+
+describe('StatsPanel', () => {
+    test('renders summary and details markup from an explicit view model DTO', () => {
+        const viewModel = buildStatsViewModel({
+            solvers: [createSolver()],
+            focalPointFt: { x: 0, z: 0 },
+            bowlConfig: { type: 'Full' },
+            egressParams: { egressFactor: 0.2 },
+            tierMetricsByIndex: new Map([[0, createMetrics()]]),
+            tierAisleLayouts: [createTierLayout()]
+        });
+        const statsEl = { innerHTML: '' };
+        const detailsEl = {
+            innerHTML: '',
+            querySelectorAll: vi.fn(() => [])
+        };
+        const panel = new StatsPanel({
+            statsEl: /** @type {any} */ (statsEl),
+            detailsEl: /** @type {any} */ (detailsEl)
+        });
+
+        panel.update(viewModel);
+
+        expect(statsEl.innerHTML).toContain('TOTAL OCCUPANCY');
+        expect(statsEl.innerHTML).toContain('EGRESS ANALYSIS');
+        expect(detailsEl.innerHTML).toContain('Tier 1 Details');
+        expect(detailsEl.innerHTML).toContain('row-table-row');
+    });
+
+    test('preserves expanded detail sections across rerenders', () => {
+        const viewModel = buildStatsViewModel({
+            solvers: [createSolver()],
+            focalPointFt: { x: 0, z: 0 },
+            bowlConfig: { type: 'Full' },
+            egressParams: { egressFactor: 0.2 },
+            tierMetricsByIndex: new Map([[0, createMetrics()]]),
+            tierAisleLayouts: [createTierLayout()]
+        });
+        const statsEl = { innerHTML: '' };
+        const detailsEl = {
+            innerHTML: '',
+            querySelectorAll: vi.fn(() => [
+                { classList: ['results-details', 'tier-section-1'] }
+            ])
+        };
+        const panel = new StatsPanel({
+            statsEl: /** @type {any} */ (statsEl),
+            detailsEl: /** @type {any} */ (detailsEl)
+        });
+
+        panel.update(viewModel);
+
+        expect(detailsEl.querySelectorAll).toHaveBeenCalledWith('.results-details:not(.collapsed)');
+        expect(detailsEl.innerHTML).toMatch(/class="collapsible\s+tier-section-1 results-details"/);
+        expect(detailsEl.innerHTML).not.toContain('collapsed tier-section-1');
     });
 });

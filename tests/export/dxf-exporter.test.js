@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'vitest';
-import { buildPlanDxf, buildProfileDxf } from '../../export/dxf-exporter.js';
+import {
+    buildPlanDxf,
+    buildPlanDxfExportDescriptor,
+    buildProfileDxf,
+    buildProfileDxfExportDescriptor
+} from '../../export/dxf-exporter.js';
 
 function createSolver() {
     return {
@@ -67,6 +72,23 @@ describe('buildProfileDxf', () => {
 
         expect(dxf).not.toContain('NaN');
         expect(dxf).not.toContain('Infinity');
+    });
+});
+
+describe('buildProfileDxfExportDescriptor', () => {
+    test('wraps profile DXF content in a download descriptor', () => {
+        const descriptor = buildProfileDxfExportDescriptor({
+            solvers: [createSolver()],
+            structuralDepthFt: 0,
+            focalPointFt: { x: 0, z: 0 },
+            sportName: 'Football'
+        });
+
+        expect(descriptor).toMatchObject({
+            filename: 'SeatingProfile_football.dxf',
+            type: 'text/plain'
+        });
+        expect(descriptor.content).toContain('Tier_1_Profile');
     });
 });
 
@@ -146,5 +168,43 @@ describe('buildPlanDxf', () => {
         expect(dxf).not.toContain('NaN');
         expect(dxf).not.toContain('Infinity');
         expect(dxf).toContain('EOF');
+    });
+});
+
+describe('buildPlanDxfExportDescriptor', () => {
+    test('wraps plan DXF content in a download descriptor', () => {
+        const descriptor = buildPlanDxfExportDescriptor({
+            template: {
+                shape: 'rectangle',
+                field_length: 100,
+                field_width: 50,
+                focal_x: 0,
+                focal_y: 0
+            },
+            runoffFt: 10,
+            visualFocalXFt: 0,
+            tierPlanArtifacts: [
+                {
+                    tierIndex: 0,
+                    rowGeometries: [[
+                        { cmd: 'moveTo', x: 0, y: 0 },
+                        { cmd: 'lineTo', x: 10, y: 0 },
+                        { cmd: 'closePath' }
+                    ]],
+                    aislePolygons: [],
+                    overlayData: {
+                        sectionLabels: [],
+                        rowSeatLabels: []
+                    }
+                }
+            ],
+            sportName: 'Soccer'
+        });
+
+        expect(descriptor).toMatchObject({
+            filename: 'SeatingPlan_soccer.dxf',
+            type: 'text/plain'
+        });
+        expect(descriptor.content).toContain('Tier_1_Plan');
     });
 });

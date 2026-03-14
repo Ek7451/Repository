@@ -44,23 +44,24 @@ const SCENE_THEME_COLORS = {
     }
 };
 
-function getActiveThemeName() {
-    if (typeof document === 'undefined' || !document.documentElement) return 'light';
-    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+function normalizeThemeName(theme) {
+    return theme === 'dark' ? 'dark' : 'light';
 }
 
 let BRAND_COLORS = SCENE_THEME_COLORS.light;
 
-function syncSceneThemeColors() {
-    BRAND_COLORS = SCENE_THEME_COLORS[getActiveThemeName()] || SCENE_THEME_COLORS.light;
+function syncSceneThemeColors(theme = 'light') {
+    theme = normalizeThemeName(theme);
+    BRAND_COLORS = SCENE_THEME_COLORS[theme] || SCENE_THEME_COLORS.light;
 }
 
 export class Scene3D {
     /**
      * @param {HTMLElement} container - DOM element to mount the 3D canvas into
      */
-    constructor(container) {
+    constructor(container, options = {}) {
         this.container = container;
+        this._theme = normalizeThemeName(options?.theme);
         /** @type {any} */
         this.THREE = THREE;
         /** @type {any} */
@@ -96,7 +97,7 @@ export class Scene3D {
     }
 
     async init() {
-        syncSceneThemeColors();
+        syncSceneThemeColors(this._theme);
         const size = this._getViewportSize();
         const w = size.w;
         const h = size.h;
@@ -216,8 +217,9 @@ export class Scene3D {
         return grid;
     }
 
-    applyTheme() {
-        syncSceneThemeColors();
+    applyTheme(theme = this._theme) {
+        this._theme = normalizeThemeName(theme);
+        syncSceneThemeColors(this._theme);
         if (!this.scene || !this.THREE) return;
 
         this.scene.background = new this.THREE.Color(BRAND_COLORS.sceneBg);

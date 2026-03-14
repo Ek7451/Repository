@@ -11,15 +11,21 @@
     as arguments. Keeps renderers reusable and independently testable.
   ③ export/rhino/ is now a subfolder (3 focused files) rather than
     one 1,050-line monolith.
+  ④ root app.js remains an approved thin bootstrap exception rather
+    than forcing route bootstrapping into pages/.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 seating-bowl/
 │
 │
+├── app.js                            # Thin bootstrap + route shell.
+│                                     # Approved root exception. [existing ✅]
+│
+│
 ├── pages/                             # The two screens users navigate between
 │   │
-│   ├── dashboard/                     # ❶ PROJECT DASHBOARD  [NEW] [existing ✅]
+│   ├── dashboard/                     # ❶ PROJECT DASHBOARD   [existing ✅]
 │   │   ├── dashboard.html             #   Landing page after login. [existing ✅]
 │   │   ├── dashboard.js               #   Shows project list, opens studies, 
 |   |   |                                                             [existing ✅]
@@ -63,8 +69,9 @@ seating-bowl/
 │   │                                  #   toJSON() / fromJSON() for persistence.
 |   |                                  #                            [existing ✅]
 │   │
-│   └── project.js                     #   Wraps one or more studies: [existing ✅]
-│                                      #   { id, name, createdAt, studies: [...] }
+│   └── project.js                     #   Single-study project envelope:
+│                                      #   { id, name, sport, createdAt,
+│                                      #     updatedAt, state } [existing ✅]
 │                                      #   This is what gets stored in the DB.
 │
 │
@@ -167,12 +174,13 @@ seating-bowl/
   FILE COUNT SUMMARY
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  Existing files (unchanged):    8   — all of core/ + all of viz/
-  Existing files (slimmed):      1   — ui/app.js  (4,328 → ~700 lines)
-  New files:                    12   — dashboard, state, ui splits,
-                                       export splits (incl. rhino x3), services
+  Layered JS files:             22   — pages/, core/, state/, ui/, viz/,
+                                       export/, services/
+  Approved root bootstrap:      +1   — root app.js thin route shell
+                                       exception
   ─────────────────────────────────
-  Total:                        21   (target range: 17–22)
+  Total JS files on disk:       23   — 22 layered modules plus the
+                                       approved root bootstrap
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

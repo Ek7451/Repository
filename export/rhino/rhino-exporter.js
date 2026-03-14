@@ -16,6 +16,11 @@ import {
 
 const EDGE_SPORTS = ['Ice Hockey', 'Football', 'Concert', 'Soccer', 'Basketball'];
 
+function slugifySportName(sportName) {
+    const normalized = String(sportName ?? '').trim().toLowerCase().replace(/\s+/g, '-');
+    return normalized || 'seating';
+}
+
 export function getRhinoExportOffsetCorrection(bowlConfig, sportName) {
     const safeWidth = Number.isFinite(bowlConfig?.width) ? bowlConfig.width : 0;
     return EDGE_SPORTS.includes(sportName) ? 0 : (safeWidth / 2);
@@ -272,4 +277,41 @@ export async function exportRhinoModel({
     } finally {
         if (typeof model.destroy === 'function') model.destroy();
     }
+}
+
+export async function buildRhinoExportDescriptor({
+    rhino = null,
+    solvers = [],
+    bowlConfig = null,
+    sportName = '',
+    tierArtifacts = [],
+    sceneExportData = null,
+    nativeSpectatorBlockLimit = null,
+    exportModel = exportRhinoModel
+} = {}) {
+    if (!sceneExportData?.bowlMeshes?.length) {
+        console.warn('No 3D data to export');
+        return null;
+    }
+
+    const result = await exportModel({
+        rhino,
+        solvers,
+        bowlConfig,
+        sportName,
+        tierArtifacts,
+        sceneExportData,
+        nativeSpectatorBlockLimit
+    });
+
+    if (!result?.bytes || result.exportedCount === 0) {
+        console.warn('No valid 3D geometry found for Rhino export');
+        return null;
+    }
+
+    return {
+        filename: `seating - study - ${slugifySportName(sportName)}.3dm`,
+        parts: [result.bytes],
+        type: 'model/vnd.rhino'
+    };
 }
