@@ -1,3 +1,7 @@
+/* ==========================================================================
+   Foundation
+   ========================================================================== */
+
 :root {
     --bg-primary: #ffffff;
     --bg-secondary: #ffffff;
@@ -78,6 +82,10 @@ body.jlg-shell {
     white-space: nowrap;
     border: 0;
 }
+
+/* ==========================================================================
+   Global Shell Layout
+   ========================================================================== */
 
 @keyframes fadeIn {
     from {
@@ -422,6 +430,10 @@ body.jlg-shell {
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
 }
+
+/* ==========================================================================
+   Right Panel: Results Content
+   ========================================================================== */
 
 .stats-panel {
     margin-top: var(--gap-sm);
@@ -835,6 +847,10 @@ body.jlg-shell {
     background: rgba(15, 17, 19, 0.08);
 }
 
+/* ==========================================================================
+   Center: 3D Saved Views
+   ========================================================================== */
+
 .jlg-shell .camera-bookmarks-bar {
     position: relative;
     display: flex;
@@ -1002,6 +1018,10 @@ body.jlg-shell {
     flex-direction: column;
 }
 
+/* ==========================================================================
+   Right Panel: Tier Metric Cards
+   ========================================================================== */
+
 .tier-metrics-card {
     margin-bottom: 24px;
     padding-left: 12px;
@@ -1119,6 +1139,10 @@ body.jlg-shell {
     color: #f59e0b;
 }
 
+/* ==========================================================================
+   Shell Visual Theme
+   ========================================================================== */
+
 .jlg-shell .app-container {
     position: relative;
 }
@@ -1144,6 +1168,10 @@ body.jlg-shell {
     border-color: #d6d6d2;
     box-shadow: 0 4px 12px rgba(15, 17, 19, 0.05);
 }
+
+/* ==========================================================================
+   Left Panel
+   ========================================================================== */
 
 .jlg-shell .left-sidebar {
     width: 408px;
@@ -1266,6 +1294,10 @@ body.jlg-shell {
 .jlg-shell #scene3dContainer {
     background: #ffffff;
 }
+
+/* ==========================================================================
+   Center: Header + Workspace
+   ========================================================================== */
 
 .jlg-shell .view-tabs {
     position: relative;
@@ -1472,6 +1504,10 @@ body.jlg-shell {
     min-height: 0;
 }
 
+/* ==========================================================================
+   Left Panel: Control Sections
+   ========================================================================== */
+
 .jlg-shell .control-section {
     margin-bottom: 14px;
     padding-left: 0;
@@ -1503,10 +1539,14 @@ body.jlg-shell {
     background: #fafafa;
     color: #3f3f46;
     border-bottom: 1px solid #e4e4e7;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 13px;
     font-weight: 600;
     letter-spacing: 0.12em;
+    height: 40px;
     padding: 12px 14px 12px 28px;
     margin-bottom: 0;
     line-height: 1;
@@ -1723,6 +1763,10 @@ body.jlg-shell {
     line-height: 1.4;
 }
 
+/* ==========================================================================
+   Center: View Overlays
+   ========================================================================== */
+
 .jlg-shell .view-overlay-controls {
     position: absolute;
     right: 14px;
@@ -1787,6 +1831,10 @@ body.jlg-shell {
     color: #ffffff;
     box-shadow: 0 4px 10px rgba(15, 17, 19, 0.14);
 }
+
+/* ==========================================================================
+   Left Panel: File Menu
+   ========================================================================== */
 
 .jlg-shell .export-menu-panel {
     border-top: 1px solid #e4e4e7;
@@ -1906,6 +1954,10 @@ body.jlg-shell {
     border: 0;
 }
 
+/* ==========================================================================
+   Right Panel
+   ========================================================================== */
+
 .jlg-shell .results-tabs-nav {
     background: #f4f4f5;
     border-right: 1px solid #e4e4e7;
@@ -1937,6 +1989,10 @@ body.jlg-shell {
     background: #ffffff;
     overflow-x: auto;
 }
+
+/* ==========================================================================
+   Center: 3D Saved Views Theme
+   ========================================================================== */
 
 .jlg-shell .camera-bookmarks-bar {
     background: rgba(255, 255, 255, 0.92);
@@ -2000,6 +2056,10 @@ body.jlg-shell {
     color: #101316;
 }
 
+/* ==========================================================================
+   Shared Chrome
+   ========================================================================== */
+
 .jlg-shell .icon-btn {
     color: #71717a;
     width: 28px;
@@ -2030,6 +2090,10 @@ body.jlg-shell {
     background: linear-gradient(180deg, rgba(122, 174, 26, 0.2), rgba(122, 174, 26, 0.45));
     opacity: 1;
 }
+
+/* ==========================================================================
+   Dark Theme
+   ========================================================================== */
 
 html[data-theme="dark"] {
     color-scheme: dark;
@@ -2278,6 +2342,10 @@ html[data-theme="dark"] .tier-metrics-warning {
 html[data-theme="dark"] .tier-metrics-warning svg {
     color: #f0a53c;
 }
+
+/* ==========================================================================
+   Responsive + Accessibility
+   ========================================================================== */
 
 @media (prefers-reduced-motion: reduce) {
     .jlg-shell * {
