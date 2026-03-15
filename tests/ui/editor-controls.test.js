@@ -86,16 +86,13 @@ function createState() {
         sport: 'Football',
         setup: {
             customRunoff: 25,
+            focalX: 0,
             focalZ: 0,
             sightlineVisuals: true,
             sectionMetrics: false
         },
         bowl: {
-            type: 'Full',
-            clipEnabled: false,
-            clipAxis: 'X',
-            clipPosition: 0,
-            clipSide: 'positive'
+            type: 'Full'
         },
         occupancy: {
             showSeatCubes3D: false
@@ -133,13 +130,13 @@ describe('EditorControls', () => {
             sportSelect: createElement(),
             customRunoffInput: createElement(),
             customRunoffSlider: createElement(),
+            focalXInput: createElement(),
+            focalXSlider: createElement(),
             bowlType: createElement(),
-            enableClipPlane: createElement(),
             enableTier1: createElement(),
             enableTier2: createElement(),
             enableTier3: createElement(),
             sideLengthRow: createElement(),
-            clipPlaneControls: createElement(),
             tier1Section: createElement(),
             tier2Section: createElement(),
             tier3Section: createElement()
@@ -147,8 +144,8 @@ describe('EditorControls', () => {
         const state = createState();
         state.sport = 'Soccer';
         state.setup.customRunoff = null;
+        state.setup.focalX = -30.2;
         state.bowl.type = 'Side1';
-        state.bowl.clipEnabled = true;
 
         vi.stubGlobal('document', createDocumentStub(elements));
 
@@ -162,35 +159,18 @@ describe('EditorControls', () => {
         expect(elements.sportSelect.value).toBe('Soccer');
         expect(elements.customRunoffInput.value).toBe('');
         expect(elements.customRunoffSlider.value).toBe(String(getTemplate('Soccer')?.runoff || 0));
+        expect(elements.focalXInput.value).toBe('-30.2');
+        expect(elements.focalXSlider.value).toBe('-30.2');
+        expect(elements.focalXInput.min).toBe('-111.5');
+        expect(elements.focalXInput.max).toBe('100');
+        expect(elements.focalXInput.step).toBe('0.1');
+        expect(elements.focalXSlider.min).toBe('-111.5');
         expect(
             elements.sportSelect.children.find((option) => option.value === 'Football')?.textContent
         ).toContain('Football');
         expect(elements.sideLengthRow.style.display).not.toBe('none');
-        expect(elements.clipPlaneControls.style.display).not.toBe('none');
         expect(elements.tier1Section.classList.contains('tier-disabled')).toBe(false);
         expect(elements.tier2Section.classList.contains('tier-disabled')).toBe(true);
-    });
-
-    test('owns clip position control range sync for the shared AppState UI', () => {
-        const elements = {
-            clipPositionSlider: createElement(),
-            clipPositionInput: createElement()
-        };
-
-        vi.stubGlobal('document', createDocumentStub(elements));
-
-        const controls = new EditorControls({
-            state: createState()
-        });
-
-        controls.syncClipPositionRange({ min: -24, max: 88, value: 42 });
-
-        expect(elements.clipPositionSlider.min).toBe('-24');
-        expect(elements.clipPositionSlider.max).toBe('88');
-        expect(elements.clipPositionSlider.value).toBe('42');
-        expect(elements.clipPositionInput.min).toBe('-24');
-        expect(elements.clipPositionInput.max).toBe('88');
-        expect(elements.clipPositionInput.value).toBe('42');
     });
 
     test('owns control bindings while mutating only the single shared AppState object', () => {
@@ -198,6 +178,8 @@ describe('EditorControls', () => {
             sportSelect: createElement(),
             customRunoffInput: createElement({ value: '25' }),
             customRunoffSlider: createElement({ value: '25' }),
+            focalXInput: createElement({ value: '0' }),
+            focalXSlider: createElement({ value: '0' }),
             enableTier2: createElement(),
             enableTier3: createElement(),
             tier2Section: createElement(),
@@ -216,6 +198,7 @@ describe('EditorControls', () => {
         });
 
         controls.init();
+        controls.syncFromState();
 
         elements.sportSelect.value = 'Soccer';
         elements.sportSelect.dispatch('change');
@@ -225,6 +208,10 @@ describe('EditorControls', () => {
             controlId: 'sportSelect'
         });
 
+        controls.syncFromState();
+        expect(elements.focalXInput.min).toBe('-111.5');
+        expect(elements.focalXSlider.min).toBe('-111.5');
+
         onChange.mockClear();
         elements.customRunoffInput.value = '';
         elements.customRunoffInput.dispatch('input');
@@ -233,6 +220,28 @@ describe('EditorControls', () => {
         expect(onChange).toHaveBeenCalledWith({
             reason: 'state',
             controlId: 'customRunoffInput'
+        });
+
+        onChange.mockClear();
+        elements.focalXInput.value = '-500';
+        elements.focalXInput.dispatch('input');
+        expect(state.setup.focalX).toBe(-111.5);
+        expect(elements.focalXInput.value).toBe('-111.5');
+        expect(elements.focalXSlider.value).toBe('-111.5');
+        expect(onChange).toHaveBeenCalledWith({
+            reason: 'state',
+            controlId: 'focalXInput'
+        });
+
+        onChange.mockClear();
+        elements.focalXSlider.value = '150';
+        elements.focalXSlider.dispatch('input');
+        expect(state.setup.focalX).toBe(100);
+        expect(elements.focalXInput.value).toBe('100');
+        expect(elements.focalXSlider.value).toBe('100');
+        expect(onChange).toHaveBeenCalledWith({
+            reason: 'state',
+            controlId: 'focalXSlider'
         });
 
         const tier2Defaults = buildNextTierDefaultsFromTiers(state.tiers, buildFocalPointFt(state), 2);

@@ -305,6 +305,17 @@ async function handleProjectsRequest(request, response, pathname) {
         return true;
     }
 
+    if (request.method === 'DELETE') {
+        store.projects = store.projects.filter((entry) => !(
+            entry.id === projectId && entry.ownerId === session.userId
+        ));
+
+        await writeStore(store);
+        response.writeHead(204);
+        response.end();
+        return true;
+    }
+
     sendError(response, 405, 'Method not allowed.');
     return true;
 }

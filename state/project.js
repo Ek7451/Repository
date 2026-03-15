@@ -20,6 +20,10 @@ export function normalizeProjectName(name, fallback = 'Untitled Seating Study') 
         : fallback;
 }
 
+export function buildDuplicateProjectName(name, fallback = 'Untitled Seating Study') {
+    return `${normalizeProjectName(name, fallback)} Copy`;
+}
+
 export function normalizeProjectStatus(message, tone = 'default') {
     return {
         message: typeof message === 'string' && message.trim()
@@ -41,9 +45,26 @@ export function cloneProjectMetadata(project = null) {
 }
 
 export function cloneSessionDto(session) {
-    return session && typeof session === 'object'
-        ? { ...session }
-        : null;
+    if (!session || typeof session !== 'object') {
+        return null;
+    }
+
+    const clone = {
+        userId: typeof session.userId === 'string' ? session.userId : '',
+        displayName: typeof session.displayName === 'string' ? session.displayName : '',
+        email: typeof session.email === 'string' ? session.email : ''
+    };
+    const jobTitle = typeof session.jobTitle === 'string' ? session.jobTitle.trim() : '';
+    const photoUrl = typeof session.photoUrl === 'string' ? session.photoUrl.trim() : '';
+
+    if (jobTitle) {
+        clone.jobTitle = jobTitle;
+    }
+    if (photoUrl) {
+        clone.photoUrl = photoUrl;
+    }
+
+    return clone;
 }
 
 export function buildProjectChromeSnapshot({ name = '', projectMetadata = null, session = null } = {}) {

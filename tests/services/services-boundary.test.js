@@ -94,12 +94,35 @@ describe('service DTO boundaries', () => {
         expect(session).toEqual({
             userId: 'pat@example.com',
             displayName: 'Pat Example',
-            email: 'pat@example.com'
+            email: 'pat@example.com',
+            jobTitle: 'Design Technology Specialist II'
         });
         await expect(service.getSession()).resolves.toEqual(session);
 
         await service.signOut();
         await expect(service.getSession()).resolves.toBeNull();
+    });
+
+    it('accepts optional profile fields from the auth API without changing the required contract', async () => {
+        /** @type {any} */ (globalThis.fetch).mockResolvedValue(createJsonResponse(200, {
+            session: {
+                userId: 'user-1',
+                displayName: 'Pat Example',
+                email: 'pat@example.com',
+                jobTitle: 'Design Technology Specialist II',
+                photoUrl: 'https://example.com/avatar.png'
+            }
+        }));
+
+        const service = createAuthService();
+
+        await expect(service.getSession()).resolves.toEqual({
+            userId: 'user-1',
+            displayName: 'Pat Example',
+            email: 'pat@example.com',
+            jobTitle: 'Design Technology Specialist II',
+            photoUrl: 'https://example.com/avatar.png'
+        });
     });
 
     it('keeps project API mode strict and returns only DTO data from fetch', async () => {
@@ -128,6 +151,36 @@ describe('service DTO boundaries', () => {
         ]);
     });
 
+    it('sends delete requests to the project detail endpoint in API mode', async () => {
+        /** @type {any} */ (globalThis.fetch).mockResolvedValue({
+            ok: true,
+            status: 204,
+            async json() {
+                throw new Error('No content');
+            }
+        });
+
+        const service = createProjectsService();
+        await expect(service.deleteProject('project-1')).resolves.toBeUndefined();
+
+        expect(globalThis.fetch).toHaveBeenCalledWith('/api/projects/project-1', {
+            method: 'DELETE',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json'
+            }
+        });
+    });
+
+    it('surfaces API delete errors from the backend payload', async () => {
+        /** @type {any} */ (globalThis.fetch).mockResolvedValue(createJsonResponse(404, {
+            error: 'Project not found.'
+        }));
+
+        const service = createProjectsService();
+        await expect(service.deleteProject('missing-project')).rejects.toThrow('Project not found.');
+    });
+
     it('uses explicit local project mode without leaking AppState instances', async () => {
         const authService = createAuthService({ devBackend: 'local' });
         const projectsService = createProjectsService({ devBackend: 'local' });
@@ -145,11 +198,7 @@ describe('service DTO boundaries', () => {
                 type: 'Full',
                 cornerRad: 10,
                 sideLength: 300,
-                structuralDepth: 0,
-                clipEnabled: false,
-                clipAxis: 'X',
-                clipPosition: 0,
-                clipSide: 'positive'
+                structuralDepth: 0
             },
             occupancy: {
                 seatWidth: 20,
@@ -178,5 +227,52 @@ describe('service DTO boundaries', () => {
 
         expect(loaded.state.sport).toBe('Football');
         await expect(projectsService.listProjects()).resolves.toHaveLength(1);
+    });
+
+    it('deletes only the signed-in local project and removes it from later list results', async () => {
+        const authService = createAuthService({ devBackend: 'local' });
+        const projectsService = createProjectsService({ devBackend: 'local' });
+
+        await authService.signIn({
+            displayName: 'Pat Example',
+            email: 'pat@example.com'
+        });
+
+        const owned = await projectsService.createProject({
+            name: 'Owned Study',
+            state: { sport: 'Football' }
+        });
+
+        globalThis.localStorage.setItem('sbg-dev-projects', JSON.stringify([
+            {
+                id: 'other-project',
+                ownerId: 'other@example.com',
+                name: 'Other Study',
+                sport: 'Soccer',
+                createdAt: '2026-03-15T00:00:00.000Z',
+                updatedAt: '2026-03-15T00:00:00.000Z',
+                state: { sport: 'Soccer' }
+            },
+            ...JSON.parse(globalThis.localStorage.getItem('sbg-dev-projects') ?? '[]')
+        ]));
+
+        await expect(projectsService.deleteProject(owned.id)).resolves.toBeUndefined();
+        await expect(projectsService.listProjects()).resolves.toEqual([]);
+
+        const rawProjects = JSON.parse(globalThis.localStorage.getItem('sbg-dev-projects') ?? '[]');
+        expect(rawProjects).toHaveLength(1);
+        expect(rawProjects[0].id).toBe('other-project');
+    });
+
+    it('throws when deleting a missing local project id', async () => {
+        const authService = createAuthService({ devBackend: 'local' });
+        const projectsService = createProjectsService({ devBackend: 'local' });
+
+        await authService.signIn({
+            displayName: 'Pat Example',
+            email: 'pat@example.com'
+        });
+
+        await expect(projectsService.deleteProject('missing-project')).rejects.toThrow('Project not found.');
     });
 });

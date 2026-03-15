@@ -174,6 +174,59 @@ export const SPORTS_TEMPLATES = {
     }
 };
 
+export const FOCAL_X_MAX_FT = 100.0;
+export const FOCAL_X_STEP_FT = 0.1;
+
+function toFiniteNumber(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+}
+
+export function resolveTemplateFieldEdgeAnchorYFt(template) {
+    const explicitAnchor = toFiniteNumber(template?.focal_y);
+    if (explicitAnchor !== null && explicitAnchor !== 0) {
+        return explicitAnchor;
+    }
+
+    const fieldWidth = toFiniteNumber(template?.field_width);
+    if (fieldWidth !== null && fieldWidth > 0) {
+        return -(fieldWidth / 2);
+    }
+
+    return explicitAnchor ?? 0;
+}
+
+export function resolveTemplateFocalXBoundsFt(template) {
+    const explicitAnchor = toFiniteNumber(template?.focal_y);
+    const fieldWidth = toFiniteNumber(template?.field_width);
+    const fieldRadius = toFiniteNumber(template?.field_radius);
+
+    let min = 0;
+    if (explicitAnchor !== null && explicitAnchor !== 0) {
+        min = -Math.abs(explicitAnchor);
+    } else if (fieldWidth !== null && fieldWidth > 0) {
+        min = -(fieldWidth / 2);
+    } else if (fieldRadius !== null && fieldRadius > 0) {
+        min = -fieldRadius;
+    }
+
+    return {
+        min,
+        max: FOCAL_X_MAX_FT
+    };
+}
+
+export function clampTemplateFocalXFt(template, focalX = 0) {
+    const { min, max } = resolveTemplateFocalXBoundsFt(template);
+    const numericValue = toFiniteNumber(focalX) ?? 0;
+    return Math.max(min, Math.min(max, numericValue));
+}
+
+export function resolvePlanFocalYFt(template, focalX = 0) {
+    const anchorY = resolveTemplateFieldEdgeAnchorYFt(template);
+    return anchorY - clampTemplateFocalXFt(template, focalX);
+}
+
 export function getTemplate(sportName) {
     return SPORTS_TEMPLATES[sportName] || null;
 }

@@ -1,4 +1,9 @@
-import { getTemplate } from '../core/sports-templates.js';
+import {
+    clampTemplateFocalXFt,
+    FOCAL_X_STEP_FT,
+    getTemplate,
+    resolveTemplateFocalXBoundsFt
+} from '../core/sports-templates.js';
 
 const APP_STATE_VERSION = 'phase6-app-state';
 const VALID_VIEW_TABS = new Set(['profile', 'field', 'scene3d']);
@@ -29,6 +34,7 @@ const VALID_RESULTS_TABS = new Set(['statsTab', 'detailsTab']);
  *   sport: string,
  *   setup: {
  *     customRunoff: number | null,
+ *     focalX: number,
  *     focalZ: number,
  *     sightlineVisuals: boolean,
  *     sectionMetrics: boolean
@@ -37,11 +43,7 @@ const VALID_RESULTS_TABS = new Set(['statsTab', 'detailsTab']);
  *     type: string,
  *     cornerRad: number,
  *     sideLength: number,
- *     structuralDepth: number,
- *     clipEnabled: boolean,
- *     clipAxis: string,
- *     clipPosition: number,
- *     clipSide: string
+ *     structuralDepth: number
  *   },
  *   occupancy: {
  *     seatWidth: number,
@@ -63,10 +65,15 @@ const VALID_RESULTS_TABS = new Set(['statsTab', 'detailsTab']);
  *   template?: {
  *     runoff?: number,
  *     field_length?: number,
+ *     field_width?: number,
  *     straight_length?: number,
+ *     field_radius?: number,
+ *     shape?: string,
+ *     arc_angle?: number,
  *     defaults?: {
  *       setup?: {
  *         customRunoff?: number | null,
+ *         focalX?: number,
  *         focalZ?: number
  *       },
  *       bowl?: {
@@ -97,7 +104,6 @@ const VALID_RESULTS_TABS = new Set(['statsTab', 'detailsTab']);
  *   fromJSON(rawState?: object, options?: AppStateFromJsonOptions): AppStateInstance,
  *   mergeJSON(partialState?: object): AppStateInstance,
  *   applySportDefaults(options?: SportDefaultsOptions): AppStateInstance,
- *   applyClipPositionRange(clipRange?: { min?: number, max?: number, value?: number } | null): AppStateInstance,
  *   toJSON(): AppStateData
  * }} AppStateMethods
  * @typedef {AppStateData & AppStateMethods} AppStateInstance
@@ -127,6 +133,7 @@ function createDefaultStateData() {
         sport: 'Football',
         setup: {
             customRunoff: 25,
+            focalX: 0,
             focalZ: 0,
             sightlineVisuals: true,
             sectionMetrics: false
@@ -135,11 +142,7 @@ function createDefaultStateData() {
             type: 'Full',
             cornerRad: 10,
             sideLength: 300,
-            structuralDepth: 0,
-            clipEnabled: false,
-            clipAxis: 'X',
-            clipPosition: 0,
-            clipSide: 'positive'
+            structuralDepth: 0
         },
         occupancy: {
             seatWidth: 20,
@@ -195,17 +198,6 @@ function parseString(value, fallback) {
 function normalizeBowlType(value, fallback) {
     const nextValue = parseString(value, fallback);
     return nextValue === 'Side2' ? 'Side1' : nextValue;
-}
-
-function normalizeClipAxis(value, fallback) {
-    const nextValue = String(value ?? fallback).toUpperCase();
-    return nextValue === 'Y' ? 'Y' : 'X';
-}
-
-function normalizeClipSide(value, fallback) {
-    if (value === 'negative') return 'negative';
-    if (value === 'positive') return 'positive';
-    return fallback;
 }
 
 function normalizeViewTab(value, fallback) {
@@ -303,15 +295,22 @@ function normalizeAppState(rawState = {}, fallbackState = createDefaultStateData
         : createDefaultStateData();
     /** @type {any} */
     const state = rawState && typeof rawState === 'object' ? rawState : {};
+    const sport = normalizeSportName(parseString(state.sport, fallback.sport));
+    const template = getTemplate(sport);
+    const focalX = clampTemplateFocalXFt(
+        template,
+        parseNumber(state.setup?.focalX, fallback.setup.focalX)
+    );
 
     return {
         _version: APP_STATE_VERSION,
-        sport: normalizeSportName(parseString(state.sport, fallback.sport)),
+        sport,
         setup: {
             customRunoff: parseNullableNumber(
                 state.setup?.customRunoff,
                 fallback.setup.customRunoff
             ),
+            focalX,
             focalZ: parseNumber(state.setup?.focalZ, fallback.setup.focalZ),
             sightlineVisuals: parseBoolean(
                 state.setup?.sightlineVisuals,
@@ -332,11 +331,7 @@ function normalizeAppState(rawState = {}, fallbackState = createDefaultStateData
             structuralDepth: parseNumber(
                 state.bowl?.structuralDepth,
                 fallback.bowl.structuralDepth
-            ),
-            clipEnabled: parseBoolean(state.bowl?.clipEnabled, fallback.bowl.clipEnabled),
-            clipAxis: normalizeClipAxis(state.bowl?.clipAxis, fallback.bowl.clipAxis),
-            clipPosition: parseNumber(state.bowl?.clipPosition, fallback.bowl.clipPosition),
-            clipSide: normalizeClipSide(state.bowl?.clipSide, fallback.bowl.clipSide)
+            )
         },
         occupancy: {
             seatWidth: parseNumber(state.occupancy?.seatWidth, fallback.occupancy.seatWidth),
@@ -443,27 +438,24 @@ export function resolveSportTemplate(stateOrSport) {
     return getTemplate(nextSport);
 }
 
-export function buildClipPositionControlSync(state, clipRange) {
-    if (!clipRange) return null;
-
-    const nextMin = Number.isFinite(Number(clipRange.min)) ? Number(clipRange.min) : 0;
-    const rawMax = Number.isFinite(Number(clipRange.max)) ? Number(clipRange.max) : nextMin;
-    const nextMax = Math.max(nextMin, rawMax);
-
-    let currentPosition = Number(getStateBowl(state).clipPosition);
-    if (!Number.isFinite(currentPosition)) currentPosition = 0;
+export function buildFocalXControlConfig(state) {
+    const template = resolveSportTemplate(state);
+    const bounds = resolveTemplateFocalXBoundsFt(template);
+    const setup = getStateSetup(state);
 
     return {
-        min: nextMin,
-        max: nextMax,
-        value: Math.max(nextMin, Math.min(nextMax, currentPosition))
+        min: bounds.min,
+        max: bounds.max,
+        step: FOCAL_X_STEP_FT,
+        value: clampTemplateFocalXFt(template, setup.focalX ?? 0)
     };
 }
 
 export function buildFocalPointFt(state) {
+    const focalX = buildFocalXControlConfig(state).value;
     const setup = getStateSetup(state);
     return {
-        x: 0,
+        x: focalX,
         z: setup.focalZ ?? 0
     };
 }
@@ -494,17 +486,8 @@ export function buildPrimaryTierParameters(state) {
     };
 }
 
-export function buildBowlConfig(state, template, overrides = {}) {
+export function buildBowlConfig(state, template) {
     const bowl = getStateBowl(state);
-    const clipPosition = overrides.clipPosition ?? bowl.clipPosition;
-    const clip = bowl.clipEnabled
-        ? {
-            enabled: true,
-            axis: bowl.clipAxis,
-            position: clipPosition,
-            side: bowl.clipSide
-        }
-        : { enabled: false };
 
     return {
         width: template?.field_width,
@@ -516,8 +499,7 @@ export function buildBowlConfig(state, template, overrides = {}) {
         corner: 'Chamfer',
         radius: bowl.cornerRad,
         sideLength: bowl.sideLength,
-        structuralDepth: bowl.structuralDepth || 0,
-        clip
+        structuralDepth: bowl.structuralDepth || 0
     };
 }
 
@@ -589,6 +571,7 @@ const appStateMethods = {
             sport: nextSport,
             setup: {
                 customRunoff: templateDefaults.setup?.customRunoff ?? template?.runoff,
+                focalX: templateDefaults.setup?.focalX,
                 focalZ: templateDefaults.setup?.focalZ
             },
             bowl: {
@@ -600,15 +583,6 @@ const appStateMethods = {
         };
 
         return this.mergeJSON(partialState);
-    },
-
-    /** @this {AppStateInstance} */
-    applyClipPositionRange(clipRange = null) {
-        const nextRange = buildClipPositionControlSync(this, clipRange);
-        if (nextRange && this.bowl && typeof this.bowl === 'object') {
-            this.bowl.clipPosition = nextRange.value;
-        }
-        return this;
     },
 
     /** @this {AppStateInstance} */

@@ -196,6 +196,22 @@ function createApiProjectsService({ baseUrl }) {
                 throw new Error('Project update did not return a valid project payload.');
             }
             return project;
+        },
+
+        async deleteProject(projectId) {
+            if (!projectId || typeof projectId !== 'string') {
+                throw new Error('Project id is required.');
+            }
+
+            const response = await fetch(`${baseUrl}/${encodeURIComponent(projectId)}`, {
+                method: 'DELETE',
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json'
+                }
+            });
+
+            await parseResponse(response);
         }
     };
 }
@@ -276,6 +292,25 @@ function createLocalProjectsService() {
             projects[index] = nextProject;
             writeLocalProjects(projects);
             return normalizeProjectDetail(nextProject);
+        },
+
+        async deleteProject(projectId) {
+            if (!projectId || typeof projectId !== 'string') {
+                throw new Error('Project id is required.');
+            }
+
+            const session = requireLocalSession();
+            const projects = readLocalProjects();
+            const index = projects.findIndex((entry) =>
+                entry.id === projectId && entry.ownerId === session.email
+            );
+
+            if (index < 0) {
+                throw new Error('Project not found.');
+            }
+
+            projects.splice(index, 1);
+            writeLocalProjects(projects);
         }
     };
 }

@@ -1,5 +1,7 @@
 const DEV_LOCAL_SESSION_KEY = 'sbg-dev-auth-session';
 
+const LOCAL_DEV_JOB_TITLE = 'Design Technology Specialist II';
+
 function getBrowserStorage() {
     try {
         return typeof localStorage === 'undefined' ? null : localStorage;
@@ -16,14 +18,24 @@ function normalizeSession(rawSession) {
         ? rawSession.displayName.trim()
         : '';
     const email = typeof rawSession.email === 'string' ? rawSession.email.trim().toLowerCase() : '';
+    const jobTitle = typeof rawSession.jobTitle === 'string' ? rawSession.jobTitle.trim() : '';
+    const photoUrl = typeof rawSession.photoUrl === 'string' ? rawSession.photoUrl.trim() : '';
 
     if (!userId || !displayName || !email) return null;
 
-    return {
+    const session = {
         userId,
         displayName,
         email
     };
+    if (jobTitle) {
+        session.jobTitle = jobTitle;
+    }
+    if (photoUrl) {
+        session.photoUrl = photoUrl;
+    }
+
+    return session;
 }
 
 async function parseResponse(response) {
@@ -157,7 +169,8 @@ function createLocalAuthService() {
             const session = normalizeSession({
                 userId: payload.email,
                 displayName: payload.displayName,
-                email: payload.email
+                email: payload.email,
+                jobTitle: LOCAL_DEV_JOB_TITLE
             });
 
             if (!session) {

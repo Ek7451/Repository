@@ -458,7 +458,6 @@ export class Scene3D {
             return;
         }
         const solverList = Array.isArray(solvers) ? solvers : [solvers];
-        const clippingPlanes = this._getClippingPlanes(bowlConfig);
         const aisleLayoutMap = new Map((tierAisleLayouts || []).map(layout => [layout.tierIndex, layout]));
         const showSeatCubes = !!(seatPreviewOptions && seatPreviewOptions.showSeatCubes);
         const seatWidthIn = Math.max(0, Number(seatPreviewOptions && seatPreviewOptions.seatWidthIn) || 0);
@@ -482,9 +481,7 @@ export class Scene3D {
                 color: color,
                 roughness: 0.5,
                 metalness: 0.1,
-                side: THREE.DoubleSide,
-                clippingPlanes,
-                clipShadows: true
+                side: THREE.DoubleSide
             });
 
             const mesh = /** @type {any} */ (new THREE.Mesh(geometry, material));
@@ -511,9 +508,7 @@ export class Scene3D {
                         metalness: 0.02,
                         side: THREE.DoubleSide,
                         transparent: true,
-                        opacity: 0.95,
-                        clippingPlanes,
-                        clipShadows: true
+                        opacity: 0.95
                     });
                     const aisleMesh = /** @type {any} */ (new THREE.Mesh(aisleGeometry, aisleMaterial));
                     aisleMesh.renderOrder = 5;
@@ -533,7 +528,6 @@ export class Scene3D {
                     tierAisleLayout || null,
                     seatWidthIn,
                     offsetCorrection,
-                    clippingPlanes,
                     index
                 );
                 if (seatPreview && seatPreview.mesh) {
@@ -756,7 +750,6 @@ export class Scene3D {
         tierAisleLayout,
         seatWidthIn,
         offsetCorrection = 0,
-        clippingPlanes = null,
         tierColorIndex = 0
     ) {
         const THREE = this.THREE;
@@ -769,16 +762,6 @@ export class Scene3D {
         const aisleWidthFt = Math.max(0, Number(tierAisleLayout && tierAisleLayout.aisleWidthFt) || 0);
         const seatPlacements = [];
         const zLift = 0.08;
-        const clip = bowlConfig && bowlConfig.clip && bowlConfig.clip.enabled ? bowlConfig.clip : null;
-
-        const clipKeepsPlanPoint = (x, y) => {
-            if (!clip) return true;
-            const axis = String(clip.axis || 'X').toUpperCase();
-            const side = String(clip.side || 'positive').toLowerCase();
-            const pos = Number.isFinite(parseFloat(clip.position)) ? parseFloat(clip.position) : 0;
-            if (axis === 'X') return side === 'positive' ? (x >= pos) : (x <= pos);
-            return side === 'positive' ? (y >= pos) : (y <= pos);
-        };
 
         const pathCache = new Map();
         const chamferCache = new Map();
@@ -849,14 +832,12 @@ export class Scene3D {
                     for (let s = 0; s < seatCount; s++) {
                         const u = dist / path.length;
                         const pt = samplePathPointByRatio(path, u);
-                        if (clipKeepsPlanPoint(pt.x, pt.y)) {
-                            seatPlacements.push({
-                                x: pt.x,
-                                y: centerY,
-                                z: -pt.y,
-                                yaw: Math.atan2(-pt.ty, pt.tx)
-                            });
-                        }
+                        seatPlacements.push({
+                            x: pt.x,
+                            y: centerY,
+                            z: -pt.y,
+                            yaw: Math.atan2(-pt.ty, pt.tx)
+                        });
                         dist += seatSizeFt;
                     }
                 }
@@ -871,9 +852,7 @@ export class Scene3D {
             metalness: 0.0,
             transparent: true,
             opacity: 0.5,
-            depthWrite: false,
-            clippingPlanes,
-            clipShadows: true
+            depthWrite: false
         });
         const geometry = new THREE.BoxGeometry(seatSizeFt, seatSizeFt, seatSizeFt);
         const mesh = /** @type {any} */ (new THREE.InstancedMesh(geometry, material, seatPlacements.length));
@@ -1423,24 +1402,6 @@ export class Scene3D {
         }
 
         return segments;
-    }
-
-    _getClippingPlanes(bowlConfig) {
-        const clip = bowlConfig && bowlConfig.clip;
-        if (!clip || !clip.enabled) return null;
-
-        const axis = (clip.axis || 'X').toUpperCase();
-        const side = clip.side || 'positive';
-        const position = Number.isFinite(parseFloat(clip.position)) ? parseFloat(clip.position) : 0;
-
-        if (axis === 'X') {
-            if (side === 'positive') return [new this.THREE.Plane(new this.THREE.Vector3(1, 0, 0), -position)];
-            return [new this.THREE.Plane(new this.THREE.Vector3(-1, 0, 0), position)];
-        }
-
-        // UI "Y axis" is plan width; in 3D this maps to world Z = -Y.
-        if (side === 'positive') return [new this.THREE.Plane(new this.THREE.Vector3(0, 0, -1), -position)];
-        return [new this.THREE.Plane(new this.THREE.Vector3(0, 0, 1), position)];
     }
 
     forceResize() {

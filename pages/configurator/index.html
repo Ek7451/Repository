@@ -52,6 +52,16 @@
                     </svg>
                 </button>
             </div>
+            <section class="employee-strip" aria-label="Signed-in employee">
+                <div class="employee-avatar" aria-hidden="true">
+                    <img id="employeeAvatarImage" class="employee-avatar-image" alt="" hidden>
+                    <span id="employeeAvatarInitials" class="employee-avatar-initials">--</span>
+                </div>
+                <div class="employee-copy">
+                    <div id="employeeDisplayName" class="employee-display-name">Signed out</div>
+                    <div id="employeeJobTitle" class="employee-job-title">Directory profile unavailable</div>
+                </div>
+            </section>
 
             <div class="sidebar-content">
                 <!-- ---- FIELD SETUP ---- -->
@@ -80,6 +90,15 @@
                             <span class="unit">ft</span>
                             <span class="info-icon"
                                 data-tooltip="Elevation. 0 ft field level, 3–4 ft concert stage, negative for sunken surface">ⓘ</span>
+                        </div>
+
+                        <div class="control-row">
+                            <label>Focal X</label>
+                            <input type="range" id="focalXSlider" min="-100" max="100" step="0.1" value="0">
+                            <input type="number" id="focalXInput" min="-100" max="100" step="0.1" value="0">
+                            <span class="unit">ft</span>
+                            <span class="info-icon"
+                                data-tooltip="Horizontal focal offset from the field edge. Positive moves outward toward seating; negative moves inward across the field.">â“˜</span>
                         </div>
                     </div>
                 </div>
@@ -157,40 +176,6 @@
                                 <input type="range" id="bowlSideLengthSlider" min="50" max="600" step="1" value="300">
                                 <input type="number" id="bowlSideLengthInput" min="50" max="600" step="1" value="300">
                                 <span class="unit">ft</span>
-                            </div>
-
-                            <!-- Section Clip Plane -->
-                            <div class="control-row" id="clipPlaneToggleRow">
-                                <label>Clip Plane</label>
-                                <label class="header-toggle clip-plane-toggle">
-                                    <input type="checkbox" id="enableClipPlane">
-                                </label>
-                                <span class="info-icon"
-                                    data-tooltip="Enable a section clip plane to cut the bowl open. Choose axis and position.">ⓘ</span>
-                            </div>
-                            <div id="clipPlaneControls" style="display:none">
-                                <div class="control-row">
-                                    <label>Clip Axis</label>
-                                    <select id="clipAxis" style="flex:1">
-                                        <option value="X">X Axis (Length)</option>
-                                        <option value="Y">Y Axis (Width)</option>
-                                    </select>
-                                </div>
-                                <div class="control-row">
-                                    <label>Clip Position</label>
-                                    <input type="range" id="clipPositionSlider" min="-300" max="300" step="1" value="0">
-                                    <input type="number" id="clipPositionInput" min="-500" max="500" step="1" value="0">
-                                    <span class="unit">ft</span>
-                                    <span class="info-icon"
-                                        data-tooltip="Position of the clipping plane along the selected axis. Geometry beyond this point is removed.">ⓘ</span>
-                                </div>
-                                <div class="control-row">
-                                    <label>Clip Side</label>
-                                    <select id="clipSide" style="flex:1">
-                                        <option value="positive">Keep Positive Side</option>
-                                        <option value="negative">Keep Negative Side</option>
-                                    </select>
-                                </div>
                             </div>
 
                             <!-- Structural Depth -->
@@ -491,7 +476,23 @@
             <!-- ========== EXPORT MENU (Docked at Bottom) ========== -->
             <div class="export-menu-panel collapsed">
                 <div class="export-menu-header" id="exportMenuSection">
-                    <button class="export-header-btn">File</button>
+                    <button class="export-header-btn" type="button" aria-label="File menu" title="File menu">
+                        <svg class="export-header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M3 8.5A2.5 2.5 0 0 1 5.5 6H10l2 2h6.5A2.5 2.5 0 0 1 21 10.5v7A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-9z"></path>
+                            <path d="M3 11h18"></path>
+                        </svg>
+                        <span class="export-header-label">File</span>
+                    </button>
+                    <button id="saveProjectBtn" class="sidebar-save-btn" type="button" title="Save project" aria-label="Save project" disabled>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M5 4h11l3 3v13H5z"></path>
+                            <path d="M8 4v6h8V4"></path>
+                            <path d="M9 17h6"></path>
+                        </svg>
+                        <span class="sr-only save-project-label">Save Project</span>
+                    </button>
                     <button id="themeToggleBtn" class="theme-toggle-btn" type="button"
                         title="Switch to dark mode" aria-label="Toggle dark mode" aria-pressed="false">
                         <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -512,6 +513,26 @@
                         </svg>
                         <span class="theme-toggle-label">Toggle dark mode</span>
                     </button>
+                    <button id="backToDashboardBtn" class="sidebar-dashboard-btn" type="button" title="Dashboard" aria-label="Back to dashboard">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="3" y="3" width="8" height="8" rx="1.5"></rect>
+                            <rect x="13" y="3" width="8" height="5" rx="1.5"></rect>
+                            <rect x="13" y="10" width="8" height="11" rx="1.5"></rect>
+                            <rect x="3" y="13" width="8" height="8" rx="1.5"></rect>
+                        </svg>
+                        <span class="sr-only">Dashboard</span>
+                    </button>
+                    <button id="editorSignOutBtn" class="sidebar-signout-btn" type="button" title="Sign out" aria-label="Sign out">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M10 17v2a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-6a2 2 0 0 0-2 2v2"></path>
+                            <path d="M15 12H4"></path>
+                            <path d="m8 8-4 4 4 4"></path>
+                        </svg>
+                        <span class="sr-only">Sign Out</span>
+                    </button>
+
                 </div>
                 <div class="export-menu-body" id="exportMenuBody">
                     <div class="export-group">
@@ -560,31 +581,27 @@
         <!-- ========== MAIN AREA ========== -->
         <main class="main-area">
             <div class="view-tabs">
-                <button class="view-tab-btn active" data-tab="profile">Section</button>
-                <button class="view-tab-btn" data-tab="field">Plan</button>
-                <button class="view-tab-btn" data-tab="scene3d">3D</button>
-                <div class="editor-route-toolbar" aria-label="Project actions">
-                    <button id="backToDashboardBtn" class="editor-route-btn editor-route-btn-secondary" type="button">Dashboard</button>
+                <div class="view-tabs-left" aria-label="View selection">
+                    <button class="view-tab-btn active" data-tab="profile">Section</button>
+                    <button class="view-tab-btn" data-tab="field">Plan</button>
+                    <button class="view-tab-btn" data-tab="scene3d">3D</button>
+                </div>
+                <div class="editor-route-toolbar" aria-label="Project name">
                     <label class="project-name-field" for="projectNameInput">
                         <span class="sr-only">Project name</span>
                         <input id="projectNameInput" class="project-name-input" type="text" maxlength="120" placeholder="Project name">
                     </label>
-                    <button id="saveProjectBtn" class="editor-route-btn editor-route-btn-primary" type="button" disabled>Save Project</button>
-                    <button id="editorSignOutBtn" class="editor-route-btn editor-route-btn-secondary" type="button">Sign Out</button>
                 </div>
-                <div class="view-tabs-note" role="note" aria-label="Beta disclaimer">
-                    <strong>Beta</strong> Results are preliminary and may not be accurate.
+                <div class="view-tabs-right" aria-label="Project actions">
+                    <div class="view-tabs-note" role="note" aria-label="Beta disclaimer">
+                        <strong>Beta</strong> Results are preliminary and may not be accurate.
+                    </div>
+                    <a id="feedbackBtn"
+                       class="view-tabs-feedback-btn"
+                       href="mailto:eklinger@jlgarchitects.com?subject=Seating%20Bowl%20Study%20Beta%20Feedback"
+                       title="Opens your default email app. If nothing opens, email eklinger@jlgarchitects.com."
+                       aria-label="Send beta feedback by email to eklinger@jlgarchitects.com">Feedback</a>
                 </div>
-                <a id="feedbackBtn"
-                   class="view-tabs-feedback-btn"
-                   href="mailto:eklinger@jlgarchitects.com?subject=Seating%20Bowl%20Study%20Beta%20Feedback"
-                   title="Opens your default email app. If nothing opens, email eklinger@jlgarchitects.com."
-                   aria-label="Send beta feedback by email to eklinger@jlgarchitects.com">Feedback</a>
-            </div>
-            <div class="editor-project-statusbar" aria-live="polite">
-                <span id="editorSessionLabel" class="editor-session-label">Signed out</span>
-                <span id="editorProjectMeta" class="editor-project-meta">Create or open a project from the dashboard</span>
-                <span id="projectStatusMessage" class="project-status-message" data-tone="default">Project persistence ready</span>
             </div>
 
             <div class="view-container">

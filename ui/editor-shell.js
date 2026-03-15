@@ -1,3 +1,9 @@
+import {
+    cloneProjectMetadata,
+    cloneSessionDto,
+    normalizeProjectStatus
+} from '../state/project.js';
+
 function getHtmlElement(id) {
     return /** @type {HTMLElement | null} */ (document.getElementById(id));
 }
@@ -37,6 +43,23 @@ function dispatchShellResize() {
     window.dispatchEvent(new Event('resize'));
 }
 
+function setSidebarWidth(sidebar, width) {
+    if (!sidebar || !Number.isFinite(width) || width <= 0) return;
+    const nextWidth = `${width}px`;
+    sidebar.style.width = nextWidth;
+    sidebar.style.minWidth = nextWidth;
+}
+
+function syncLeftSidebarSliderState(sidebar, minWidth, currentWidth = null) {
+    if (!sidebar) return;
+    const isCollapsed = sidebar.classList.contains('collapsed');
+    const sidebarWidth = Number.isFinite(currentWidth)
+        ? currentWidth
+        : sidebar.getBoundingClientRect().width;
+    const isSliderMinimized = !isCollapsed && Number.isFinite(sidebarWidth) && sidebarWidth <= (minWidth + 0.5);
+    sidebar.classList.toggle('slider-minimized', isSliderMinimized);
+}
+
 function resizeCanvasToParent(canvas) {
     const parent = canvas?.parentElement;
     const rect = parent?.getBoundingClientRect?.();
@@ -45,6 +68,27 @@ function resizeCanvasToParent(canvas) {
         canvas.width = rect.width;
         canvas.height = rect.height;
     }
+}
+
+function formatProjectUpdatedAt(value) {
+    if (typeof value !== 'string' || !value) return 'Not yet saved';
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime())
+        ? value
+        : parsed.toLocaleString();
+}
+
+function deriveAvatarInitials(value = '') {
+    const parts = String(value ?? '')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+    if (!parts.length) return '--';
+    if (parts.length === 1) {
+        return parts[0].slice(0, 2).toUpperCase();
+    }
+    return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
 }
 
 export class EditorShell {
@@ -87,6 +131,14 @@ export class EditorShell {
         this._feedbackBtnCopyFallbackTimer = null;
         this._feedbackBtnResetTimer = null;
         this._viewResizeObserver = null;
+        this._projectChrome = {
+            name: '',
+            metadata: cloneProjectMetadata(),
+            session: null,
+            canSave: false
+        };
+        this._projectStatus = normalizeProjectStatus();
+        this._projectSaveBusy = false;
     }
 
     init() {
@@ -138,6 +190,50 @@ export class EditorShell {
 
         this._refreshThemeToggleButton();
         this._onThemeChanged?.(nextTheme, { rerender });
+    }
+
+    renderProjectChrome(chrome = {}, { isSaveBusy = this._projectSaveBusy } = {}) {
+        const nextName = typeof chrome?.name === 'string' ? chrome.name.trim() : '';
+        const metadata = cloneProjectMetadata(chrome?.metadata);
+        const session = cloneSessionDto(chrome?.session);
+
+        this._projectChrome = {
+            name: nextName,
+            metadata,
+            session,
+            canSave: Boolean(chrome?.canSave)
+        };
+        this._projectSaveBusy = Boolean(isSaveBusy);
+
+        const nameInput = getInputElement('projectNameInput');
+        if (nameInput && document.activeElement !== nameInput) {
+            nameInput.value = nextName;
+        }
+
+        const metaEl = getHtmlElement('editorProjectMeta');
+        if (metaEl) {
+            metaEl.textContent = metadata.id
+                ? `Updated ${formatProjectUpdatedAt(metadata.updatedAt)}`
+                : 'Create or open a project from the dashboard';
+        }
+
+        this._renderEmployeeIdentity(session);
+        this._renderSaveButton();
+    }
+
+    renderProjectStatus(status = {}) {
+        this._projectStatus = normalizeProjectStatus(status);
+
+        const statusEl = getHtmlElement('projectStatusMessage');
+        if (!statusEl) return;
+
+        statusEl.textContent = this._projectStatus.message;
+        statusEl.dataset.tone = this._projectStatus.tone;
+    }
+
+    setProjectSaveBusy(isBusy = false) {
+        this._projectSaveBusy = Boolean(isBusy);
+        this._renderSaveButton();
     }
 
     syncFromState({ activeViewTab = 'profile', activeResultsTab = 'statsTab' } = {}) {
@@ -413,19 +509,24 @@ export class EditorShell {
     }
 
     _bindSidebarChrome() {
+        const leftCollapsedWidth = 200;
+        const rightCollapsedWidth = 200;
+
         const leftSidebar = /** @type {HTMLElement | null} */ (document.querySelector('.left-sidebar'));
         const toggleControlsBtn = getButtonElement('toggleControlsBtn');
+        syncLeftSidebarSliderState(leftSidebar, 350);
         if (toggleControlsBtn && leftSidebar) {
             const handleToggleControls = () => {
                 const isCollapsed = leftSidebar.classList.toggle('collapsed');
                 if (isCollapsed) {
-                    leftSidebar.style.setProperty('width', '36px', 'important');
-                    leftSidebar.style.setProperty('min-width', '36px', 'important');
+                    setSidebarWidth(leftSidebar, leftCollapsedWidth);
                 } else {
                     leftSidebar.style.removeProperty('width');
                     leftSidebar.style.removeProperty('min-width');
                 }
+                syncLeftSidebarSliderState(leftSidebar, 350);
                 setTimeout(() => {
+                    syncLeftSidebarSliderState(leftSidebar, 350);
                     dispatchShellResize();
                     this._notifyScene3DResize();
                 }, 300);
@@ -438,7 +539,13 @@ export class EditorShell {
         const toggleResultsBtn = getButtonElement('toggleResultsBtn');
         if (toggleResultsBtn && rightSidebar) {
             const handleToggleResults = () => {
-                rightSidebar.classList.toggle('collapsed');
+                const isCollapsed = rightSidebar.classList.toggle('collapsed');
+                if (isCollapsed) {
+                    setSidebarWidth(rightSidebar, rightCollapsedWidth);
+                } else {
+                    rightSidebar.style.removeProperty('width');
+                    rightSidebar.style.removeProperty('min-width');
+                }
                 setTimeout(() => {
                     dispatchShellResize();
                     this._notifyScene3DResize();
@@ -449,76 +556,95 @@ export class EditorShell {
             this._cleanup.push(() => toggleResultsBtn.removeEventListener('click', handleToggleResults));
         }
 
-        const leftResizer = getHtmlElement('leftSidebarResizer');
-        if (leftResizer && leftSidebar) {
-            let isResizing = false;
-            const handleMouseDown = (event) => {
-                isResizing = true;
-                leftResizer.classList.add('resizing');
-                document.body.style.cursor = 'col-resize';
-                event.preventDefault();
-            };
-            const handleMouseMove = (event) => {
-                if (!isResizing) return;
-                let nextWidth = event.clientX;
-                if (nextWidth < 250) nextWidth = 250;
-                if (nextWidth > 500) nextWidth = 500;
-                leftSidebar.style.width = `${nextWidth}px`;
-                leftSidebar.style.minWidth = `${nextWidth}px`;
-            };
-            const handleMouseUp = () => {
-                if (!isResizing) return;
-                isResizing = false;
-                leftResizer.classList.remove('resizing');
-                document.body.style.cursor = '';
-                dispatchShellResize();
-                this._notifyScene3DResize();
-            };
+        this._bindSidebarResizer({
+            resizer: getHtmlElement('leftSidebarResizer'),
+            sidebar: leftSidebar,
+            collapsedWidth: leftCollapsedWidth,
+            minWidth: 350,
+            maxWidth: 450,
+            getWidthFromPointer: (event) => event.clientX,
+            onWidthChanged: (width) => syncLeftSidebarSliderState(leftSidebar, 350, width)
+        });
+        this._bindSidebarResizer({
+            resizer: getHtmlElement('rightSidebarResizer'),
+            sidebar: rightSidebar,
+            collapsedWidth: rightCollapsedWidth,
+            minWidth: 400,
+            maxWidth: 800,
+            getWidthFromPointer: (event) => window.innerWidth - event.clientX
+        });
+    }
 
-            leftResizer.addEventListener('mousedown', handleMouseDown);
-            document.addEventListener('mousemove', handleMouseMove);
-            document.addEventListener('mouseup', handleMouseUp);
-            this._cleanup.push(() => leftResizer.removeEventListener('mousedown', handleMouseDown));
-            this._cleanup.push(() => document.removeEventListener('mousemove', handleMouseMove));
-            this._cleanup.push(() => document.removeEventListener('mouseup', handleMouseUp));
-        }
+    _bindSidebarResizer({
+        resizer = null,
+        sidebar = null,
+        collapsedWidth = 0,
+        minWidth = 0,
+        maxWidth = Number.POSITIVE_INFINITY,
+        getWidthFromPointer = null,
+        onWidthChanged = null
+    } = {}) {
+        if (!resizer || !sidebar || typeof getWidthFromPointer !== 'function') return;
 
-        const rightResizer = getHtmlElement('rightSidebarResizer');
-        if (rightResizer && rightSidebar) {
-            let isResizing = false;
-            const handleMouseDown = (event) => {
-                isResizing = true;
-                rightResizer.classList.add('resizing');
-                document.body.style.cursor = 'col-resize';
-                event.preventDefault();
-            };
-            const handleMouseMove = (event) => {
-                if (!isResizing) return;
-                let nextWidth = window.innerWidth - event.clientX;
-                if (nextWidth < 250) nextWidth = 250;
-                if (nextWidth > 1000) nextWidth = 1000;
-                if (nextWidth > 250 && rightSidebar.classList.contains('collapsed')) {
-                    rightSidebar.classList.remove('collapsed');
-                }
-                rightSidebar.style.width = `${nextWidth}px`;
-                rightSidebar.style.minWidth = `${nextWidth}px`;
-            };
-            const handleMouseUp = () => {
-                if (!isResizing) return;
-                isResizing = false;
-                rightResizer.classList.remove('resizing');
-                document.body.style.cursor = '';
-                dispatchShellResize();
-                this._notifyScene3DResize();
-            };
+        let activePointerId = null;
 
-            rightResizer.addEventListener('mousedown', handleMouseDown);
-            document.addEventListener('mousemove', handleMouseMove);
-            document.addEventListener('mouseup', handleMouseUp);
-            this._cleanup.push(() => rightResizer.removeEventListener('mousedown', handleMouseDown));
-            this._cleanup.push(() => document.removeEventListener('mousemove', handleMouseMove));
-            this._cleanup.push(() => document.removeEventListener('mouseup', handleMouseUp));
-        }
+        const stopResize = () => {
+            if (activePointerId === null) return;
+            activePointerId = null;
+            resizer.classList.remove('resizing');
+            document.body.classList.remove('sidebar-resizing');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            onWidthChanged?.(sidebar.getBoundingClientRect().width);
+            dispatchShellResize();
+            this._notifyScene3DResize();
+        };
+
+        const handlePointerDown = (event) => {
+            if (typeof event.button === 'number' && event.button !== 0) return;
+            activePointerId = event.pointerId;
+            resizer.classList.add('resizing');
+            document.body.classList.add('sidebar-resizing');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            if (sidebar.classList.contains('collapsed') && collapsedWidth > 0) {
+                sidebar.classList.remove('collapsed');
+                sidebar.style.removeProperty('width');
+                sidebar.style.removeProperty('min-width');
+                onWidthChanged?.(minWidth);
+            }
+            resizer.setPointerCapture?.(event.pointerId);
+            event.preventDefault();
+        };
+
+        const handlePointerMove = (event) => {
+            if (activePointerId === null || event.pointerId !== activePointerId) return;
+            const rawWidth = Number(getWidthFromPointer(event));
+            if (!Number.isFinite(rawWidth)) return;
+            const nextWidth = Math.min(maxWidth, Math.max(minWidth, rawWidth));
+            setSidebarWidth(sidebar, nextWidth);
+            onWidthChanged?.(nextWidth);
+        };
+
+        const handlePointerUp = (event) => {
+            if (activePointerId === null || event.pointerId !== activePointerId) return;
+            resizer.releasePointerCapture?.(event.pointerId);
+            stopResize();
+        };
+
+        const handlePointerCancel = (event) => {
+            if (activePointerId === null || event.pointerId !== activePointerId) return;
+            stopResize();
+        };
+
+        resizer.addEventListener('pointerdown', handlePointerDown);
+        resizer.addEventListener('pointermove', handlePointerMove);
+        resizer.addEventListener('pointerup', handlePointerUp);
+        resizer.addEventListener('pointercancel', handlePointerCancel);
+        this._cleanup.push(() => resizer.removeEventListener('pointerdown', handlePointerDown));
+        this._cleanup.push(() => resizer.removeEventListener('pointermove', handlePointerMove));
+        this._cleanup.push(() => resizer.removeEventListener('pointerup', handlePointerUp));
+        this._cleanup.push(() => resizer.removeEventListener('pointercancel', handlePointerCancel));
     }
 
     _bindTabs() {
@@ -578,10 +704,12 @@ export class EditorShell {
 
     _bindExportMenu() {
         const exportMenuPanel = /** @type {HTMLElement | null} */ (document.querySelector('.export-menu-panel'));
-        const exportMenuHeader = /** @type {HTMLButtonElement | null} */ (document.querySelector('.export-header-btn'));
+        const exportMenuHeader = /** @type {HTMLElement | null} */ (document.querySelector('.export-menu-header'));
         if (!exportMenuHeader || !exportMenuPanel) return;
 
         const handleHeaderClick = (event) => {
+            const target = getTargetElement(event.target);
+            if (target?.closest('#themeToggleBtn, #saveProjectBtn, #backToDashboardBtn, #editorSignOutBtn')) return;
             event.stopPropagation();
             exportMenuPanel.classList.toggle('collapsed');
         };
@@ -658,6 +786,63 @@ export class EditorShell {
         };
         window.addEventListener('resize', handleResize);
         this._cleanup.push(() => window.removeEventListener('resize', handleResize));
+    }
+
+    _renderEmployeeIdentity(session = null) {
+        const nextSession = cloneSessionDto(session);
+        const avatarImage = /** @type {HTMLImageElement | null} */ (document.getElementById('employeeAvatarImage'));
+        const avatarInitials = getHtmlElement('employeeAvatarInitials');
+        const displayNameEl = getHtmlElement('employeeDisplayName');
+        const jobTitleEl = getHtmlElement('employeeJobTitle');
+        const displayName = nextSession?.displayName || 'Signed out';
+        const jobTitle = nextSession?.jobTitle || (nextSession ? 'Awaiting directory sync' : 'Directory profile unavailable');
+        const initials = deriveAvatarInitials(nextSession?.displayName || nextSession?.email || '');
+
+        if (displayNameEl) {
+            displayNameEl.textContent = displayName;
+        }
+        if (jobTitleEl) {
+            jobTitleEl.textContent = jobTitle;
+        }
+        if (avatarInitials) {
+            avatarInitials.textContent = initials;
+        }
+
+        if (!avatarImage || !avatarInitials) return;
+
+        avatarImage.onerror = () => {
+            avatarImage.hidden = true;
+            avatarImage.removeAttribute('src');
+            avatarImage.alt = '';
+            avatarInitials.hidden = false;
+        };
+
+        if (nextSession?.photoUrl) {
+            avatarImage.src = nextSession.photoUrl;
+            avatarImage.alt = `${displayName} profile photo`;
+            avatarImage.hidden = false;
+            avatarInitials.hidden = true;
+            return;
+        }
+
+        avatarImage.hidden = true;
+        avatarImage.removeAttribute('src');
+        avatarImage.alt = '';
+        avatarInitials.hidden = false;
+    }
+
+    _renderSaveButton() {
+        const saveBtn = getButtonElement('saveProjectBtn');
+        if (!saveBtn) return;
+
+        saveBtn.dataset.busy = this._projectSaveBusy ? 'true' : 'false';
+        saveBtn.setAttribute('title', this._projectSaveBusy ? 'Saving project' : 'Save project');
+        saveBtn.setAttribute('aria-label', this._projectSaveBusy ? 'Saving project' : 'Save project');
+        const label = saveBtn.querySelector('.save-project-label');
+        if (label) {
+            label.textContent = this._projectSaveBusy ? 'Saving Project' : 'Save Project';
+        }
+        saveBtn.disabled = this._projectSaveBusy || !this._projectChrome.canSave;
     }
 
     _bindCollapsibleSections() {

@@ -1,7 +1,6 @@
 import { DashboardPage } from './pages/dashboard/dashboard.js';
 import { createAuthService } from './services/auth-service.js';
 import { createProjectsService } from './services/project-api.js';
-import { cloneProjectMetadata } from './state/project.js';
 import { SeatingBowlApp } from './ui/app.js';
 
 function getButtonElement(id) {
@@ -10,10 +9,6 @@ function getButtonElement(id) {
 
 function getInputElement(id) {
     return /** @type {HTMLInputElement | null} */ (document.getElementById(id));
-}
-
-function getHtmlElement(id) {
-    return /** @type {HTMLElement | null} */ (document.getElementById(id));
 }
 
 function normalizeDevBackend(value) {
@@ -64,71 +59,11 @@ function getCurrentPage() {
     return page === 'dashboard' || page === 'configurator' ? page : null;
 }
 
-function normalizeProjectStatus(status = {}) {
-    const message = typeof status?.message === 'string' && status.message.trim()
-        ? status.message.trim()
-        : 'Project persistence ready';
-    const tone = typeof status?.tone === 'string' && status.tone.trim()
-        ? status.tone.trim()
-        : 'default';
-
-    return { message, tone };
-}
-
-function renderProjectStatus(status = {}) {
-    const statusEl = getHtmlElement('projectStatusMessage');
-    if (!statusEl) return;
-
-    const nextStatus = normalizeProjectStatus(status);
-    statusEl.textContent = nextStatus.message;
-    statusEl.dataset.tone = nextStatus.tone;
-}
-
-function renderProjectChrome(chrome = {}, shellState = {}) {
-    const nextName = typeof chrome?.name === 'string' ? chrome.name.trim() : '';
-    const metadata = cloneProjectMetadata(chrome?.metadata);
-    const session = chrome?.session && typeof chrome.session === 'object'
-        ? { ...chrome.session }
-        : null;
-    const canSave = Boolean(chrome?.canSave);
-    const isSaveBusy = Boolean(shellState?.isSaveBusy);
-
-    const nameInput = getInputElement('projectNameInput');
-    if (nameInput && document.activeElement !== nameInput) {
-        nameInput.value = nextName;
-    }
-
-    const metaEl = getHtmlElement('editorProjectMeta');
-    if (metaEl) {
-        const updatedAt = metadata.updatedAt
-            ? new Date(metadata.updatedAt).toLocaleString()
-            : 'Not yet saved';
-        metaEl.textContent = metadata.id
-            ? `Updated ${updatedAt}`
-            : 'Create or open a project from the dashboard';
-    }
-
-    const sessionEl = getHtmlElement('editorSessionLabel');
-    if (sessionEl) {
-        sessionEl.textContent = session?.displayName
-            ? `Signed in as ${session.displayName}`
-            : 'Signed out';
-    }
-
-    const saveBtn = getButtonElement('saveProjectBtn');
-    if (!saveBtn) return;
-
-    saveBtn.dataset.busy = isSaveBusy ? 'true' : 'false';
-    saveBtn.textContent = isSaveBusy ? 'Saving...' : 'Save Project';
-    saveBtn.disabled = isSaveBusy || !canSave;
-}
-
-function wireProjectShellControls(app, authService, projectApi, shellState, runtimeConfig) {
+function wireProjectShellControls(app, authService, projectApi, runtimeConfig) {
     const backBtn = getButtonElement('backToDashboardBtn');
     const saveBtn = getButtonElement('saveProjectBtn');
     const signOutBtn = getButtonElement('editorSignOutBtn');
     const projectNameInput = getInputElement('projectNameInput');
-    const syncChrome = () => renderProjectChrome(shellState.chrome, shellState);
 
     backBtn?.addEventListener('click', () => {
         app.destroy?.();
@@ -154,8 +89,7 @@ function wireProjectShellControls(app, authService, projectApi, shellState, runt
         const metadata = app.getProjectMetadata();
         if (!metadata.id) return;
 
-        shellState.isSaveBusy = true;
-        syncChrome();
+        app.setProjectSaveBusy(true);
         app.setProjectStatus('Saving project...', 'pending');
 
         try {
@@ -172,8 +106,7 @@ function wireProjectShellControls(app, authService, projectApi, shellState, runt
                 'error'
             );
         } finally {
-            shellState.isSaveBusy = false;
-            syncChrome();
+            app.setProjectSaveBusy(false);
         }
     });
 }
@@ -220,27 +153,8 @@ async function bootConfiguratorPage(runtimeConfig, authService, projectApi) {
         return;
     }
 
-    const shellState = {
-        chrome: null,
-        isSaveBusy: false
-    };
-    const app = new SeatingBowlApp({
-        onProjectChromeChanged: (chrome) => {
-            shellState.chrome = {
-                ...chrome,
-                metadata: cloneProjectMetadata(chrome?.metadata)
-            };
-            renderProjectChrome(shellState.chrome, shellState);
-        },
-        onStatusChanged: (status) => {
-            renderProjectStatus(status);
-        }
-    });
-
-    shellState.chrome = app.getProjectChrome();
-    renderProjectChrome(shellState.chrome, shellState);
-    renderProjectStatus(app.getProjectStatus());
-    wireProjectShellControls(app, authService, projectApi, shellState, runtimeConfig);
+    const app = new SeatingBowlApp();
+    wireProjectShellControls(app, authService, projectApi, runtimeConfig);
     app.setSession(session);
     await app.init();
     app.setProjectStatus('Loading project...', 'pending');

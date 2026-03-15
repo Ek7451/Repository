@@ -177,6 +177,24 @@ body.dashboard-shell {
     background: rgba(255, 255, 255, 0.96);
     border: 1px solid rgba(255, 255, 255, 0.12);
     box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
+    position: relative;
+}
+
+.project-card-interactive {
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.project-card-interactive:hover,
+.project-card-interactive:focus-visible {
+    transform: translateY(-2px);
+    box-shadow: 0 22px 44px rgba(0, 0, 0, 0.18);
+    border-color: rgba(15, 17, 19, 0.16);
+    outline: none;
+}
+
+.project-card-busy {
+    cursor: default;
 }
 
 .project-card-header {
@@ -184,6 +202,89 @@ body.dashboard-shell {
     justify-content: space-between;
     align-items: start;
     gap: 12px;
+}
+
+.project-card-menu-anchor {
+    position: relative;
+    flex: 0 0 auto;
+}
+
+.project-card-menu-btn {
+    width: 35px;
+    height: 35px;
+    border-radius: 999px;
+    border: 1px solid rgba(15, 17, 19, 0.12);
+    background: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    box-shadow: 0 4px 4px rgba(138, 138, 138, 0.08);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.project-card-menu-btn:hover,
+.project-card-menu-btn:focus-visible {
+    transform: translateY(-1px);
+    border-color: rgba(15, 17, 19, 0.22);
+    box-shadow: 0 10px 22px rgba(15, 17, 19, 0.12);
+    outline: none;
+}
+
+.project-card-menu-btn span {
+    width: 3px;
+    height: 3px;
+    border-radius: 999px;
+    background: #6b6b6b;
+}
+
+.project-card-menu {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    min-width: 150px;
+    padding: 8px;
+    border-radius: 18px;
+    border: 1px solid rgba(15, 17, 19, 0.1);
+    background: #ffffff;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.14);
+    display: grid;
+    gap: 6px;
+    z-index: 2;
+}
+
+.project-card-menu-item {
+    min-height: 40px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 12px;
+    background: #f4f5f1;
+    color: #14181c;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.15s ease, transform 0.15s ease;
+}
+
+.project-card-menu-item:hover,
+.project-card-menu-item:focus-visible {
+    background: #e9ece5;
+    transform: translateY(-1px);
+    outline: none;
+}
+
+.project-card-menu-item-danger {
+    color: #a52821;
+}
+
+.project-card-inline-actions {
+    margin-top: 18px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
 .project-card-header p {
@@ -238,5 +339,10 @@ body.dashboard-shell {
 
     .dashboard-inline-form {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    .project-card-menu {
+        left: 0;
+        right: auto;
     }
 }

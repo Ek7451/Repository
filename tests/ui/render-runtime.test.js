@@ -7,7 +7,6 @@ import { RenderRuntime } from '../../ui/render-runtime.js';
 function createFieldGeometryPort() {
     return {
         getOffsetCorrection: vi.fn(() => 6),
-        getClipPositionRange: vi.fn(() => ({ min: -4, max: 48 })),
         getVisualFocalY: vi.fn(() => 120),
         calculateRowLength: vi.fn(() => 140),
         buildTierAisleLayouts: vi.fn((solvers) => solvers.map((solver, index) => ({
@@ -28,6 +27,7 @@ describe('RenderRuntime', () => {
         const fieldGeometryPort = createFieldGeometryPort();
 
         state.setup.customRunoff = 30;
+        state.setup.focalX = 18;
         state.setup.focalZ = 9;
         state.bowl.structuralDepth = 18;
         state.occupancy.showSeatCubes3D = true;
@@ -39,7 +39,7 @@ describe('RenderRuntime', () => {
 
         expect(snapshot.template).toBe(getTemplate('Football'));
         expect(snapshot.customRunoff).toBe(30);
-        expect(snapshot.focalPointFt).toEqual({ x: 0, z: 9 });
+        expect(snapshot.focalPointFt).toEqual({ x: 18, z: 9 });
         expect(snapshot.structuralDepth).toBe(18);
         expect(snapshot.solvers).toHaveLength(2);
         expect(snapshot.activeSolvers).toHaveLength(2);
@@ -63,7 +63,7 @@ describe('RenderRuntime', () => {
         }));
         expect(snapshot.profileRenderInput).toEqual(expect.objectContaining({
             solvers: snapshot.solvers,
-            focalPointFt: { x: 0, z: 9 },
+            focalPointFt: { x: 18, z: 9 },
             options: {
                 structuralDepth: 18,
                 showSightlines: true,
@@ -74,11 +74,8 @@ describe('RenderRuntime', () => {
             showSeatCubes: true,
             seatWidthIn: 22
         });
-        expect(snapshot.clipRange).toEqual({
-            min: -4,
-            max: 48,
-            value: 0
-        });
+        expect(snapshot).not.toHaveProperty('clipRange');
+        expect(snapshot.bowlConfig).not.toHaveProperty('clip');
         expect(snapshot.scene3DInput).toEqual({
             template: snapshot.template,
             customRunoff: 30,
@@ -110,17 +107,19 @@ describe('RenderRuntime', () => {
             structuralDepthFt: 1.5,
             offsetCorrection: 6
         }));
+        expect(fieldGeometryPort.getVisualFocalY).toHaveBeenCalledWith(
+            snapshot.template,
+            { x: 18, z: 9 },
+            'Football'
+        );
     });
 
-    test('recompute keeps runtime normalization pure while deriving clamped render inputs and next-tier defaults', () => {
+    test('recompute keeps runtime normalization pure while deriving next-tier defaults', () => {
         const state = AppState.reset();
         const runtime = new RenderRuntime();
         const fieldGeometryPort = createFieldGeometryPort();
 
         state.sport = 'Invalid Sport';
-        state.bowl.clipEnabled = true;
-        state.bowl.clipAxis = 'Y';
-        state.bowl.clipPosition = 500;
         state.tiers[1].enabled = true;
 
         const snapshot = runtime.recompute({ state, fieldGeometryPort });
@@ -128,22 +127,12 @@ describe('RenderRuntime', () => {
 
         expect(state.sport).toBe('Invalid Sport');
         expect(snapshot.template).toBe(getTemplate('Football'));
-        expect(snapshot.bowlConfig.clip.position).toBe(48);
-        expect(state.bowl.clipPosition).toBe(500);
-        expect(snapshot.clipRange).toEqual({
-            min: -4,
-            max: 48,
-            value: 48
-        });
-        expect(fieldGeometryPort.getClipPositionRange).toHaveBeenCalledWith(
-            snapshot.solvers,
-            expect.objectContaining({
-                clip: expect.objectContaining({
-                    position: 500
-                })
-            }),
-            'Y',
-            6
+        expect(snapshot).not.toHaveProperty('clipRange');
+        expect(snapshot.bowlConfig).not.toHaveProperty('clip');
+        expect(runtime.getExportContext(state).bowlConfig).not.toHaveProperty('clip');
+        expect(fieldGeometryPort.getOffsetCorrection).toHaveBeenCalledWith(
+            expect.objectContaining({ width: 160 }),
+            'Football'
         );
         expect(tierDefaults).toEqual(expect.objectContaining({
             firstRowDist: expect.any(Number),

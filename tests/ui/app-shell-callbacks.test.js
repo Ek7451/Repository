@@ -1,6 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { afterEach } from 'vitest';
 import { SeatingBowlApp } from '../../ui/app.js';
+import * as editorShellModule from '../../ui/editor-shell.js';
+import * as scene3DControllerModule from '../../ui/scene3d-controller.js';
+import * as statsPanelModule from '../../ui/stats-panel.js';
+import * as fieldRendererModule from '../../viz/field-renderer.js';
+import * as profileRendererModule from '../../viz/profile-renderer.js';
+
+afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+});
 
 describe('SeatingBowlApp shell callbacks', () => {
     it('emits project chrome updates as plain data', () => {
@@ -102,6 +113,114 @@ describe('SeatingBowlApp shell callbacks', () => {
         ]);
     });
 
+    it('routes project chrome, status, and save-busy updates through the editor shell API', () => {
+        const renderProjectChrome = vi.fn();
+        const renderProjectStatus = vi.fn();
+        const setProjectSaveBusy = vi.fn();
+        const app = new SeatingBowlApp();
+
+        app.editorShell = /** @type {any} */ ({
+            renderProjectChrome,
+            renderProjectStatus,
+            setProjectSaveBusy
+        });
+
+        app.setSession({
+            userId: 'user-1',
+            displayName: 'Pat Example',
+            email: 'pat@example.com',
+            jobTitle: 'Design Technology Specialist II'
+        });
+        app.setProjectMetadata({
+            id: 'project-1',
+            name: 'Arena Study',
+            createdAt: '2026-03-14T00:00:00.000Z',
+            updatedAt: '2026-03-14T01:00:00.000Z'
+        });
+        app.setProjectStatus('Saved project', 'success');
+        app.setProjectSaveBusy(true);
+
+        expect(renderProjectChrome).toHaveBeenCalledWith(
+            expect.objectContaining({
+                session: expect.objectContaining({
+                    displayName: 'Pat Example',
+                    jobTitle: 'Design Technology Specialist II'
+                })
+            }),
+            expect.objectContaining({ isSaveBusy: false })
+        );
+        expect(renderProjectStatus).toHaveBeenCalledWith({
+            message: 'Saved project',
+            tone: 'success'
+        });
+        expect(setProjectSaveBusy).toHaveBeenCalledWith(true);
+    });
+
+    it('replays pre-init session chrome into the editor shell during init', async () => {
+        const renderProjectChrome = vi.fn();
+        const renderProjectStatus = vi.fn();
+        const mockShell = {
+            init: vi.fn(),
+            connectViewCanvases: vi.fn(() => ({
+                fieldCanvas: { id: 'fieldCanvas' },
+                profileCanvas: { id: 'profileCanvas' }
+            })),
+            getTheme: vi.fn(() => 'light'),
+            syncFromState: vi.fn(),
+            renderProjectChrome,
+            renderProjectStatus,
+            applyUrlViewOverride: vi.fn(),
+            isScene3DActive: vi.fn(() => false)
+        };
+        const mockScene3DController = {
+            renderBookmarks: vi.fn(),
+            applyTheme: vi.fn(),
+            update: vi.fn(),
+            destroy: vi.fn()
+        };
+
+        vi.spyOn(editorShellModule, 'EditorShell').mockImplementation(() => /** @type {any} */ (mockShell));
+        vi.spyOn(fieldRendererModule, 'FieldRenderer').mockImplementation(() => /** @type {any} */ ({}));
+        vi.spyOn(profileRendererModule, 'ProfileRenderer').mockImplementation(() => /** @type {any} */ ({}));
+        vi.spyOn(scene3DControllerModule, 'Scene3DController').mockImplementation(() => /** @type {any} */ (mockScene3DController));
+        vi.spyOn(statsPanelModule, 'StatsPanel').mockImplementation(() => /** @type {any} */ ({ update: vi.fn() }));
+        vi.stubGlobal('requestAnimationFrame', (callback) => {
+            callback();
+            return 1;
+        });
+
+        const app = new SeatingBowlApp();
+        app.editorControls = /** @type {any} */ ({
+            init: vi.fn(),
+            syncFromState: vi.fn(),
+            destroy: vi.fn()
+        });
+        vi.spyOn(app, 'update').mockImplementation(() => {});
+
+        app.setSession({
+            userId: 'user-1',
+            displayName: 'Pat Example',
+            email: 'pat@example.com',
+            jobTitle: 'Design Technology Specialist II'
+        });
+
+        await app.init();
+
+        expect(renderProjectChrome).toHaveBeenCalledWith(
+            expect.objectContaining({
+                session: expect.objectContaining({
+                    displayName: 'Pat Example',
+                    jobTitle: 'Design Technology Specialist II'
+                })
+            }),
+            expect.objectContaining({ isSaveBusy: false })
+        );
+        expect(renderProjectStatus).toHaveBeenCalledWith({
+            message: 'Project persistence ready',
+            tone: 'default'
+        });
+    });
+
     it('builds save requests from the single live AppState', () => {
         const chromeUpdates = [];
         const app = new SeatingBowlApp({
@@ -137,15 +256,12 @@ describe('SeatingBowlApp shell callbacks', () => {
         const app = new SeatingBowlApp();
 
         app.state.setup.customRunoff = null;
+        app.state.setup.focalX = 18;
         app.state.setup.focalZ = 9;
         app.state.bowl.type = 'Side1';
         app.state.bowl.cornerRad = 24;
         app.state.bowl.sideLength = 280;
         app.state.bowl.structuralDepth = 18;
-        app.state.bowl.clipEnabled = true;
-        app.state.bowl.clipAxis = 'Y';
-        app.state.bowl.clipPosition = 42;
-        app.state.bowl.clipSide = 'negative';
         app.state.occupancy.seatWidth = 22;
         app.state.occupancy.minAisle = 44;
         app.state.occupancy.maxAisle = 66;
@@ -155,7 +271,7 @@ describe('SeatingBowlApp shell callbacks', () => {
         const exportContext = app.renderRuntime.getExportContext(app.state);
 
         expect(exportContext.runoffDistance).toBe(25);
-        expect(exportContext.focalPointFt).toEqual({ x: 0, z: 9 });
+        expect(exportContext.focalPointFt).toEqual({ x: 18, z: 9 });
         expect(exportContext.egressParams).toEqual({
             seatWidthIn: 22,
             maxAisleWidthIn: 66,
@@ -181,14 +297,9 @@ describe('SeatingBowlApp shell callbacks', () => {
             corner: 'Chamfer',
             radius: 24,
             sideLength: 280,
-            structuralDepth: 18,
-            clip: {
-                enabled: true,
-                axis: 'Y',
-                position: 42,
-                side: 'negative'
-            }
+            structuralDepth: 18
         });
+        expect(exportContext.bowlConfig).not.toHaveProperty('clip');
     });
 
     it('pushes explicit theme state into visualizers without requiring viz to read the DOM', () => {
@@ -273,22 +384,12 @@ describe('SeatingBowlApp shell callbacks', () => {
         expect(descriptor.content).toContain('f 1 2 3');
     });
 
-    it('delegates clip position control sync to editor controls instead of mutating the DOM directly', () => {
+    it('renders field updates without clip control sync side effects', () => {
         const app = new SeatingBowlApp();
-        const syncClipPositionRange = vi.fn();
         const getOffsetCorrection = vi.fn(() => 0);
         const renderField = vi.fn();
-        const getClipPositionRange = vi.fn(() => ({
-            min: -10,
-            max: 80
-        }));
-
-        app.editorControls = /** @type {any} */ ({
-            syncClipPositionRange
-        });
         const geometryPort = {
             getOffsetCorrection,
-            getClipPositionRange,
             getVisualFocalY: vi.fn(() => 0),
             buildTierAisleLayouts: vi.fn(() => []),
             calculateRowLength: vi.fn(() => 100)
@@ -308,25 +409,12 @@ describe('SeatingBowlApp shell callbacks', () => {
             isScene3DActive: vi.fn(() => false)
         });
         app.state.sport = 'Football';
-        app.state.bowl.clipAxis = 'X';
-        app.state.bowl.clipPosition = 200;
 
         app.update();
 
-        expect(app.state.bowl.clipPosition).toBe(80);
         expect(getOffsetCorrection).toHaveBeenCalledWith(expect.objectContaining({ width: 160 }), 'Football');
-        expect(getClipPositionRange).toHaveBeenCalledWith(
-            expect.any(Array),
-            expect.objectContaining({ width: 160 }),
-            'X',
-            0
-        );
         expect(renderField).toHaveBeenCalledTimes(1);
-        expect(syncClipPositionRange).toHaveBeenCalledWith({
-            min: -10,
-            max: 80,
-            value: 80
-        });
+        expect(app.renderRuntime.getSnapshot()).not.toHaveProperty('clipRange');
     });
 
     it('does not initialize rhino when there is no scene export geometry', async () => {
@@ -349,7 +437,6 @@ describe('SeatingBowlApp shell callbacks', () => {
         const updateScene3D = vi.fn();
 
         const geometryPort = {
-            getClipPositionRange: vi.fn(() => ({ min: 0, max: 0 })),
             getOffsetCorrection: vi.fn(() => 0),
             getVisualFocalY: vi.fn(() => 12),
             buildTierAisleLayouts: vi.fn(() => []),
@@ -362,9 +449,6 @@ describe('SeatingBowlApp shell callbacks', () => {
         });
         app.profileRenderer = /** @type {any} */ ({
             renderMulti: vi.fn()
-        });
-        app.editorControls = /** @type {any} */ ({
-            syncClipPositionRange: vi.fn()
         });
         app.editorShell = /** @type {any} */ ({
             isScene3DActive
@@ -399,6 +483,8 @@ describe('SeatingBowlApp shell callbacks', () => {
         });
         app.editorShell = /** @type {any} */ ({
             syncFromState: vi.fn(),
+            renderProjectChrome: vi.fn(),
+            renderProjectStatus: vi.fn(),
             getViewCanvases: vi.fn(() => ({
                 fieldCanvas: null,
                 profileCanvas: null

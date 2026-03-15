@@ -4,7 +4,6 @@ import {
     buildTierMetricsByIndex
 } from '../core/profile-solver.js';
 import {
-    buildClipPositionControlSync,
     buildBowlConfig,
     buildEgressParams,
     buildFieldVisibility,
@@ -40,15 +39,12 @@ export class RenderRuntime {
      *   state?: {
      *     sport?: string,
      *     bowl?: {
-     *       structuralDepth?: number,
-     *       clipAxis?: string,
-     *       clipPosition?: number
+     *       structuralDepth?: number
      *     },
      *     tiers?: Array<unknown>
      *   },
      *   fieldGeometryPort?: {
      *     getOffsetCorrection(bowlConfig: unknown, sport: unknown): number,
-     *     getClipPositionRange(solvers: unknown[], bowlConfig: unknown, clipAxis: unknown, offsetCorrection: number): { min: number, max: number } | null,
      *     getVisualFocalY(template: unknown, focalPointFt: { x: number, z: number }, sport: unknown): number,
      *     calculateRowLength(bowlConfig: unknown, offsetCorrection: number): number,
      *     buildTierAisleLayouts(
@@ -79,22 +75,9 @@ export class RenderRuntime {
         let visualFocalY = 0;
         let tierMetricsByIndex = new Map();
         let tierAisleLayouts = [];
-        let clipRange = null;
 
         if (fieldGeometryPort && bowlConfig) {
             offsetCorrection = fieldGeometryPort.getOffsetCorrection(bowlConfig, sportName);
-            const rawClipRange = fieldGeometryPort.getClipPositionRange(
-                solvers,
-                bowlConfig,
-                state?.bowl?.clipAxis,
-                offsetCorrection
-            );
-            clipRange = buildClipPositionControlSync(state, rawClipRange);
-            if (clipRange) {
-                bowlConfig = buildBowlConfig(state, template, {
-                    clipPosition: clipRange.value
-                });
-            }
             visualFocalY = fieldGeometryPort.getVisualFocalY(template, focalPointFt, sportName);
             tierMetricsByIndex = buildTierMetricsByIndex({
                 solvers,
@@ -128,10 +111,6 @@ export class RenderRuntime {
             tierMetricsByIndex,
             tierAisleLayouts,
             seatPreviewOptions,
-            clipRange,
-            controlSync: {
-                clipRange
-            },
             offsetCorrection,
             fieldRenderInput: {
                 template,
@@ -188,7 +167,6 @@ export class RenderRuntime {
         const template = resolveSportTemplate(sportName);
         this._template = template;
         const structuralDepth = Number(state?.bowl?.structuralDepth) || 0;
-        const clipRange = this._snapshot?.controlSync?.clipRange ?? null;
 
         return {
             stateJson: typeof state?.toJSON === 'function' ? state.toJSON() : null,
@@ -196,9 +174,7 @@ export class RenderRuntime {
             template,
             solvers: this._solvers || [],
             activeSolvers: this.getActiveSolvers(),
-            bowlConfig: buildBowlConfig(state, template, {
-                clipPosition: clipRange?.value
-            }),
+            bowlConfig: buildBowlConfig(state, template),
             egressParams: buildEgressParams(state),
             focalPointFt: buildFocalPointFt(state),
             primaryTierParameters: buildPrimaryTierParameters(state),

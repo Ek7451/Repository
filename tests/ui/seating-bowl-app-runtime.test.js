@@ -45,10 +45,7 @@ describe('SeatingBowlApp runtime seams', () => {
                 focalZ: 7
             },
             bowl: {
-                type: 'Side1',
-                clipEnabled: true,
-                clipAxis: 'Y',
-                clipPosition: 14
+                type: 'Side1'
             },
             ui: {
                 activeViewTab: 'field',
@@ -129,7 +126,6 @@ describe('SeatingBowlApp runtime seams', () => {
             }
         ]));
         const geometryPort = {
-            getClipPositionRange: vi.fn(() => ({ min: -5, max: 60 })),
             getOffsetCorrection,
             getVisualFocalY: vi.fn(() => 123),
             buildTierAisleLayouts,
@@ -146,9 +142,6 @@ describe('SeatingBowlApp runtime seams', () => {
         app.statsPanel = /** @type {any} */ ({
             update: updateStats
         });
-        app.editorControls = /** @type {any} */ ({
-            syncClipPositionRange: vi.fn()
-        });
         app.editorShell = /** @type {any} */ ({
             isScene3DActive: vi.fn(() => false),
             ensure3DContainerSize: vi.fn()
@@ -156,6 +149,7 @@ describe('SeatingBowlApp runtime seams', () => {
         app.scene3DController = /** @type {any} */ ({
             update: vi.fn()
         });
+        app.state.setup.focalX = 18;
         app.state.setup.focalZ = 9;
         app.state.setup.customRunoff = 30;
         app.state.bowl.structuralDepth = 18;
@@ -187,7 +181,7 @@ describe('SeatingBowlApp runtime seams', () => {
         );
         expect(renderProfile).toHaveBeenCalledWith(
             snapshot?.solvers,
-            0,
+            18,
             9,
             {
                 structuralDepth: 18,

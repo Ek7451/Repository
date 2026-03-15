@@ -31,6 +31,7 @@ export class SeatingBowlApp {
         this.profileRenderer = null;
         this.scene3DController = null;
         this._debounceTimer = null;
+        this._projectSaveBusy = false;
         this.renderRuntime = new RenderRuntime();
         this.statsPanel = null;
         this.editorControls = new EditorControls({
@@ -51,8 +52,14 @@ export class SeatingBowlApp {
         this.editorShell = null;
         this.projectShell = new ProjectShellController({
             getSportName: () => resolveSportName(this.state),
-            onProjectChromeChanged: callbacks.onProjectChromeChanged,
-            onStatusChanged: callbacks.onStatusChanged
+            onProjectChromeChanged: (chrome) => {
+                this.editorShell?.renderProjectChrome(chrome, { isSaveBusy: this._projectSaveBusy });
+                callbacks.onProjectChromeChanged?.(chrome);
+            },
+            onStatusChanged: (status) => {
+                this.editorShell?.renderProjectStatus(status);
+                callbacks.onStatusChanged?.(status);
+            }
         });
     }
 
@@ -115,6 +122,7 @@ export class SeatingBowlApp {
         this.exportController = null;
         this.projectShell?.destroy();
         this.projectShell = null;
+        this._projectSaveBusy = false;
     }
 
     setSession(session) {
@@ -149,6 +157,11 @@ export class SeatingBowlApp {
         this.projectShell.setProjectStatus(message, tone);
     }
 
+    setProjectSaveBusy(isBusy = false) {
+        this._projectSaveBusy = Boolean(isBusy);
+        this.editorShell?.setProjectSaveBusy(this._projectSaveBusy);
+    }
+
     loadProject(project) {
         if (!project || typeof project !== 'object') return;
         this.setProjectMetadata(project);
@@ -181,6 +194,10 @@ export class SeatingBowlApp {
             }
         });
         this.editorShell.init();
+        this.editorShell.renderProjectChrome(this.projectShell.getProjectChrome(), {
+            isSaveBusy: this._projectSaveBusy
+        });
+        this.editorShell.renderProjectStatus(this.projectShell.getProjectStatus());
     }
 
     applyTheme(theme, { rerender = true } = {}) {
@@ -247,10 +264,6 @@ export class SeatingBowlApp {
                 state: this.state,
                 fieldGeometryPort: this.fieldRenderer?.getGeometryPort?.() ?? null
             });
-            if (snapshot?.controlSync?.clipRange) {
-                this.state.applyClipPositionRange(snapshot.controlSync.clipRange);
-                this.editorControls?.syncClipPositionRange(snapshot.controlSync.clipRange);
-            }
             if (this.fieldRenderer && snapshot?.fieldRenderInput) {
                 const fieldRenderInput = snapshot.fieldRenderInput;
                 this.fieldRenderer.render(

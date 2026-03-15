@@ -11,11 +11,14 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(renderer.getOffsetCorrection({}, 'Baseball')).toBe(0);
     });
 
-    it('preserves the visual focal Y adjustment rules', () => {
+    it('derives visual focal Y from the shared field-edge anchor and focal-X sign rules', () => {
         const renderer = Object.create(FieldRenderer.prototype);
 
-        expect(renderer.getVisualFocalY({ focal_y: 12 }, { x: 5 }, 'Football')).toBe(17);
-        expect(renderer.getVisualFocalY({ focal_y: 12 }, { x: 5 }, 'Baseball')).toBe(5);
+        expect(renderer.getVisualFocalY({ focal_y: -80 }, { x: 15 }, 'Football')).toBe(-95);
+        expect(renderer.getVisualFocalY({ focal_y: -42.5 }, { x: 12 }, 'Ice Hockey')).toBe(-54.5);
+        expect(renderer.getVisualFocalY({ focal_y: -80 }, { x: -20 }, 'Football')).toBe(-60);
+        expect(renderer.getVisualFocalY({ focal_y: 0, field_width: 303.6 }, { x: 10 }, 'Track')).toBeCloseTo(-161.8);
+        expect(renderer.getVisualFocalY({ focal_y: 0, field_radius: 325 }, { x: 5 }, 'Baseball')).toBe(-5);
         expect(renderer.getVisualFocalY(null, null, 'Soccer')).toBe(0);
     });
 
@@ -69,45 +72,16 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(layouts[1].tierIndex).toBe(2);
     });
 
-    it('derives clip ranges from bowl bounds with current outer offset semantics', () => {
+    it('calculates row lengths from the full bowl geometry segments', () => {
         const renderer = Object.create(FieldRenderer.prototype);
-        renderer._computeBowlBounds = vi.fn(() => ({
-            minX: -10.2,
-            maxX: 80.1,
-            minY: -40.8,
-            maxY: 32.2
-        }));
+        renderer._getBowlGeometry = vi.fn(() => ([
+            { cmd: 'moveTo', x: 0, y: 0 },
+            { cmd: 'lineTo', x: 3, y: 4 },
+            { cmd: 'lineTo', x: 6, y: 4 },
+            { cmd: 'closePath' }
+        ]));
 
-        const clipRange = renderer.getClipPositionRange(
-            [
-                { rows: [{ x: 12 }, { x: 65 }] },
-                { rows: [{ x: 54 }] }
-            ],
-            {
-                width: 120,
-                clip: {
-                    enabled: true,
-                    axis: 'Y',
-                    position: 9,
-                    side: 'negative'
-                }
-            },
-            'Y',
-            5
-        );
-
-        expect(renderer._computeBowlBounds).toHaveBeenCalledWith(
-            {
-                width: 120,
-                clip: {
-                    enabled: false
-                }
-            },
-            60
-        );
-        expect(clipRange).toEqual({
-            min: -41,
-            max: 33
-        });
+        expect(renderer.calculateRowLength({ width: 120 }, 10)).toBe(15.21110255092798);
+        expect(renderer._getBowlGeometry).toHaveBeenCalledWith({ width: 120 }, 10);
     });
 });

@@ -5,6 +5,7 @@
 
 import { getSolverTierIndex } from '../core/profile-solver.js';
 import { getCValueQuality } from '../core/sightline-calc.js';
+import { resolvePlanFocalYFt } from '../core/sports-templates.js';
 import {
     buildGeometryPaths,
     sampleAisleBand,
@@ -283,8 +284,7 @@ export class FieldRenderer {
             getBowlGeometrySegments: this.getBowlGeometrySegments.bind(this),
             getOffsetCorrection: this.getOffsetCorrection.bind(this),
             getVisualFocalY: this.getVisualFocalY.bind(this),
-            buildTierAisleLayouts: this.buildTierAisleLayouts.bind(this),
-            getClipPositionRange: this.getClipPositionRange.bind(this)
+            buildTierAisleLayouts: this.buildTierAisleLayouts.bind(this)
         };
     }
 
@@ -825,7 +825,6 @@ export class FieldRenderer {
 
     calculateRowLength(bowlConfig, offset) {
         const segments = this._getBowlGeometry(bowlConfig, offset);
-        const clip = bowlConfig && bowlConfig.clip;
         let totalLength = 0;
         let lastX = 0, lastY = 0;
         let startX = 0, startY = 0;
@@ -837,15 +836,23 @@ export class FieldRenderer {
                 startX = s.x;
                 startY = s.y;
             } else if (s.cmd === 'lineTo') {
-                totalLength += this._clippedLineLength(lastX, lastY, s.x, s.y, clip);
+                totalLength += Math.hypot(s.x - lastX, s.y - lastY);
                 lastX = s.x;
                 lastY = s.y;
             } else if (s.cmd === 'arc') {
-                totalLength += this._clippedArcLength(s, clip);
+                let angle = s.ea - s.sa;
+                if (s.ccw) {
+                    while (angle > 0) angle -= 2 * Math.PI;
+                    while (angle <= -2 * Math.PI) angle += 2 * Math.PI;
+                } else {
+                    while (angle < 0) angle += 2 * Math.PI;
+                    while (angle >= 2 * Math.PI) angle -= 2 * Math.PI;
+                }
+                totalLength += s.r * Math.abs(angle);
                 lastX = s.x + s.r * Math.cos(s.ea);
                 lastY = s.y + s.r * Math.sin(s.ea);
             } else if (s.cmd === 'closePath') {
-                totalLength += this._clippedLineLength(lastX, lastY, startX, startY, clip);
+                totalLength += Math.hypot(startX - lastX, startY - lastY);
                 lastX = startX;
                 lastY = startY;
             }
@@ -859,9 +866,9 @@ export class FieldRenderer {
         return EDGE_SPORTS.includes(sportName) ? 0 : (safeWidth / 2);
     }
 
-    getVisualFocalY(template, focalPointFt, sportName) {
-        const baseY = EDGE_SPORTS.includes(sportName) ? (Number(template?.focal_y) || 0) : 0;
-        return baseY + (Number(focalPointFt?.x) || 0);
+    getVisualFocalY(template, focalPointFt, _sportName) {
+        void _sportName;
+        return resolvePlanFocalYFt(template, Number(focalPointFt?.x) || 0);
     }
 
     buildTierAisleLayouts(solvers, bowlConfig, tierMetricsByIndex, offsetCorrection = 0, egressParams = null) {
@@ -888,35 +895,6 @@ export class FieldRenderer {
         });
 
         return tierAisleLayouts;
-    }
-
-    getClipPositionRange(solvers, bowlConfig, axis = 'X', offsetCorrection = 0) {
-        if (!bowlConfig) return null;
-
-        let maxRowX = 0;
-        (solvers || []).forEach((solver) => {
-            if (!solver?.rows?.length) return;
-            const lastRow = solver.rows[solver.rows.length - 1];
-            if (lastRow && Number.isFinite(lastRow.x)) {
-                maxRowX = Math.max(maxRowX, lastRow.x);
-            }
-        });
-
-        const outerOffset = maxRowX - offsetCorrection;
-        const bounds = this._computeBowlBounds(
-            { ...bowlConfig, clip: { enabled: false } },
-            outerOffset
-        );
-        if (!bounds) return null;
-
-        const clipAxis = (axis || 'X').toUpperCase();
-        const minVal = Math.floor(clipAxis === 'X' ? bounds.minX : bounds.minY);
-        const maxVal = Math.ceil(clipAxis === 'X' ? bounds.maxX : bounds.maxY);
-
-        return {
-            min: Math.min(minVal, maxVal - 1),
-            max: Math.max(maxVal, minVal + 1)
-        };
     }
 
     _computeBowlBounds(bowlConfig, offset) {
@@ -1753,9 +1731,6 @@ export class FieldRenderer {
         const aisleLayoutMap = new Map((tierAisleLayouts || []).map(layout => [layout.tierIndex, layout]));
         const colorByCValue = visibility?.colorByCValue !== false;
 
-        // Render-time clipping (does not modify underlying geometry).
-        const clipApplied = this._applyRenderClip(ctx, bowlConfig);
-
         // === SUNLIGHT SHADOW PASS ===
         // Simulate harsh directional sunlight — shadows offset 30° to lower-right
         // Each tier casts a shadow proportional to its height/elevation
@@ -1906,92 +1881,6 @@ export class FieldRenderer {
             // Aisles are drawn earlier so row step lines/front/perimeter outlines remain visible on top.
         });
 
-        if (clipApplied) ctx.restore();
-    }
-
-    _clipKeepPredicateFactory(clip) {
-        if (!clip || !clip.enabled) return null;
-        const axis = (clip.axis || 'X').toUpperCase();
-        const side = clip.side || 'positive';
-        const position = Number.isFinite(parseFloat(clip.position)) ? parseFloat(clip.position) : 0;
-        if (axis === 'X') {
-            return side === 'positive' ? ((x) => x >= position) : ((x) => x <= position);
-        }
-        return side === 'positive' ? ((_, y) => y >= position) : ((_, y) => y <= position);
-    }
-
-    _clippedLineLength(x1, y1, x2, y2, clip) {
-        const keep = this._clipKeepPredicateFactory(clip);
-        if (!keep) return Math.hypot(x2 - x1, y2 - y1);
-
-        const p1In = keep(x1, y1);
-        const p2In = keep(x2, y2);
-        if (p1In && p2In) return Math.hypot(x2 - x1, y2 - y1);
-        if (!p1In && !p2In) return 0;
-
-        const axis = (clip.axis || 'X').toUpperCase();
-        const pos = Number.isFinite(parseFloat(clip.position)) ? parseFloat(clip.position) : 0;
-        const d = axis === 'X' ? (x2 - x1) : (y2 - y1);
-        if (Math.abs(d) < 1e-9) return 0;
-
-        const t = axis === 'X' ? (pos - x1) / d : (pos - y1) / d;
-        const clampedT = Math.max(0, Math.min(1, t));
-        const ix = x1 + (x2 - x1) * clampedT;
-        const iy = y1 + (y2 - y1) * clampedT;
-
-        if (p1In) return Math.hypot(ix - x1, iy - y1);
-        return Math.hypot(x2 - ix, y2 - iy);
-    }
-
-    _clippedArcLength(arc, clip) {
-        const keep = this._clipKeepPredicateFactory(clip);
-        if (!keep) {
-            let angle = arc.ea - arc.sa;
-            if (arc.ccw) {
-                while (angle > 0) angle -= 2 * Math.PI;
-                while (angle <= -2 * Math.PI) angle += 2 * Math.PI;
-            } else {
-                while (angle < 0) angle += 2 * Math.PI;
-                while (angle >= 2 * Math.PI) angle -= 2 * Math.PI;
-            }
-            return arc.r * Math.abs(angle);
-        }
-
-        // Numerical approximation is sufficient for occupancy metrics.
-        const steps = 96;
-        let total = 0;
-        let prev = null;
-        for (let i = 0; i <= steps; i++) {
-            const t = i / steps;
-            const a = arc.sa + (arc.ea - arc.sa) * t;
-            const x = arc.x + arc.r * Math.cos(a);
-            const y = arc.y + arc.r * Math.sin(a);
-            if (prev) total += this._clippedLineLength(prev.x, prev.y, x, y, clip);
-            prev = { x, y };
-        }
-        return total;
-    }
-
-    _applyRenderClip(ctx, bowlConfig) {
-        const clip = bowlConfig && bowlConfig.clip;
-        if (!clip || !clip.enabled) return false;
-
-        const axis = (clip.axis || 'X').toUpperCase();
-        const side = clip.side || 'positive';
-        const pos = Number.isFinite(parseFloat(clip.position)) ? parseFloat(clip.position) : 0;
-        const inf = 100000;
-
-        ctx.save();
-        ctx.beginPath();
-        if (axis === 'X') {
-            if (side === 'positive') ctx.rect(pos, -inf, inf * 2, inf * 2);
-            else ctx.rect(-inf, -inf, inf + pos, inf * 2);
-        } else {
-            if (side === 'positive') ctx.rect(-inf, pos, inf * 2, inf * 2);
-            else ctx.rect(-inf, -inf, inf * 2, inf + pos);
-        }
-        ctx.clip();
-        return true;
     }
 
     _drawShape(ctx, template, extraRunoff, style) {

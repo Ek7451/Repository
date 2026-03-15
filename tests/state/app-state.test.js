@@ -6,6 +6,7 @@ import {
     buildBowlConfig,
     buildEgressParams,
     buildFieldVisibility,
+    buildFocalXControlConfig,
     buildFocalPointFt,
     buildPrimaryTierParameters,
     buildSceneSeatPreviewOptions,
@@ -25,7 +26,11 @@ describe('AppState', () => {
             _version: 'phase5',
             bowl: {
                 ...DEFAULT_STARTUP_PROFILE.bowl,
-                type: 'Side2'
+                type: 'Side2',
+                clipEnabled: true,
+                clipAxis: 'Y',
+                clipPosition: 12,
+                clipSide: 'negative'
             },
             setup: {
                 ...DEFAULT_STARTUP_PROFILE.setup,
@@ -55,6 +60,14 @@ describe('AppState', () => {
         });
         expect(exported._version).toBe(APP_STATE_VERSION);
         expect(exported.ui.activeViewTab).toBe(DEFAULT_STARTUP_PROFILE.ui.activeViewTab);
+        expect(AppState.bowl).not.toHaveProperty('clipEnabled');
+        expect(AppState.bowl).not.toHaveProperty('clipAxis');
+        expect(AppState.bowl).not.toHaveProperty('clipPosition');
+        expect(AppState.bowl).not.toHaveProperty('clipSide');
+        expect(exported.bowl).not.toHaveProperty('clipEnabled');
+        expect(exported.bowl).not.toHaveProperty('clipAxis');
+        expect(exported.bowl).not.toHaveProperty('clipPosition');
+        expect(exported.bowl).not.toHaveProperty('clipSide');
     });
 
     test('applies sport template defaults without creating a parallel state tree', () => {
@@ -100,9 +113,37 @@ describe('AppState', () => {
         expect(first).not.toBe(second);
         expect(first._version).toBe(APP_STATE_VERSION);
         expect(second.tiers[0].enabled).toBe(true);
+        expect(first.setup.focalX).toBe(0);
 
         first.tiers[0].numRows = 99;
         expect(second.tiers[0].numRows).toBe(30);
+    });
+
+    test('clamps focalX while hydrating and when the selected sport changes', () => {
+        AppState.fromJSON({
+            sport: 'Football',
+            setup: {
+                focalX: -200
+            }
+        });
+
+        expect(AppState.setup.focalX).toBe(-80);
+
+        AppState.setup.focalX = -80;
+        AppState.applySportDefaults({
+            sport: 'Basketball',
+            template: {
+                runoff: 6.5,
+                field_length: 94,
+                field_width: 50,
+                shape: 'rectangle',
+                defaults: {
+                    setup: { customRunoff: 6.5, focalZ: 2.5 }
+                }
+            }
+        });
+
+        expect(AppState.setup.focalX).toBe(-25);
     });
 
     test('builds state-derived DTO selectors with the existing bowl and scene shapes', () => {
@@ -117,6 +158,7 @@ describe('AppState', () => {
         };
 
         state.setup.customRunoff = null;
+        state.setup.focalX = 12.5;
         state.setup.focalZ = 7.5;
         state.setup.sightlineVisuals = false;
         state.setup.sectionMetrics = true;
@@ -124,10 +166,6 @@ describe('AppState', () => {
         state.bowl.cornerRad = 24;
         state.bowl.sideLength = 280;
         state.bowl.structuralDepth = 18;
-        state.bowl.clipEnabled = true;
-        state.bowl.clipAxis = 'Y';
-        state.bowl.clipPosition = 42;
-        state.bowl.clipSide = 'negative';
         state.occupancy.seatWidth = 22;
         state.occupancy.minAisle = 44;
         state.occupancy.maxAisle = 66;
@@ -139,7 +177,13 @@ describe('AppState', () => {
 
         expect(getCustomRunoff(state)).toBeNull();
         expect(getRunoffDistance(state, template)).toBe(18);
-        expect(buildFocalPointFt(state)).toEqual({ x: 0, z: 7.5 });
+        expect(buildFocalXControlConfig(state)).toEqual({
+            min: -80,
+            max: 100,
+            step: 0.1,
+            value: 12.5
+        });
+        expect(buildFocalPointFt(state)).toEqual({ x: 12.5, z: 7.5 });
         expect(buildEgressParams(state)).toEqual({
             seatWidthIn: 22,
             maxAisleWidthIn: 66,
@@ -157,7 +201,8 @@ describe('AppState', () => {
             eyeHeight: 3.75,
             eyeSetback: 6
         });
-        expect(buildBowlConfig(state, template)).toEqual({
+        const bowlConfig = buildBowlConfig(state, template);
+        expect(bowlConfig).toEqual({
             width: 160,
             length: 360,
             shape: 'rectangle',
@@ -167,14 +212,9 @@ describe('AppState', () => {
             corner: 'Chamfer',
             radius: 24,
             sideLength: 280,
-            structuralDepth: 18,
-            clip: {
-                enabled: true,
-                axis: 'Y',
-                position: 42,
-                side: 'negative'
-            }
+            structuralDepth: 18
         });
+        expect(bowlConfig).not.toHaveProperty('clip');
         expect(buildFieldVisibility(state)).toEqual({
             showSeating: true,
             t1: true,
@@ -199,6 +239,12 @@ describe('AppState', () => {
 
         expect(getCustomRunoff(partialState)).toBeNull();
         expect(getRunoffDistance(partialState, null)).toBe(0);
+        expect(buildFocalXControlConfig(partialState)).toEqual({
+            min: -80,
+            max: 100,
+            step: 0.1,
+            value: 0
+        });
         expect(buildFocalPointFt(partialState)).toEqual({ x: 0, z: 0 });
         expect(buildEgressParams(partialState)).toEqual({
             seatWidthIn: 0,
@@ -217,7 +263,8 @@ describe('AppState', () => {
             eyeHeight: 0,
             eyeSetback: 0
         });
-        expect(buildBowlConfig(partialState, null)).toEqual({
+        const bowlConfig = buildBowlConfig(partialState, null);
+        expect(bowlConfig).toEqual({
             width: undefined,
             length: undefined,
             shape: undefined,
@@ -227,9 +274,9 @@ describe('AppState', () => {
             corner: 'Chamfer',
             radius: undefined,
             sideLength: undefined,
-            structuralDepth: 0,
-            clip: { enabled: false }
+            structuralDepth: 0
         });
+        expect(bowlConfig).not.toHaveProperty('clip');
         expect(buildFieldVisibility(partialState)).toEqual({
             showSeating: true,
             t1: false,

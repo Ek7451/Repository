@@ -100,10 +100,10 @@ describe('buildPlanDxf', () => {
                 field_length: 100,
                 field_width: 50,
                 focal_x: 0,
-                focal_y: 0
+                focal_y: -80
             },
             runoffFt: 10,
-            visualFocalXFt: 0,
+            visualFocalXFt: 15,
             tierPlanArtifacts: [
                 {
                     tierIndex: 0,
@@ -132,6 +132,7 @@ describe('buildPlanDxf', () => {
 
         expect(dxf).toContain('Field_Edge');
         expect(dxf).toContain('Runoff');
+        expect(dxf).toContain('20\n-1140.0000');
         expect(dxf).toContain('Tier_1_Plan');
         expect(dxf).toContain('Tier_1_Aisles');
     });

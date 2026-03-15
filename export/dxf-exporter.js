@@ -1,3 +1,5 @@
+import { resolvePlanFocalYFt } from '../core/sports-templates.js';
+
 const DXF_VERSION = 'AC1009';
 
 function slugifySportName(sportName) {
@@ -396,7 +398,7 @@ export function buildPlanDxf({ template, runoffFt = 0, visualFocalXFt, tierPlanA
     addDxfShape(writer, template, runoffFt, 'Runoff');
 
     const fpX = (template?.focal_x || 0) * 12;
-    const fpY = ((visualFocalXFt ?? template?.focal_y) || 0) * 12;
+    const fpY = resolvePlanFocalYFt(template, visualFocalXFt) * 12;
     writer.addPoint('Focal_Point', fpX, fpY);
     writer.addLine('Focal_Point', fpX - 24, fpY, fpX + 24, fpY);
     writer.addLine('Focal_Point', fpX, fpY - 24, fpX, fpY + 24);

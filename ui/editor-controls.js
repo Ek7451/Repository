@@ -1,13 +1,18 @@
 import { getSportNames, getTemplate as getSportTemplate } from '../core/sports-templates.js';
 import { buildNextTierDefaultsFromTiers } from '../core/profile-solver.js';
-import { buildFocalPointFt, getRunoffDistance, resolveSportTemplate } from '../state/app-state.js';
+import {
+    buildFocalPointFt,
+    buildFocalXControlConfig,
+    getRunoffDistance,
+    resolveSportTemplate
+} from '../state/app-state.js';
 
 const NUMERIC_INPUT_STATE_PATHS = {
+    focalX: ['setup', 'focalX'],
     focalZ: ['setup', 'focalZ'],
     bowlCornerRad: ['bowl', 'cornerRad'],
     bowlSideLength: ['bowl', 'sideLength'],
     structuralDepth: ['bowl', 'structuralDepth'],
-    clipPosition: ['bowl', 'clipPosition'],
     seatWidth: ['occupancy', 'seatWidth'],
     minAisle: ['occupancy', 'minAisle'],
     maxAisle: ['occupancy', 'maxAisle'],
@@ -41,14 +46,11 @@ const NUMERIC_INPUT_STATE_PATHS = {
 const SELECT_STATE_PATHS = {
     sportSelect: ['sport'],
     bowlType: ['bowl', 'type'],
-    clipAxis: ['bowl', 'clipAxis'],
-    clipSide: ['bowl', 'clipSide'],
     profileType: ['tiers', 0, 'profileType'],
     t2ProfileType: ['tiers', 1, 'profileType'],
     t3ProfileType: ['tiers', 2, 'profileType']
 };
 const CHECKBOX_STATE_PATHS = {
-    enableClipPlane: ['bowl', 'clipEnabled'],
     showSeatCubes3D: ['occupancy', 'showSeatCubes3D'],
     toggleSightlinesBtn: ['setup', 'sightlineVisuals'],
     toggleSightlinesBtnField: ['setup', 'sightlineVisuals'],
@@ -125,6 +127,17 @@ function normalizeNumericControlValue(baseId, rawValue) {
     return numericValue;
 }
 
+function clampValueToBounds(value, { min = value, max = value } = {}) {
+    return Math.max(min, Math.min(max, value));
+}
+
+function syncNumericElementBounds(element, { min, max, step }) {
+    if (!element) return;
+    element.min = String(min);
+    element.max = String(max);
+    element.step = String(step);
+}
+
 function hasSectionBodyTarget(target) {
     return !!target && typeof target.closest === 'function' && target.closest('.section-body');
 }
@@ -164,6 +177,8 @@ export class EditorControls {
     }
 
     syncFromState() {
+        const focalXControl = buildFocalXControlConfig(this.state);
+
         const sportSelect = getSelectElement('sportSelect');
         if (sportSelect) {
             sportSelect.value = this.state.sport;
@@ -179,8 +194,12 @@ export class EditorControls {
             runoffSlider.value = String(runoffValue);
         }
 
+        this._syncFocalXControlBounds(focalXControl);
+
         Object.entries(NUMERIC_INPUT_STATE_PATHS).forEach(([baseId, path]) => {
-            const value = getValueAtPath(this.state, path);
+            const value = baseId === 'focalX'
+                ? focalXControl.value
+                : getValueAtPath(this.state, path);
             if (value !== undefined && value !== null) {
                 this._setInputValue(baseId, value);
             }
@@ -206,34 +225,12 @@ export class EditorControls {
             sideLengthRow.style.display = String(this.state.bowl?.type || '').includes('Side') ? 'flex' : 'none';
         }
 
-        const clipPlaneControls = getHtmlElement('clipPlaneControls');
-        if (clipPlaneControls) {
-            clipPlaneControls.style.display = this.state.bowl?.clipEnabled ? 'block' : 'none';
-        }
-
         [1, 2, 3].forEach((tierNum) => {
             updateTierSectionState(
                 getHtmlElement(`tier${tierNum}Section`),
                 !!this.state.tiers?.[tierNum - 1]?.enabled
             );
         });
-    }
-
-    syncClipPositionRange({ min = 0, max = 1, value = 0 } = {}) {
-        const slider = getInputElement('clipPositionSlider');
-        const input = getInputElement('clipPositionInput');
-        if (!slider || !input) return;
-
-        const nextMin = Number.isFinite(min) ? min : 0;
-        const nextMax = Number.isFinite(max) ? max : (nextMin + 1);
-        const nextValue = Number.isFinite(value) ? value : nextMin;
-
-        slider.min = String(nextMin);
-        slider.max = String(nextMax);
-        input.min = String(nextMin);
-        input.max = String(nextMax);
-        slider.value = String(nextValue);
-        input.value = String(nextValue);
     }
 
     applyImportedConfig(config) {
@@ -320,12 +317,6 @@ export class EditorControls {
             this._bindSelectControl(id);
         });
 
-        this._bindCheckboxControl('enableClipPlane', (enabled) => {
-            const controls = getHtmlElement('clipPlaneControls');
-            if (controls) controls.style.display = enabled ? 'block' : 'none';
-        });
-        ['clipAxis', 'clipSide'].forEach((id) => this._bindSelectControl(id));
-
         this._bindSelectControl('bowlType', (value) => {
             const sideRow = getHtmlElement('sideLengthRow');
             if (sideRow) sideRow.style.display = String(value || '').includes('Side') ? 'flex' : 'none';
@@ -358,23 +349,36 @@ export class EditorControls {
 
         const slider = getInputElement(`${baseId}Slider`);
         const input = getInputElement(`${baseId}Input`);
+        const getClampedValue = (rawValue) => {
+            const nextValue = normalizeNumericControlValue(baseId, rawValue);
+            if (nextValue === null) return null;
+            if (baseId !== 'focalX') {
+                return nextValue;
+            }
+
+            const focalXControl = buildFocalXControlConfig(this.state);
+            this._syncFocalXControlBounds(focalXControl);
+            return clampValueToBounds(nextValue, focalXControl);
+        };
 
         if (slider) {
             this._addListener(slider, 'input', () => {
-                const nextValue = normalizeNumericControlValue(baseId, slider.value);
+                const nextValue = getClampedValue(slider.value);
                 if (nextValue === null) return;
                 setValueAtPath(this.state, path, nextValue);
-                if (input) input.value = slider.value;
+                slider.value = String(nextValue);
+                if (input) input.value = String(nextValue);
                 this._emitChange('state', `${baseId}Slider`);
             });
         }
 
         if (input) {
             this._addListener(input, 'input', () => {
-                const nextValue = normalizeNumericControlValue(baseId, input.value);
+                const nextValue = getClampedValue(input.value);
                 if (nextValue === null) return;
                 setValueAtPath(this.state, path, nextValue);
-                if (slider) slider.value = input.value;
+                input.value = String(nextValue);
+                if (slider) slider.value = String(nextValue);
                 this._emitChange('state', `${baseId}Input`);
             });
         }
@@ -434,6 +438,11 @@ export class EditorControls {
         const slider = getInputElement(`${id}Slider`);
         if (input) input.value = String(value);
         if (slider) slider.value = String(value);
+    }
+
+    _syncFocalXControlBounds(controlConfig) {
+        syncNumericElementBounds(getInputElement('focalXSlider'), controlConfig);
+        syncNumericElementBounds(getInputElement('focalXInput'), controlConfig);
     }
 
     _addListener(target, eventName, handler) {

@@ -15,11 +15,7 @@ export const DEFAULT_STARTUP_PROFILE = {
     "type": "Full",
     "cornerRad": 8,
     "sideLength": 300,
-    "structuralDepth": 6,
-    "clipEnabled": false,
-    "clipAxis": "X",
-    "clipPosition": 0,
-    "clipSide": "positive"
+    "structuralDepth": 6
   },
   "occupancy": {
     "seatWidth": 19,
