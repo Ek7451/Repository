@@ -92,7 +92,12 @@ seating-bowl/
 │   ├── camera-bookmarks.js            #   Save, restore, rename, delete
 │   |                                  #   3D camera views.
 │   |                                  #   (~200 lines from app.js)  [existing ✅]
-|   |
+│   │
+│   ├── editor-controls.js             #   AppState-driven configurator
+│   │                                  #   control bindings, tier enable/
+│   │                                  #   disable initialization, and
+│   │                                  #   state-to-DOM sync. [existing ✅]
+│   │
 │   ├── project-dashboard.js           # [existing ✅]
 |   |                                  #
 |   |                                  #
@@ -174,12 +179,12 @@ seating-bowl/
   FILE COUNT SUMMARY
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  Layered JS files:             22   — pages/, core/, state/, ui/, viz/,
+  Layered JS files:             24   — pages/, core/, state/, ui/, viz/,
                                        export/, services/
   Approved root bootstrap:      +1   — root app.js thin route shell
                                        exception
   ─────────────────────────────────
-  Total JS files on disk:       23   — 22 layered modules plus the
+  Total JS files on disk:       25   — 24 layered modules plus the
                                        approved root bootstrap
 
 

@@ -20,33 +20,57 @@ function createDropdownMarkup() {
     `;
 }
 
+function getBookmarksArray(getBookmarks) {
+    const bookmarks = typeof getBookmarks === 'function' ? getBookmarks() : null;
+    return Array.isArray(bookmarks) ? bookmarks : null;
+}
+
+function slugifyFilePart(value, fallback = '') {
+    const normalized = String(value ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, '-')
+        .replace(/[^a-z0-9-]/g, '');
+    return normalized || fallback;
+}
+
 export class CameraBookmarks {
-    constructor({
-        barEl = null,
-        listEl = null,
-        saveBtnEl = null,
-        toggleBtnEl = null,
-        getBookmarks = () => [],
-        createCurrentBookmark = () => null,
-        renameBookmark = () => {},
-        removeBookmark = () => {},
-        restoreBookmark = () => {},
-        exportBookmarkImage = () => {},
-        onLayoutChanged = () => {},
-        promptForRename = (currentName) => window.prompt('Rename view:', currentName)
-    } = {}) {
-        this.barEl = barEl;
-        this.listEl = listEl;
-        this.saveBtnEl = saveBtnEl;
-        this.toggleBtnEl = toggleBtnEl;
-        this.getBookmarks = getBookmarks;
-        this.createCurrentBookmark = createCurrentBookmark;
-        this.renameBookmark = renameBookmark;
-        this.removeBookmark = removeBookmark;
-        this.restoreBookmark = restoreBookmark;
-        this.exportBookmarkImage = exportBookmarkImage;
-        this.onLayoutChanged = onLayoutChanged;
-        this.promptForRename = promptForRename;
+    constructor(options = {}) {
+        const settings = /** @type {{
+            barEl?: HTMLElement | null,
+            listEl?: HTMLElement | null,
+            saveBtnEl?: HTMLElement | null,
+            toggleBtnEl?: HTMLElement | null,
+            getBookmarks?: (() => Array<object>),
+            getScene3D?: (() => object | null),
+            getSportName?: (() => string),
+            download?: ((descriptor: { filename: string, dataUrl: string }) => boolean | void),
+            onLayoutChanged?: (() => void),
+            promptForRename?: ((currentName: string) => string | null)
+        }} */ (options && typeof options === 'object' ? options : {});
+
+        this.barEl = settings.barEl ?? null;
+        this.listEl = settings.listEl ?? null;
+        this.saveBtnEl = settings.saveBtnEl ?? null;
+        this.toggleBtnEl = settings.toggleBtnEl ?? null;
+        this.getBookmarks = typeof settings.getBookmarks === 'function'
+            ? settings.getBookmarks
+            : () => [];
+        this.getScene3D = typeof settings.getScene3D === 'function'
+            ? settings.getScene3D
+            : () => null;
+        this.getSportName = typeof settings.getSportName === 'function'
+            ? settings.getSportName
+            : () => '';
+        this.download = typeof settings.download === 'function'
+            ? settings.download
+            : () => false;
+        this.onLayoutChanged = typeof settings.onLayoutChanged === 'function'
+            ? settings.onLayoutChanged
+            : () => {};
+        this.promptForRename = typeof settings.promptForRename === 'function'
+            ? settings.promptForRename
+            : (currentName) => window.prompt('Rename view:', currentName);
 
         this._openDropdownIndex = null;
         this._dropdownEl = this._createDropdownElement();
@@ -284,16 +308,106 @@ export class CameraBookmarks {
         this._updateMenuButtons();
     }
 
+    createCurrentBookmark() {
+        const bookmarks = getBookmarksArray(this.getBookmarks);
+        const scene3D = this.getScene3D?.();
+        if (!bookmarks || !scene3D?.camera || !scene3D?.controls || !scene3D?.renderer) return null;
+
+        const camera = /** @type {any} */ (scene3D.camera);
+        const controls = /** @type {any} */ (scene3D.controls);
+
+        scene3D.renderer.render(scene3D.scene, scene3D.camera);
+        const bookmark = {
+            name: `View ${bookmarks.length + 1}`,
+            position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+            target: { x: controls.target.x, y: controls.target.y, z: controls.target.z },
+            thumbnail: this._captureBookmarkThumbnail(scene3D, 150, 150)
+        };
+        bookmarks.push(bookmark);
+        return bookmark;
+    }
+
+    renameBookmark(index, nextName) {
+        const bookmark = this._getBookmark(index);
+        if (!bookmark) return;
+        bookmark.name = nextName;
+    }
+
+    removeBookmark(index) {
+        const bookmarks = getBookmarksArray(this.getBookmarks);
+        if (!bookmarks || !bookmarks[index]) return;
+        bookmarks.splice(index, 1);
+    }
+
+    restoreBookmark(index) {
+        const bookmark = this._getBookmark(index);
+        const scene3D = this.getScene3D?.();
+        if (!bookmark || !scene3D?.camera || !scene3D?.controls) return;
+
+        const camera = /** @type {any} */ (scene3D.camera);
+        const controls = /** @type {any} */ (scene3D.controls);
+        camera.position.set(
+            bookmark.position.x,
+            bookmark.position.y,
+            bookmark.position.z
+        );
+        controls.target.set(
+            bookmark.target.x,
+            bookmark.target.y,
+            bookmark.target.z
+        );
+        controls.update();
+    }
+
+    exportBookmarkImage(index, fallbackName = null) {
+        const scene3D = this.getScene3D?.();
+        const bookmark = this._getBookmark(index);
+        if (!scene3D?.renderer || !bookmark && !fallbackName) return;
+
+        scene3D.renderer.render(scene3D.scene, scene3D.camera);
+        const sportName = slugifyFilePart(this.getSportName?.(), 'seating');
+        const viewName = slugifyFilePart(bookmark?.name ?? fallbackName, '');
+        const suffix = viewName ? `-${viewName}` : '';
+        this.download?.({
+            filename: `3d-view-${sportName}${suffix}.png`,
+            dataUrl: scene3D.renderer.domElement.toDataURL('image/png')
+        });
+    }
+
     _getBookmark(index) {
         if (!Number.isInteger(index) || index < 0) return null;
-        const bookmarks = this.getBookmarks();
-        if (!Array.isArray(bookmarks)) return null;
-        return bookmarks[index] ?? null;
+        const bookmarks = getBookmarksArray(this.getBookmarks);
+        return bookmarks?.[index] ?? null;
     }
 
     _getBookmarkIndex(cardEl) {
         if (!cardEl) return -1;
         const index = Number.parseInt(cardEl.dataset.bookmarkIndex ?? '', 10);
         return Number.isInteger(index) ? index : -1;
+    }
+
+    _captureBookmarkThumbnail(scene3D, width = 100, height = 100) {
+        try {
+            const src = scene3D?.renderer?.domElement;
+            const sw = src?.width || src?.clientWidth;
+            const sh = src?.height || src?.clientHeight;
+            if (!sw || !sh) return '';
+
+            const crop = Math.min(sw, sh);
+            const sx = Math.floor((sw - crop) / 2);
+            const sy = Math.floor((sh - crop) / 2);
+
+            const thumb = document.createElement('canvas');
+            thumb.width = width;
+            thumb.height = height;
+            const ctx = thumb.getContext('2d');
+            if (!ctx) return '';
+
+            ctx.drawImage(src, sx, sy, crop, crop, 0, 0, width, height);
+            return thumb.toDataURL('image/png');
+        } catch (error) {
+            console.warn('Failed to capture camera bookmark thumbnail:', error);
+            return '';
+        }
     }
 }

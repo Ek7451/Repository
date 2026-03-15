@@ -135,6 +135,37 @@ describe('SeatingBowlApp shell callbacks', () => {
         expect(app.update).toHaveBeenCalledTimes(1);
     });
 
+    it('delegates canvas observation to the shell viewport controller', () => {
+        const app = new SeatingBowlApp();
+        const scheduleUpdate = vi.spyOn(app, '_scheduleUpdate').mockImplementation(() => {});
+        const fieldCanvas = { parentElement: { id: 'fieldParent' } };
+        const profileCanvas = { parentElement: { id: 'profileParent' } };
+        const observeViewCanvases = vi.fn();
+
+        vi.stubGlobal('document', {
+            getElementById: vi.fn((id) => {
+                if (id === 'fieldCanvas') return fieldCanvas;
+                if (id === 'profileCanvas') return profileCanvas;
+                return null;
+            })
+        });
+
+        app.editorShell = /** @type {any} */ ({
+            observeViewCanvases
+        });
+
+        app._setupCanvases();
+
+        expect(observeViewCanvases).toHaveBeenCalledTimes(1);
+        const args = observeViewCanvases.mock.calls[0][0];
+        expect(args.fieldCanvas).toBe(fieldCanvas);
+        expect(args.profileCanvas).toBe(profileCanvas);
+        args.onResize();
+        expect(scheduleUpdate).toHaveBeenCalledTimes(1);
+
+        vi.unstubAllGlobals();
+    });
+
     it('uses the explicit scene export accessor without falling back to scene internals', () => {
         const app = new SeatingBowlApp();
         const exportSceneData = {
@@ -174,6 +205,43 @@ describe('SeatingBowlApp shell callbacks', () => {
         await expect(app._buildExportDescriptor('rhino')).resolves.toBeNull();
         expect(loadRhino3dm).not.toHaveBeenCalled();
         expect(warnSpy).toHaveBeenCalledWith('No 3D data to export');
+    });
+
+    it('uses shell visibility state when resizing the 3D scene', () => {
+        const app = new SeatingBowlApp();
+        const ensure3DContainerSize = vi.fn();
+        const isScene3DActive = vi.fn(() => true);
+        const forceResize = vi.fn();
+        const updateField = vi.fn();
+        const updateBowl = vi.fn();
+
+        app.editorShell = /** @type {any} */ ({
+            ensure3DContainerSize,
+            isScene3DActive
+        });
+        app.scene3D = /** @type {any} */ ({
+            forceResize,
+            updateField,
+            updateBowl
+        });
+        app._scene3dReady = true;
+        app._currentTemplate = {
+            field_width: 160,
+            field_length: 360,
+            shape: 'rectangle',
+            field_radius: 0,
+            arc_angle: 0
+        };
+        app._solvers = [];
+        app._tierAisleLayouts = [];
+
+        app._update3D();
+
+        expect(isScene3DActive).toHaveBeenCalledTimes(1);
+        expect(ensure3DContainerSize).toHaveBeenCalledTimes(1);
+        expect(forceResize).toHaveBeenCalledTimes(1);
+        expect(updateField).toHaveBeenCalledTimes(1);
+        expect(updateBowl).toHaveBeenCalledTimes(1);
     });
 
     it('replays the scene3d side effects when restored state opens directly to the 3D tab', () => {

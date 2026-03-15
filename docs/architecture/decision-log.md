@@ -5,5 +5,6 @@
 - Root `app.js` remains an approved thin bootstrap and route shell exception. It is not the old editor monolith and does not need to move into `pages/`.
 - The canonical persisted project DTO remains the single-study envelope:
   `{ id, name, sport, createdAt, updatedAt, state }`.
+- `ui/editor-controls.js` is an approved configurator UI controller for AppState-driven control bindings and state-to-DOM synchronization. It remains in `ui/` and does not change the rule that `ui/app.js` is the main editor orchestrator.
 - Multi-study project wrapping is deferred unless it is introduced later as a new feature with its own state and service design.
 - Productized SSO and backend auth hardening are intentionally deferred. Current architecture alignment must not block on that productization track.

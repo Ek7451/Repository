@@ -37,6 +37,16 @@ function dispatchShellResize() {
     window.dispatchEvent(new Event('resize'));
 }
 
+function resizeCanvasToParent(canvas) {
+    const parent = canvas?.parentElement;
+    const rect = parent?.getBoundingClientRect?.();
+    if (!canvas || !rect) return;
+    if (rect.width > 0 && rect.height > 0) {
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+    }
+}
+
 export class EditorShell {
     constructor(options = {}) {
         const settings = /** @type {{
@@ -76,6 +86,7 @@ export class EditorShell {
         this._initialized = false;
         this._feedbackBtnCopyFallbackTimer = null;
         this._feedbackBtnResetTimer = null;
+        this._viewResizeObserver = null;
     }
 
     init() {
@@ -100,6 +111,7 @@ export class EditorShell {
         this._cleanup = [];
         clearTimeout(this._feedbackBtnCopyFallbackTimer);
         clearTimeout(this._feedbackBtnResetTimer);
+        this._disconnectViewCanvasObserver();
         this._initialized = false;
     }
 
@@ -243,6 +255,60 @@ export class EditorShell {
         if (fallbackTarget > 50) {
             container.style.height = `${fallbackTarget}px`;
         }
+    }
+
+    observeViewCanvases({ fieldCanvas = null, profileCanvas = null, onResize = null } = {}) {
+        this._disconnectViewCanvasObserver();
+
+        resizeCanvasToParent(fieldCanvas);
+        resizeCanvasToParent(profileCanvas);
+
+        if (typeof ResizeObserver !== 'function') return;
+
+        const resizeHandler = typeof onResize === 'function' ? onResize : () => {};
+        this._viewResizeObserver = new ResizeObserver(() => {
+            resizeCanvasToParent(fieldCanvas);
+            resizeCanvasToParent(profileCanvas);
+            resizeHandler();
+        });
+
+        [fieldCanvas, profileCanvas].forEach((canvas) => {
+            const parent = canvas?.parentElement;
+            if (parent) {
+                this._viewResizeObserver.observe(parent);
+            }
+        });
+    }
+
+    handleViewTabChanged(tab, {
+        fieldCanvas = null,
+        profileCanvas = null,
+        onFieldActivated = null,
+        onProfileActivated = null,
+        onScene3DActivated = null
+    } = {}) {
+        const nextTab = normalizeViewTab(tab);
+
+        requestAnimationFrame(() => {
+            if (nextTab === 'field') {
+                resizeCanvasToParent(fieldCanvas);
+                onFieldActivated?.();
+                return;
+            }
+
+            if (nextTab === 'profile') {
+                resizeCanvasToParent(profileCanvas);
+                onProfileActivated?.();
+                return;
+            }
+
+            this.ensure3DContainerSize();
+            onScene3DActivated?.();
+        });
+    }
+
+    isScene3DActive() {
+        return isScene3DPanelActive();
     }
 
     download(descriptor = null) {
@@ -657,6 +723,13 @@ export class EditorShell {
         if (!isScene3DPanelActive()) return;
         this.ensure3DContainerSize();
         this._onScene3DResizeRequested?.();
+    }
+
+    _disconnectViewCanvasObserver() {
+        if (this._viewResizeObserver) {
+            this._viewResizeObserver.disconnect();
+            this._viewResizeObserver = null;
+        }
     }
 
     async _handleExportRequest(kind) {

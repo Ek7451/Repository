@@ -1,7 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { SeatingBowlApp } from '../../ui/app.js';
-import { StatsPanel } from '../../ui/stats-panel.js';
+import { buildStatsViewModel, StatsPanel } from '../../ui/stats-panel.js';
 
 function createRow(overrides = {}) {
     return {
@@ -64,12 +63,11 @@ function createTierLayout({ tierIndex = 0, sectionSummary = {} } = {}) {
     };
 }
 
-function buildStatsViewModel(input = {}) {
-    const app = new SeatingBowlApp();
-    return app._buildStatsViewModel(input);
+function buildStatsDto(input = {}) {
+    return buildStatsViewModel(input);
 }
 
-describe('SeatingBowlApp._buildStatsViewModel', () => {
+describe('buildStatsViewModel', () => {
     test('builds a single-tier summary from explicit solver and layout inputs', () => {
         const solver = createSolver({
             rows: [
@@ -78,7 +76,7 @@ describe('SeatingBowlApp._buildStatsViewModel', () => {
             ]
         });
 
-        const viewModel = buildStatsViewModel({
+        const viewModel = buildStatsDto({
             solvers: [solver],
             focalPointFt: { x: 0, z: 0 },
             bowlConfig: { type: 'Full' },
@@ -109,7 +107,7 @@ describe('SeatingBowlApp._buildStatsViewModel', () => {
         const tier1 = createSolver({ tierIndex: 0, rows: [createRow({ c_value: 3.1 })] });
         const tier2 = createSolver({ tierIndex: 1, rows: [createRow({ row_number: 1, x: 18, z: 5, c_value: 4.1 })] });
 
-        const viewModel = buildStatsViewModel({
+        const viewModel = buildStatsDto({
             solvers: [tier1, tier2],
             focalPointFt: { x: 0, z: 0 },
             bowlConfig: { type: 'Full' },
@@ -144,7 +142,7 @@ describe('SeatingBowlApp._buildStatsViewModel', () => {
             ]
         });
 
-        const viewModel = buildStatsViewModel({
+        const viewModel = buildStatsDto({
             solvers: [solver],
             focalPointFt: { x: 0, z: 0 },
             bowlConfig: { type: 'Sides' },
@@ -177,7 +175,7 @@ describe('SeatingBowlApp._buildStatsViewModel', () => {
     });
 
     test('leaves base egress metrics in place when tier layout data is missing', () => {
-        const viewModel = buildStatsViewModel({
+        const viewModel = buildStatsDto({
             solvers: [createSolver()],
             focalPointFt: { x: 0, z: 0 },
             bowlConfig: { type: 'Full' },
@@ -193,7 +191,7 @@ describe('SeatingBowlApp._buildStatsViewModel', () => {
     });
 
     test('surfaces forced-width and non-converged warning states', () => {
-        const forcedWidthViewModel = buildStatsViewModel({
+        const forcedWidthViewModel = buildStatsDto({
             solvers: [createSolver()],
             focalPointFt: { x: 0, z: 0 },
             bowlConfig: { type: 'Full' },
@@ -201,7 +199,7 @@ describe('SeatingBowlApp._buildStatsViewModel', () => {
             tierMetricsByIndex: new Map([[0, createMetrics({ blocksAddedForEgress: 2 })]]),
             tierAisleLayouts: [createTierLayout()]
         });
-        const nonConvergedViewModel = buildStatsViewModel({
+        const nonConvergedViewModel = buildStatsDto({
             solvers: [createSolver()],
             focalPointFt: { x: 0, z: 0 },
             bowlConfig: { type: 'Full' },
@@ -217,7 +215,7 @@ describe('SeatingBowlApp._buildStatsViewModel', () => {
 
 describe('StatsPanel', () => {
     test('renders summary and details markup from an explicit view model DTO', () => {
-        const viewModel = buildStatsViewModel({
+        const viewModel = buildStatsDto({
             solvers: [createSolver()],
             focalPointFt: { x: 0, z: 0 },
             bowlConfig: { type: 'Full' },
@@ -244,7 +242,7 @@ describe('StatsPanel', () => {
     });
 
     test('preserves expanded detail sections across rerenders', () => {
-        const viewModel = buildStatsViewModel({
+        const viewModel = buildStatsDto({
             solvers: [createSolver()],
             focalPointFt: { x: 0, z: 0 },
             bowlConfig: { type: 'Full' },

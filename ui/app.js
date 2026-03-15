@@ -3,9 +3,8 @@
  * Wires inputs to solvers → renderers with debounced updates.
  */
 
-import { getSportNames, getTemplate } from '../core/sports-templates.js';
+import { getTemplate } from '../core/sports-templates.js';
 import { ProfileSolver } from '../core/profile-solver.js';
-import { SightlineAnalyzer, getCValueQuality } from '../core/sightline-calc.js';
 import { FieldRenderer } from '../viz/field-renderer.js';
 import { ProfileRenderer } from '../viz/profile-renderer.js';
 import { DEFAULT_STARTUP_PROFILE } from '../core/default-starting-profile.js';
@@ -18,111 +17,26 @@ import {
 } from '../export/obj-csv-exporter.js';
 import { buildRhinoExportDescriptor } from '../export/rhino/rhino-exporter.js';
 import { AppState } from '../state/app-state.js';
-import { buildProjectSaveRequest, cloneProjectMetadata } from '../state/project.js';
+import {
+    buildProjectChromeSnapshot,
+    buildProjectSaveRequest,
+    cloneProjectMetadata,
+    cloneSessionDto
+} from '../state/project.js';
 import { CameraBookmarks } from './camera-bookmarks.js';
+import { EditorControls } from './editor-controls.js';
 import { EditorShell } from './editor-shell.js';
-import { StatsPanel } from './stats-panel.js';
+import { buildStatsViewModel, StatsPanel } from './stats-panel.js';
 // Scene3D is imported lazily in _init3DAsync to avoid blocking if Three.js CDN is unavailable
 
 const EDGE_SPORTS = ['Ice Hockey', 'Football', 'Concert', 'Soccer', 'Basketball'];
-const NUMERIC_INPUT_STATE_PATHS = {
-    focalZ: ['setup', 'focalZ'],
-    bowlCornerRad: ['bowl', 'cornerRad'],
-    bowlSideLength: ['bowl', 'sideLength'],
-    structuralDepth: ['bowl', 'structuralDepth'],
-    clipPosition: ['bowl', 'clipPosition'],
-    seatWidth: ['occupancy', 'seatWidth'],
-    minAisle: ['occupancy', 'minAisle'],
-    maxAisle: ['occupancy', 'maxAisle'],
-    seatsBetweenAisles: ['occupancy', 'seatsBetweenAisles'],
-    egressFactor: ['occupancy', 'egressFactor'],
-    cValue: ['tiers', 0, 'cValue'],
-    numRows: ['tiers', 0, 'numRows'],
-    firstRowDist: ['tiers', 0, 'firstRowDist'],
-    firstRowElev: ['tiers', 0, 'firstRowElev'],
-    treadDepth: ['tiers', 0, 'treadDepth'],
-    riserHeight: ['tiers', 0, 'riserHeight'],
-    eyeHeight: ['tiers', 0, 'eyeHeight'],
-    eyeSetback: ['tiers', 0, 'eyeSetback'],
-    t2CValue: ['tiers', 1, 'cValue'],
-    t2NumRows: ['tiers', 1, 'numRows'],
-    t2FirstRowDist: ['tiers', 1, 'firstRowDist'],
-    t2FirstRowElev: ['tiers', 1, 'firstRowElev'],
-    t2TreadDepth: ['tiers', 1, 'treadDepth'],
-    t2RiserHeight: ['tiers', 1, 'riserHeight'],
-    t2EyeHeight: ['tiers', 1, 'eyeHeight'],
-    t2EyeSetback: ['tiers', 1, 'eyeSetback'],
-    t3CValue: ['tiers', 2, 'cValue'],
-    t3NumRows: ['tiers', 2, 'numRows'],
-    t3FirstRowDist: ['tiers', 2, 'firstRowDist'],
-    t3FirstRowElev: ['tiers', 2, 'firstRowElev'],
-    t3TreadDepth: ['tiers', 2, 'treadDepth'],
-    t3RiserHeight: ['tiers', 2, 'riserHeight'],
-    t3EyeHeight: ['tiers', 2, 'eyeHeight'],
-    t3EyeSetback: ['tiers', 2, 'eyeSetback']
-};
-const SELECT_STATE_PATHS = {
-    sportSelect: ['sport'],
-    bowlType: ['bowl', 'type'],
-    clipAxis: ['bowl', 'clipAxis'],
-    clipSide: ['bowl', 'clipSide'],
-    profileType: ['tiers', 0, 'profileType'],
-    t2ProfileType: ['tiers', 1, 'profileType'],
-    t3ProfileType: ['tiers', 2, 'profileType']
-};
-const CHECKBOX_STATE_PATHS = {
-    enableClipPlane: ['bowl', 'clipEnabled'],
-    showSeatCubes3D: ['occupancy', 'showSeatCubes3D'],
-    toggleSightlinesBtn: ['setup', 'sightlineVisuals'],
-    toggleSightlinesBtnField: ['setup', 'sightlineVisuals'],
-    toggleSectionMetricsBtn: ['setup', 'sectionMetrics'],
-    enableTier1: ['tiers', 0, 'enabled'],
-    enableTier2: ['tiers', 1, 'enabled'],
-    enableTier3: ['tiers', 2, 'enabled']
-};
-const INTEGER_INPUT_IDS = new Set([
-    'numRows',
-    't2NumRows',
-    't3NumRows',
-    'minAisle',
-    'maxAisle',
-    'seatsBetweenAisles'
-]);
-
-function getValueAtPath(root, path) {
-    return path.reduce((value, key) => value?.[key], root);
-}
-
-function setValueAtPath(root, path, nextValue) {
-    let cursor = root;
-    for (let index = 0; index < path.length - 1; index += 1) {
-        cursor = cursor[path[index]];
-        if (!cursor) return;
-    }
-
-    cursor[path[path.length - 1]] = nextValue;
-}
-
-function getHtmlElement(id) {
-    return /** @type {HTMLElement | null} */ (document.getElementById(id));
-}
 
 function getInputElement(id) {
     return /** @type {HTMLInputElement | null} */ (document.getElementById(id));
 }
 
-function getSelectElement(id) {
-    return /** @type {HTMLSelectElement | null} */ (document.getElementById(id));
-}
-
 function getCanvasElement(id) {
     return /** @type {HTMLCanvasElement | null} */ (document.getElementById(id));
-}
-
-function cloneSessionDto(session) {
-    return session && typeof session === 'object'
-        ? { ...session }
-        : null;
 }
 
 function normalizeThemeName(theme) {
@@ -145,260 +59,6 @@ function getSolverTierIndex(solver, fallbackIndex = 0) {
     return Number.isInteger(tierIndex) ? tierIndex : fallbackIndex;
 }
 
-function reconcileTierMetricsForStats(solver, loopIndex, metrics, tierLayoutByIndex, egressParams) {
-    if (!metrics) return metrics;
-    const tierIdx = solver && solver.tierIndex !== undefined ? solver.tierIndex : loopIndex;
-    const layout = tierLayoutByIndex instanceof Map
-        ? tierLayoutByIndex.get(Math.max(0, Math.floor(Number(tierIdx) || 0)))
-        : null;
-    const summary = layout?.sectionSummary;
-    if (!summary) return metrics;
-
-    const nextMetrics = { ...metrics };
-    const actualSections = Math.max(0, Math.floor(Number(summary.actualSections) || 0));
-    const actualAisles = Math.max(0, Math.floor(Number(summary.actualAisles) || 0));
-    const avgBackRowSeats = Number(summary.avgBackRowSeatsPerSection);
-    const egressFactorVal = Number(egressParams?.egressFactor);
-    const totalCapacity = Math.max(0, Number(metrics.capacity) || 0);
-
-    if (summary.allSectionPathsClosed === true && actualSections > 0) {
-        nextMetrics.numSections = actualSections;
-        nextMetrics.numAisles = actualAisles > 0 ? actualAisles : actualSections;
-
-        if (Number.isFinite(avgBackRowSeats)) {
-            nextMetrics.seatsPerBlock = avgBackRowSeats.toFixed(1);
-        }
-
-        const avgOccupantsPerSection = totalCapacity / actualSections;
-        nextMetrics.occupantsPerSection = Math.round(avgOccupantsPerSection);
-        const aisleLoad = actualSections <= 1 ? (avgOccupantsPerSection * 0.5) : avgOccupantsPerSection;
-        nextMetrics.occupantsPerAisleLine = Math.round(aisleLoad);
-
-        if (Number.isFinite(egressFactorVal)) {
-            nextMetrics.capacityWidth = (aisleLoad * egressFactorVal).toFixed(1);
-        }
-    }
-
-    return nextMetrics;
-}
-
-function buildTierStatsViewModel({
-    solver,
-    loopIndex,
-    focalPointFt,
-    egressParams,
-    tierMetricsByIndex,
-    tierLayoutByIndex,
-    isMirroredSidesMode
-}) {
-    const tierIndex = Number.isInteger(Number(solver?.tierIndex)) ? Number(solver.tierIndex) : loopIndex;
-    const tierNumber = tierIndex + 1;
-    const baseMetrics = tierMetricsByIndex instanceof Map
-        ? (tierMetricsByIndex.get(tierIndex) || null)
-        : null;
-    const metrics = reconcileTierMetricsForStats(
-        solver,
-        loopIndex,
-        baseMetrics,
-        tierLayoutByIndex,
-        egressParams
-    );
-    const accentColor = tierIndex === 0
-        ? 'var(--accent-blue)'
-        : (tierIndex === 1 ? 'var(--accent-cyan)' : 'var(--accent-purple)');
-
-    const rows = (solver?.rows || []).map((row, rowIndex) => {
-        const isFirstRow = rowIndex === 0;
-        const tierOneFirstRow = tierIndex === 0 && isFirstRow;
-        const rowZ = Number.isFinite(Number(row?.z)) ? Number(row.z) : 0;
-        const riserHeight = Number.isFinite(Number(row?.riser_height)) ? Number(row.riser_height) : 0;
-        const treadDepth = Number.isFinite(Number(row?.tread_depth)) ? Number(row.tread_depth) : 0;
-        const rowX = Number.isFinite(Number(row?.x)) ? Number(row.x) : 0;
-        const cValue = Number.isFinite(Number(row?.c_value)) ? Number(row.c_value) : null;
-        const sightlineAngle = Number.isFinite(Number(row?.sightline_angle)) ? Number(row.sightline_angle) : 0;
-        const totalLength = Number.isFinite(Number(row?.computedLength)) ? Number(row.computedLength) : 0;
-        const totalSeats = Number.isFinite(Number(row?.computedSeats)) ? Number(row.computedSeats) : 0;
-        const lengthPerSide = Number.isFinite(Number(row?.computedLengthPerSide))
-            ? Number(row.computedLengthPerSide)
-            : null;
-        const seatsPerSide = Number.isFinite(Number(row?.computedSeatsPerSide))
-            ? Number(row.computedSeatsPerSide)
-            : null;
-        const cValueQuality = !isFirstRow && cValue !== null ? getCValueQuality(cValue) : null;
-        const riserInches = tierOneFirstRow ? (rowZ * 12) : (riserHeight * 12);
-
-        return {
-            rowNumber: Number.isFinite(Number(row?.row_number)) ? Number(row.row_number) : (rowIndex + 1),
-            riserDisplay: `${riserInches.toFixed(2)}"`,
-            riserWarning: !tierOneFirstRow && riserInches >= 22,
-            elevationDisplay: `${rowZ.toFixed(2)}'`,
-            cValueDisplay: !isFirstRow && cValue !== null ? `${cValue.toFixed(2)}"` : 'N/A',
-            cValueColor: isFirstRow ? 'var(--text-muted)' : (cValueQuality?.color || 'var(--text-primary)'),
-            treadDisplay: `${(treadDepth * 12).toFixed(2)}"`,
-            distToFocalDisplay: `${((rowX - treadDepth) - (Number(focalPointFt?.x) || 0)).toFixed(2)}'`,
-            angleDisplay: `${sightlineAngle.toFixed(2)}&deg;`,
-            rowLengthDisplay: isMirroredSidesMode && lengthPerSide !== null
-                ? `${totalLength.toFixed(0)}' (${lengthPerSide.toFixed(0)}'/side)`
-                : `${totalLength.toFixed(0)}'`,
-            rowSeatsDisplay: isMirroredSidesMode && seatsPerSide !== null
-                ? `${totalSeats.toLocaleString()} (${seatsPerSide.toLocaleString()}/side)`
-                : `${totalSeats.toLocaleString()}`
-        };
-    });
-
-    let egress = null;
-    if (metrics) {
-        const totalLen = parseFloat(metrics.totalRowLength) || 0;
-        const seatLen = parseFloat(metrics.totalSeatingLength) || 0;
-        const aisleLen = parseFloat(metrics.totalAisleLength) || 0;
-        const mirrorRuns = Math.max(1, Math.floor(Number(metrics.mirroredSideRuns) || 1));
-        const isMirroredSides = mirrorRuns > 1;
-        const displayAisles = isMirroredSides
-            ? (Math.max(0, Number(metrics.numAisles) || 0) * mirrorRuns)
-            : Math.max(0, Number(metrics.numAisles) || 0);
-        const displaySections = isMirroredSides
-            ? (Math.max(0, Number(metrics.numSections) || 0) * mirrorRuns)
-            : Math.max(0, Number(metrics.numSections) || 0);
-        const displayTotalLen = isMirroredSides ? (totalLen * mirrorRuns) : totalLen;
-        const displaySeatLen = isMirroredSides ? (seatLen * mirrorRuns) : seatLen;
-        const displayAisleLen = isMirroredSides ? (aisleLen * mirrorRuns) : aisleLen;
-        const displaySeatsPerRow = isMirroredSides
-            ? Math.round((Number(metrics.seatsPerRow) || 0) * mirrorRuns)
-            : Math.round(Number(metrics.seatsPerRow) || 0);
-        const blocksAddedForEgress = Math.max(0, Number(metrics.blocksAddedForEgress) || 0);
-
-        egress = {
-            tierLabel: `TIER ${tierNumber}`,
-            headerSuffix: isMirroredSides ? ' &bull; Both Sides' : '',
-            originalHeaderSuffix: isMirroredSides ? ' &bull; Both Sides (Combined Counts)' : '',
-            countsTag: isMirroredSides ? ' (both sides)' : '',
-            linearQuantitiesTag: isMirroredSides ? ' (combined both sides)' : '',
-            perSideMirrorNote: isMirroredSides
-                ? ' Counts and linear quantities shown combined for both sides. Width/load checks remain per aisle.'
-                : '',
-            displayAisles,
-            displaySections,
-            displayTotalLen,
-            displaySeatLen,
-            displayAisleLen,
-            displaySeatsPerRow,
-            totalSeatingPercentage: totalLen > 0 ? ((seatLen / totalLen) * 100).toFixed(0) : '0',
-            totalAislePercentage: totalLen > 0 ? ((aisleLen / totalLen) * 100).toFixed(0) : '0',
-            capacityWidth: metrics.capacityWidth,
-            occupantsPerSection: metrics.occupantsPerSection,
-            seatsPerBlock: metrics.seatsPerBlock,
-            occupantsPerAisleLine: metrics.occupantsPerAisleLine,
-            aisleWidth: metrics.aisleWidth,
-            minimumWidth: metrics.minimumWidth,
-            maximumWidth: metrics.maximumWidth,
-            governingWidth: metrics.governingWidth,
-            blocksAddedForEgress,
-            egressFactor: egressParams.egressFactor,
-            warningText: blocksAddedForEgress > 0
-                ? `Limit Forced: Clamped to Max Aisle (${metrics.maximumWidth}")`
-                : (metrics.converged === false ? 'Warning: Layout did not converge.' : '')
-        };
-    }
-
-    return {
-        tierIndex,
-        tierNumber,
-        title: `Tier ${tierNumber} Details`,
-        sectionClass: `tier-section-${tierNumber}`,
-        occupancy: {
-            label: `Tier ${tierNumber}`,
-            color: accentColor,
-            capacity: Math.max(0, Number(metrics?.capacity) || 0)
-        },
-        egress,
-        rows
-    };
-}
-
-function buildStatsViewModel({
-    solvers = [],
-    focalPointFt = { x: 0, z: 0 },
-    bowlConfig = {},
-    egressParams = {},
-    tierMetricsByIndex = new Map(),
-    tierAisleLayouts = []
-} = {}) {
-    const activeSolvers = (solvers || []).filter((solver) => solver && Array.isArray(solver.rows) && solver.rows.length > 0);
-    if (!activeSolvers.length) return null;
-
-    const rowsForStats = [];
-    activeSolvers.forEach((solver) => {
-        if (!solver.rows || solver.rows.length === 0) return;
-        if (solver.rows.length > 1) {
-            rowsForStats.push(...solver.rows.slice(1));
-            return;
-        }
-        rowsForStats.push(solver.rows[0]);
-    });
-
-    let qualityDistribution = { Excellent: 0, Good: 0, Acceptable: 0, Poor: 0 };
-    let totalRows = 0;
-    let averageCValueDisplay = '0.00';
-
-    if (rowsForStats.length > 0) {
-        const analyzer = new SightlineAnalyzer(
-            rowsForStats,
-            Number(focalPointFt?.x) || 0,
-            Number(focalPointFt?.z) || 0
-        );
-        analyzer.analyze();
-        const stats = analyzer.getStatistics();
-
-        if (stats) {
-            qualityDistribution = stats.qualityDistribution || qualityDistribution;
-            totalRows = Math.max(0, Number(stats.totalRows) || 0);
-            averageCValueDisplay = Number.isFinite(stats.avgC) ? stats.avgC.toFixed(2) : '0.00';
-        }
-    }
-
-    const tierLayoutByIndex = new Map((tierAisleLayouts || []).map((layout) => [
-        Math.max(0, Math.floor(Number(layout?.tierIndex) || 0)),
-        layout
-    ]));
-    const safeBowlConfig = /** @type {any} */ (bowlConfig);
-    const isMirroredSidesMode = String(safeBowlConfig?.type || '').toLowerCase() === 'sides';
-
-    const tiers = activeSolvers.map((solver, loopIndex) => buildTierStatsViewModel({
-        solver,
-        loopIndex,
-        focalPointFt,
-        egressParams,
-        tierMetricsByIndex,
-        tierLayoutByIndex,
-        isMirroredSidesMode
-    }));
-    const totalOccupancy = tiers.reduce((sum, tier) => sum + Math.max(0, Number(tier?.occupancy?.capacity) || 0), 0);
-
-    return {
-        summary: {
-            totalRows,
-            totalOccupancy,
-            averageCValueDisplay,
-            qualityDistribution: [
-                { label: 'Excellent', count: Math.max(0, Number(qualityDistribution.Excellent) || 0) },
-                { label: 'Good', count: Math.max(0, Number(qualityDistribution.Good) || 0) },
-                { label: 'Acceptable', count: Math.max(0, Number(qualityDistribution.Acceptable) || 0) },
-                { label: 'Poor', count: Math.max(0, Number(qualityDistribution.Poor) || 0) }
-            ]
-        },
-        tiers
-    };
-}
-
-function buildProjectChromeSnapshot(projectMetadata, session, deriveProjectName) {
-    return {
-        name: (projectMetadata.name || deriveProjectName()).trim(),
-        metadata: cloneProjectMetadata(projectMetadata),
-        session: cloneSessionDto(session),
-        canSave: Boolean(projectMetadata.id && session)
-    };
-}
-
 export class SeatingBowlApp {
     constructor(options = {}) {
         const callbacks = /** @type {{
@@ -417,20 +77,23 @@ export class SeatingBowlApp {
         this.scene3D = null;
         this._debounceTimer = null;
         this._currentTemplate = null;
-        this._solver = null;
+        this._solvers = [];
         this._scene3dReady = false;
         this._tierAisleLayouts = [];
         this._rhino3dmPromise = null;
         this.cameraBookmarks = null;
         this.statsPanel = null;
+        this.editorControls = new EditorControls({
+            state: this.state,
+            getTemplate: () => this._currentTemplate,
+            getRunoffDistance: () => this._getRunoffDistance(),
+            syncShellState: (uiState) => this.editorShell?.syncFromState(uiState),
+            onScene3DTabRestored: (tab) => this._handleViewTabChanged(tab),
+            onStateChanged: () => this._scheduleUpdate(),
+            onSportChanged: () => this._handleSportChanged(),
+            getTierDefaults: (tierNum) => this._getTierDefaultsForEnabledTier(tierNum)
+        });
         this.editorShell = null;
-
-        // Track tier count to implement progressive stacking
-        this._lastTierCount = 1; // Default
-
-        // Track if tiers have been initialized to prevent overwriting user changes on hide/show
-        this._tier2Initialized = false;
-        this._tier3Initialized = false;
 
         this._session = null;
         this._projectMetadata = cloneProjectMetadata();
@@ -445,12 +108,8 @@ export class SeatingBowlApp {
 
     async init() {
         try {
-            // Setup canvases
-            this._setupCanvases();
-
-            // Populate sport dropdown
-            this._populateSports();
             this._initEditorShell();
+            this._setupCanvases();
 
             const activeTheme = this._getActiveThemeName();
 
@@ -458,8 +117,7 @@ export class SeatingBowlApp {
             this.fieldRenderer = new FieldRenderer(getCanvasElement('fieldCanvas'), { theme: activeTheme });
             this.profileRenderer = new ProfileRenderer(getCanvasElement('profileCanvas'), { theme: activeTheme });
 
-            // Wire up events (must happen before update)
-            this._wireEvents();
+            this.editorControls?.init();
             this._initCameraBookmarks();
             this._initStatsPanel();
 
@@ -473,10 +131,6 @@ export class SeatingBowlApp {
             // Initial render
             this.update();
 
-            // Sync internal state to DOM
-            const tc = getInputElement('tierCount');
-            if (tc) this._lastTierCount = parseInt(tc.value) || 1;
-
             // Set initial view state (hides Field Setup on Profile tab)
             requestAnimationFrame(() => this.editorShell?.applyUrlViewOverride());
 
@@ -488,6 +142,8 @@ export class SeatingBowlApp {
     }
 
     destroy() {
+        this.editorControls?.destroy();
+        this.editorControls = null;
         this.editorShell?.destroy();
         this.editorShell = null;
         this.cameraBookmarks?.destroy();
@@ -495,14 +151,11 @@ export class SeatingBowlApp {
         this.scene3D?.dispose?.();
         this.scene3D = null;
         this._scene3dReady = false;
-        if (this._resizeObserver) {
-            this._resizeObserver.disconnect();
-            this._resizeObserver = null;
-        }
         if (this._debounceTimer) {
             clearTimeout(this._debounceTimer);
             this._debounceTimer = null;
         }
+        this._solvers = [];
         this._onProjectChromeChanged = null;
         this._onStatusChanged = null;
     }
@@ -527,11 +180,11 @@ export class SeatingBowlApp {
     }
 
     getProjectChrome() {
-        return buildProjectChromeSnapshot(
-            this._projectMetadata,
-            this._session,
-            () => this._deriveProjectName()
-        );
+        return buildProjectChromeSnapshot({
+            name: this._projectMetadata.name || this._deriveProjectName(),
+            projectMetadata: this._projectMetadata,
+            session: this._session
+        });
     }
 
     getProjectStatus() {
@@ -631,24 +284,9 @@ export class SeatingBowlApp {
             saveBtnEl: document.getElementById('saveCameraViewBtn'),
             toggleBtnEl: document.getElementById('toggleBookmarksBtn'),
             getBookmarks: () => this.state.bookmarks,
-            createCurrentBookmark: () => this._createCurrentCameraBookmark(),
-            renameBookmark: (index, nextName) => {
-                if (!this.state.bookmarks[index]) return;
-                this.state.bookmarks[index].name = nextName;
-            },
-            removeBookmark: (index) => {
-                if (!this.state.bookmarks[index]) return;
-                this.state.bookmarks.splice(index, 1);
-            },
-            restoreBookmark: (index) => {
-                this._restoreCameraBookmark(this.state.bookmarks[index]);
-            },
-            exportBookmarkImage: (index, fallbackName = null) => {
-                const descriptor = this._build3DImageExportDescriptor(this.state.bookmarks[index]?.name ?? fallbackName);
-                if (descriptor) {
-                    this.editorShell?.download(descriptor);
-                }
-            },
+            getScene3D: () => this.scene3D,
+            getSportName: () => this.state.sport,
+            download: (descriptor) => this.editorShell?.download(descriptor),
             onLayoutChanged: () => {
                 this.editorShell?.ensure3DContainerSize();
                 this.scene3D?.forceResize();
@@ -699,57 +337,11 @@ export class SeatingBowlApp {
         const fieldCanvas = getCanvasElement('fieldCanvas');
         const profileCanvas = getCanvasElement('profileCanvas');
         if (!fieldCanvas || !profileCanvas) return;
-
-        const setCanvasSize = (canvas) => {
-            const parent = canvas.parentElement;
-            const rect = parent.getBoundingClientRect();
-            // Only resize if the panel is visible (has dimensions)
-            if (rect.width > 0 && rect.height > 0) {
-                canvas.width = rect.width;
-                canvas.height = rect.height;
-            }
-        };
-
-        setCanvasSize(profileCanvas); // Profile starts visible
-
-        // Resize handler
-        this._resizeObserver = new ResizeObserver(() => {
-            setCanvasSize(fieldCanvas);
-            setCanvasSize(profileCanvas);
-            this._scheduleUpdate();
+        this.editorShell?.observeViewCanvases({
+            fieldCanvas,
+            profileCanvas,
+            onResize: () => this._scheduleUpdate()
         });
-        this._resizeObserver.observe(fieldCanvas.parentElement);
-        this._resizeObserver.observe(profileCanvas.parentElement);
-    }
-
-    _populateSports() {
-        const select = getSelectElement('sportSelect');
-        if (!select) return;
-        const names = getSportNames();
-        for (const name of names) {
-            const option = document.createElement('option');
-            option.value = name;
-            option.textContent = name;
-            select.appendChild(option);
-        }
-    }
-
-    _getStateValue(path) {
-        return getValueAtPath(this.state, path);
-    }
-
-    _setStateValue(path, nextValue) {
-        setValueAtPath(this.state, path, nextValue);
-    }
-
-    _normalizeNumericControlValue(baseId, rawValue) {
-        if (rawValue === '' || rawValue === null || rawValue === undefined) return null;
-        const numericValue = Number(rawValue);
-        if (!Number.isFinite(numericValue)) return null;
-        if (INTEGER_INPUT_IDS.has(baseId)) {
-            return Math.max(0, Math.round(numericValue));
-        }
-        return numericValue;
     }
 
     _syncTemplateFromState() {
@@ -759,241 +351,13 @@ export class SeatingBowlApp {
         }
 
         this._currentTemplate = getTemplate(this.state.sport);
-        this._updateFieldDimensions();
-    }
-
-    _updateFieldDimensions() {
-        const dimEl = document.getElementById('fieldDimensions');
-        if (!dimEl || !this._currentTemplate) return;
-
-        let text = '';
-        if (this._currentTemplate.field_length) text += `${this._currentTemplate.field_length}' L`;
-        if (this._currentTemplate.field_width) text += ` - ${this._currentTemplate.field_width}' W`;
-        if (this._currentTemplate.field_radius) text += `Radius: ${this._currentTemplate.field_radius}'`;
-        dimEl.textContent = text;
-    }
-
-    _bindPairedNumberControl(baseId) {
-        const path = NUMERIC_INPUT_STATE_PATHS[baseId];
-        if (!path) return;
-
-        const slider = getInputElement(`${baseId}Slider`);
-        const input = getInputElement(`${baseId}Input`);
-
-        if (slider) {
-            slider.addEventListener('input', () => {
-                const nextValue = this._normalizeNumericControlValue(baseId, slider.value);
-                if (nextValue === null) return;
-                this._setStateValue(path, nextValue);
-                if (input) input.value = slider.value;
-                this._scheduleUpdate();
-            });
-        }
-
-        if (input) {
-            input.addEventListener('input', () => {
-                const nextValue = this._normalizeNumericControlValue(baseId, input.value);
-                if (nextValue === null) return;
-                this._setStateValue(path, nextValue);
-                if (slider) slider.value = input.value;
-                this._scheduleUpdate();
-            });
-        }
-    }
-
-    _bindSelectControl(id, handler = null) {
-        const path = SELECT_STATE_PATHS[id];
-        const el = getSelectElement(id);
-        if (!el || !path) return;
-
-        el.addEventListener('change', () => {
-            this._setStateValue(path, el.value);
-            if (typeof handler === 'function') {
-                handler(el.value);
-            }
-            this._scheduleUpdate();
-        });
-    }
-
-    _bindCheckboxControl(id, handler = null) {
-        const path = CHECKBOX_STATE_PATHS[id];
-        const el = getInputElement(id);
-        if (!el || !path) return;
-
-        el.addEventListener('change', () => {
-            this._setStateValue(path, !!el.checked);
-            if (typeof handler === 'function') {
-                handler(!!el.checked);
-            }
-            this._scheduleUpdate();
-        });
     }
 
     _applyStateToDom() {
-        const sportSelect = getSelectElement('sportSelect');
-        if (sportSelect) {
-            sportSelect.value = this.state.sport;
-        }
-
-        const runoffInput = getInputElement('customRunoffInput');
-        const runoffSlider = getInputElement('customRunoffSlider');
-        const runoffValue = this._getRunoffDistance();
-        if (runoffInput) {
-            runoffInput.value = String(this.state.setup.customRunoff ?? '');
-        }
-        if (runoffSlider) {
-            runoffSlider.value = String(runoffValue);
-        }
-
-        Object.entries(NUMERIC_INPUT_STATE_PATHS).forEach(([baseId, path]) => {
-            const value = this._getStateValue(path);
-            if (value !== undefined && value !== null) {
-                this._setInputValue(baseId, value);
-            }
-        });
-
-        Object.entries(SELECT_STATE_PATHS).forEach(([id, path]) => {
-            const el = getSelectElement(id);
-            if (!el) return;
-            const value = this._getStateValue(path);
-            if (value !== undefined && value !== null) {
-                el.value = value;
-            }
-        });
-
-        Object.entries(CHECKBOX_STATE_PATHS).forEach(([id, path]) => {
-            const el = getInputElement(id);
-            if (!el) return;
-            el.checked = !!this._getStateValue(path);
-        });
-
-        const sideLengthRow = getHtmlElement('sideLengthRow');
-        if (sideLengthRow) {
-            sideLengthRow.style.display = this.state.bowl.type.includes('Side') ? 'flex' : 'none';
-        }
-
-        const clipPlaneControls = getHtmlElement('clipPlaneControls');
-        if (clipPlaneControls) {
-            clipPlaneControls.style.display = this.state.bowl.clipEnabled ? 'block' : 'none';
-        }
-
-        [1, 2, 3].forEach((tierNum) => {
-            const section = document.getElementById(`tier${tierNum}Section`);
-            if (!section) return;
-            const enabled = !!this.state.tiers[tierNum - 1]?.enabled;
-            section.classList.toggle('tier-disabled', !enabled);
-        });
-
-        this.editorShell?.syncFromState({
-            activeViewTab: this.state.ui.activeViewTab,
-            activeResultsTab: this.state.ui.activeResultsTab
-        });
-        if (this.state.ui.activeViewTab === 'scene3d') {
-            this._handleViewTabChanged('scene3d');
-        }
+        this.editorControls?.syncFromState();
     }
 
-    _wireEvents() {
-        // Sport selector
-        const sportSelect = getSelectElement('sportSelect');
-        if (sportSelect) {
-            sportSelect.addEventListener('change', () => {
-                this.state.sport = sportSelect.value;
-                this._onSportChange();
-            });
-        }
-
-        // Custom runoff
-        const runoffInput = getInputElement('customRunoffInput');
-        const runoffSlider = getInputElement('customRunoffSlider');
-        if (runoffInput && runoffSlider) {
-            runoffInput.addEventListener('input', () => {
-                if (runoffInput.value === '') {
-                    this.state.setup.customRunoff = null;
-                    runoffSlider.value = this._getRunoffDistance();
-                    this._scheduleUpdate();
-                    return;
-                }
-
-                const nextValue = Number(runoffInput.value);
-                if (!Number.isFinite(nextValue)) return;
-                this.state.setup.customRunoff = nextValue;
-                runoffSlider.value = runoffInput.value;
-                this._scheduleUpdate();
-            });
-            runoffSlider.addEventListener('input', () => {
-                const nextValue = Number(runoffSlider.value);
-                if (!Number.isFinite(nextValue)) return;
-                this.state.setup.customRunoff = nextValue;
-                runoffInput.value = runoffSlider.value;
-                this._scheduleUpdate();
-            });
-        }
-
-        Object.keys(NUMERIC_INPUT_STATE_PATHS).forEach((baseId) => {
-            this._bindPairedNumberControl(baseId);
-        });
-
-        // Tier toggles
-        ['enableTier1', 'enableTier2', 'enableTier3'].forEach((id, index) => {
-            this._bindCheckboxControl(id, () => this._onTierToggle(index + 1));
-        });
-
-        // Mark Tier 2/3 as initialized once the user edits any tier-specific parameter.
-        // This prevents the tier enable toggle from re-applying auto-stack defaults later.
-        [2, 3].forEach((tierNum) => {
-            const sectionEl = document.getElementById(`tier${tierNum}Section`);
-            if (!sectionEl) return;
-
-            const markInitialized = (e) => {
-                const target = e.target;
-                if (!(target instanceof HTMLElement)) return;
-                if (target.id === `enableTier${tierNum}`) return;
-                if (!target.closest('.section-body')) return;
-                if (tierNum === 2) this._tier2Initialized = true;
-                if (tierNum === 3) this._tier3Initialized = true;
-            };
-
-            sectionEl.addEventListener('input', markInitialized);
-            sectionEl.addEventListener('change', markInitialized);
-        });
-
-        // Profile type selects (main + tier-specific)
-        ['profileType', 't2ProfileType', 't3ProfileType'].forEach(id => {
-            this._bindSelectControl(id);
-        });
-
-        // Clip Plane controls
-        this._bindCheckboxControl('enableClipPlane', (enabled) => {
-            const controls = getHtmlElement('clipPlaneControls');
-            if (controls) controls.style.display = enabled ? 'block' : 'none';
-        });
-        ['clipAxis', 'clipSide'].forEach(id => this._bindSelectControl(id));
-
-        // Bowl Configuration Change Events
-        this._bindSelectControl('bowlType', (value) => {
-            const sideRow = getHtmlElement('sideLengthRow');
-            if (sideRow) sideRow.style.display = value.includes('Side') ? 'flex' : 'none';
-        });
-
-        this._bindCheckboxControl('showSeatCubes3D');
-
-        // Sightlines Toggle
-        const sightlinesBtn = getInputElement('toggleSightlinesBtn');
-        const sightlinesBtnField = getInputElement('toggleSightlinesBtnField');
-        const syncSightlinesToggles = (sourceEl) => {
-            const checked = !!sourceEl?.checked;
-            this.state.setup.sightlineVisuals = checked;
-            if (sightlinesBtn && sightlinesBtn !== sourceEl) sightlinesBtn.checked = checked;
-            if (sightlinesBtnField && sightlinesBtnField !== sourceEl) sightlinesBtnField.checked = checked;
-            this._scheduleUpdate();
-        };
-        if (sightlinesBtn) sightlinesBtn.addEventListener('change', () => syncSightlinesToggles(sightlinesBtn));
-        if (sightlinesBtnField) sightlinesBtnField.addEventListener('change', () => syncSightlinesToggles(sightlinesBtnField));
-        this._bindCheckboxControl('toggleSectionMetricsBtn');
-    }
-
-    _onSportChange() {
+    _handleSportChanged() {
         this.state.applySportDefaults({
             sport: this.state.sport,
             template: getTemplate(this.state.sport)
@@ -1004,75 +368,35 @@ export class SeatingBowlApp {
         this._scheduleUpdate();
     }
 
-    _onTierToggle(tierNum) {
-        const section = document.getElementById(`tier${tierNum}Section`);
-        const enabled = !!this.state.tiers[tierNum - 1]?.enabled;
+    _getTierDefaultsForEnabledTier(tierNum) {
+        if (tierNum <= 1 || this._solvers.length < tierNum - 1) return null;
 
-        if (section) {
-            if (enabled) {
-                section.classList.remove('tier-disabled');
-            } else {
-                section.classList.add('tier-disabled');
-            }
-        }
+        const prevTier = this._solvers[tierNum - 2];
+        if (!prevTier?.rows?.length) return null;
 
-        if (enabled && tierNum > 1) {
-            const isInit = tierNum === 2 ? this._tier2Initialized : this._tier3Initialized;
-            if (!isInit && this._solvers && this._solvers.length >= tierNum - 1) {
-                const prevTier = this._solvers[tierNum - 2];
-                if (prevTier && prevTier.rows && prevTier.rows.length > 0) {
-                    const lastRow = prevTier.rows[prevTier.rows.length - 1];
-                    const tierState = this.state.tiers[tierNum - 1];
-                    if (tierState) {
-                        tierState.firstRowDist = Number(lastRow.x.toFixed(2));
-                        tierState.firstRowElev = Number((lastRow.z + 20).toFixed(2));
-                        tierState.riserHeight = 12;
-                    }
-                }
-            }
-
-            if (tierNum === 2) this._tier2Initialized = true;
-            else this._tier3Initialized = true;
-        }
-
-        this._applyStateToDom();
+        const lastRow = prevTier.rows[prevTier.rows.length - 1];
+        return {
+            firstRowDist: Number(lastRow.x.toFixed(2)),
+            firstRowElev: Number((lastRow.z + 20).toFixed(2)),
+            riserHeight: 12
+        };
     }
 
     _handleViewTabChanged(tab) {
         const nextTab = ['profile', 'field', 'scene3d'].includes(tab) ? tab : 'profile';
         this.state.ui.activeViewTab = nextTab;
-
-        requestAnimationFrame(() => {
-            if (nextTab === 'field') {
-                const canvas = getCanvasElement('fieldCanvas');
-                const parent = canvas?.parentElement;
-                const rect = parent?.getBoundingClientRect();
-                if (canvas && rect) {
-                    canvas.width = rect.width;
-                    canvas.height = rect.height;
+        this.editorShell?.handleViewTabChanged(nextTab, {
+            fieldCanvas: getCanvasElement('fieldCanvas'),
+            profileCanvas: getCanvasElement('profileCanvas'),
+            onFieldActivated: () => this.update(),
+            onProfileActivated: () => this.update(),
+            onScene3DActivated: () => {
+                if (!this._scene3dReady) {
+                    void this._init3DAsync();
+                } else if (this.scene3D) {
+                    this.scene3D.forceResize();
+                    this._update3D();
                 }
-                this.update();
-                return;
-            }
-
-            if (nextTab === 'profile') {
-                const canvas = getCanvasElement('profileCanvas');
-                const parent = canvas?.parentElement;
-                const rect = parent?.getBoundingClientRect();
-                if (canvas && rect) {
-                    canvas.width = rect.width;
-                    canvas.height = rect.height;
-                }
-                this.update();
-                return;
-            }
-
-            this.editorShell?.ensure3DContainerSize();
-            if (!this._scene3dReady) {
-                void this._init3DAsync();
-            } else if (this.scene3D) {
-                this.scene3D.forceResize();
-                this._update3D();
             }
         });
     }
@@ -1080,21 +404,6 @@ export class SeatingBowlApp {
     _scheduleUpdate() {
         if (this._debounceTimer) clearTimeout(this._debounceTimer);
         this._debounceTimer = setTimeout(() => this.update(), 25);
-    }
-
-    _setInputValue(id, val) {
-        const input = getInputElement(id + 'Input');
-        const slider = getInputElement(id + 'Slider');
-        if (input) input.value = val;
-        if (slider) slider.value = val;
-    }
-
-    _getInputValue(id) {
-        if (id === 'focalX') return 0;
-        const path = NUMERIC_INPUT_STATE_PATHS[id];
-        if (!path) return 0;
-        const value = this._getStateValue(path);
-        return Number.isFinite(Number(value)) ? Number(value) : 0;
     }
 
     _getCustomRunoff() {
@@ -1118,114 +427,128 @@ export class SeatingBowlApp {
         return EDGE_SPORTS.includes(sportName) ? 0 : (safeWidth / 2);
     }
 
+    _solveActiveTiers(focalPointFt) {
+        const solvers = [];
+
+        this.state.tiers.forEach((tierState, tierIndex) => {
+            if (!tierState?.enabled) return;
+
+            const solver = new ProfileSolver({
+                targetCValue: tierState.cValue,
+                firstRowDistance: tierState.firstRowDist,
+                firstRowElevation: tierState.firstRowElev,
+                treadDepth: tierState.treadDepth,
+                defaultRiser: tierState.riserHeight,
+                numRows: Math.round(tierState.numRows),
+                eyeHeight: tierState.eyeHeight,
+                eyeSetback: tierState.eyeSetback,
+                focalX: focalPointFt.x,
+                focalZ: focalPointFt.z
+            });
+            solver.solve(tierState.profileType);
+            solver.tierIndex = tierIndex;
+            solvers.push(solver);
+        });
+
+        return solvers;
+    }
+
+    _renderFieldView({ solvers, focalPointFt, bowlConfig, egressParams }) {
+        const tierMetricsByIndex = new Map();
+
+        if (!this.fieldRenderer) {
+            this._tierAisleLayouts = [];
+            return tierMetricsByIndex;
+        }
+
+        const sportName = this.state.sport;
+        const visibility = {
+            showSeating: true,
+            t1: !!this.state.tiers[0]?.enabled,
+            t2: !!this.state.tiers[1]?.enabled,
+            t3: !!this.state.tiers[2]?.enabled,
+            colorByCValue: this.state.setup.sightlineVisuals,
+            showSectionMetrics: this.state.setup.sectionMetrics
+        };
+        const baseY = EDGE_SPORTS.includes(sportName)
+            ? (this._currentTemplate.focal_y || 0)
+            : 0;
+        const visualFocalY = baseY + focalPointFt.x;
+        const offsetCorrection = this._getOffsetCorrection(bowlConfig, sportName);
+        const tierAisleLayouts = [];
+
+        solvers.forEach((solver, index) => {
+            if (!solver?.rows || solver.rows.length === 0) return;
+
+            const tierIndex = getSolverTierIndex(solver, index);
+            const metrics = ProfileSolver.calculateTierMetrics(
+                solver,
+                bowlConfig,
+                this.fieldRenderer,
+                egressParams,
+                offsetCorrection
+            );
+            if (!metrics) return;
+
+            tierMetricsByIndex.set(tierIndex, metrics);
+            const tierLayout = this.fieldRenderer.generateTierAisleLayout(
+                solver,
+                bowlConfig,
+                metrics,
+                offsetCorrection,
+                egressParams
+            );
+            if (!tierLayout) return;
+
+            tierLayout.tierIndex = tierIndex;
+            tierAisleLayouts.push(tierLayout);
+        });
+
+        this._tierAisleLayouts = tierAisleLayouts;
+        this.fieldRenderer.render(
+            this._currentTemplate,
+            this._getCustomRunoff(),
+            solvers,
+            visibility,
+            visualFocalY,
+            bowlConfig,
+            offsetCorrection,
+            tierAisleLayouts
+        );
+
+        return tierMetricsByIndex;
+    }
+
+    _renderProfileView({ solvers, focalPointFt, structuralDepth }) {
+        if (!this.profileRenderer) return;
+
+        const showSightlines = this.state.setup.sightlineVisuals;
+        this.profileRenderer.renderMulti(solvers, focalPointFt.x, focalPointFt.z, {
+            structuralDepth,
+            showSightlines,
+            showCLabels: showSightlines
+        });
+    }
+
     update() {
         try {
             this._syncTemplateFromState();
             const focalPointFt = this._getFocalPointFt();
             const structuralDepth = this.state.bowl.structuralDepth || 0;
-            const solvers = [];
-            this.state.tiers.forEach((tierState, tierIndex) => {
-                if (!tierState?.enabled) return;
-
-                const solver = new ProfileSolver({
-                    targetCValue: tierState.cValue,
-                    firstRowDistance: tierState.firstRowDist,
-                    firstRowElevation: tierState.firstRowElev,
-                    treadDepth: tierState.treadDepth,
-                    defaultRiser: tierState.riserHeight,
-                    numRows: Math.round(tierState.numRows),
-                    eyeHeight: tierState.eyeHeight,
-                    eyeSetback: tierState.eyeSetback,
-                    focalX: focalPointFt.x,
-                    focalZ: focalPointFt.z
-                });
-                solver.solve(tierState.profileType);
-                solver.tierIndex = tierIndex;
-                solvers.push(solver);
-            });
-
-            // Store for stats and 3D
+            const solvers = this._solveActiveTiers(focalPointFt);
             this._solvers = solvers;
-            this._solver = solvers[0] || null; // Backward compat for 3D view
-
-            const sportName = this.state.sport;
             const bowlConfig = this._getBowlConfig();
-            const customRunoff = this._getCustomRunoff();
             const egressParams = this._getEgressParams();
-            const tierMetricsByIndex = new Map();
             this._updateClipSliderRange(solvers, bowlConfig);
-
-            // Render field
-            if (this.fieldRenderer) {
-                const visibility = {
-                    showSeating: true,
-                    t1: !!this.state.tiers[0]?.enabled,
-                    t2: !!this.state.tiers[1]?.enabled,
-                    t3: !!this.state.tiers[2]?.enabled,
-                    colorByCValue: this.state.setup.sightlineVisuals,
-                    showSectionMetrics: this.state.setup.sectionMetrics
-                };
-
-                // Calculate Visual Focal Y (Plan View) based on Sport Type
-                let baseY = 0;
-                if (EDGE_SPORTS.includes(sportName)) {
-                    baseY = this._currentTemplate.focal_y || 0;
-                }
-
-                // Focal X input acts as an offset from the Base Y
-                const visualFocalY = baseY + focalPointFt.x;
-                const offsetCorrection = this._getOffsetCorrection(bowlConfig, sportName);
-                const tierAisleLayouts = [];
-
-                solvers.forEach((solver, idx) => {
-                    if (!solver || !solver.rows || solver.rows.length === 0) return;
-                    const tierIdx = solver.tierIndex !== undefined ? solver.tierIndex : idx;
-                    const metrics = ProfileSolver.calculateTierMetrics(solver, bowlConfig, this.fieldRenderer, egressParams, offsetCorrection);
-                    if (!metrics) return;
-                    tierMetricsByIndex.set(tierIdx, metrics);
-
-                    const tierLayout = this.fieldRenderer.generateTierAisleLayout(
-                        solver,
-                        bowlConfig,
-                        metrics,
-                        offsetCorrection,
-                        egressParams
-                    );
-                    if (!tierLayout) return;
-                    tierLayout.tierIndex = tierIdx;
-                    tierAisleLayouts.push(tierLayout);
-                });
-
-                this._tierAisleLayouts = tierAisleLayouts;
-                this.fieldRenderer.render(
-                    this._currentTemplate,
-                    customRunoff,
-                    solvers,
-                    visibility,
-                    visualFocalY,
-                    bowlConfig,
-                    offsetCorrection,
-                    tierAisleLayouts
-                );
-            } else {
-                this._tierAisleLayouts = [];
-            }
-
-            // Render profile — pass all solvers
-            if (this.profileRenderer) {
-                const showSightlines = this.state.setup.sightlineVisuals;
-                this.profileRenderer.renderMulti(solvers, focalPointFt.x, focalPointFt.z, {
-                    structuralDepth,
-                    showSightlines,
-                    showCLabels: showSightlines
-                });
-            }
-
-            // Update 3D
+            const tierMetricsByIndex = this._renderFieldView({
+                solvers,
+                focalPointFt,
+                bowlConfig,
+                egressParams
+            });
+            this._renderProfileView({ solvers, focalPointFt, structuralDepth });
             this._update3D();
-
-            // Update stats
-            this._updateStats(this._buildStatsViewModel({
+            this.statsPanel?.update(buildStatsViewModel({
                 solvers,
                 focalPointFt,
                 bowlConfig,
@@ -1241,8 +564,7 @@ export class SeatingBowlApp {
     _update3D() {
         if (!this._scene3dReady || !this.scene3D) return;
         try {
-            const panel = document.getElementById('scene3dPanel');
-            if (panel && panel.classList.contains('active')) {
+            if (this.editorShell?.isScene3DActive()) {
                 this.editorShell?.ensure3DContainerSize();
                 this.scene3D.forceResize();
             }
@@ -1254,10 +576,9 @@ export class SeatingBowlApp {
             const sportName = this.state.sport;
             const offsetCorrection = this._getOffsetCorrection(bowlConfig, sportName);
 
-            const solvers = this._solvers || (this._solver ? [this._solver] : []);
             if (this.scene3D) {
                 this.scene3D.updateBowl(
-                    solvers,
+                    this._solvers,
                     bowlConfig,
                     this._currentTemplate,
                     offsetCorrection,
@@ -1283,16 +604,8 @@ export class SeatingBowlApp {
         };
     }
 
-    _buildStatsViewModel(input = {}) {
-        return buildStatsViewModel(input);
-    }
-
-    _updateStats(viewModel = null) {
-        this.statsPanel?.update(viewModel);
-    }
-
     _getActiveSolvers() {
-        return (this._solvers && this._solvers.length ? this._solvers : (this._solver ? [this._solver] : []))
+        return this._solvers
             .filter((solver) => solver && Array.isArray(solver.rows) && solver.rows.length > 0);
     }
 
@@ -1401,109 +714,117 @@ export class SeatingBowlApp {
         }).filter(Boolean);
     }
 
+    _buildPrimaryTierParameters() {
+        const primaryTier = this.state.tiers[0];
+
+        return {
+            targetCValue: primaryTier?.cValue ?? 0,
+            firstRowDistance: primaryTier?.firstRowDist ?? 0,
+            firstRowElevation: primaryTier?.firstRowElev ?? 0,
+            treadDepth: primaryTier?.treadDepth ?? 0,
+            riserHeight: primaryTier?.riserHeight ?? 0,
+            numRows: primaryTier?.numRows ?? 0,
+            eyeHeight: primaryTier?.eyeHeight ?? 0,
+            eyeSetback: primaryTier?.eyeSetback ?? 0
+        };
+    }
+
+    _buildStudyResultsExportDescriptor(solvers, sportName) {
+        const bowlConfig = this._getBowlConfig();
+        const egressParams = this._getEgressParams();
+
+        return buildStudyResultsJsonExportDescriptor({
+            solvers,
+            sportName,
+            profileType: this.state.tiers[0]?.profileType || 'Parabolic',
+            template: this._currentTemplate,
+            bowlConfig,
+            egressParams,
+            focalPointFt: this._getFocalPointFt(),
+            primaryTierParameters: this._buildPrimaryTierParameters(),
+            tierArtifacts: this._buildTierRuntimeArtifacts(solvers, bowlConfig, egressParams)
+        });
+    }
+
+    async _buildRhinoSceneExportDescriptor(solvers, sportName) {
+        const sceneExportData = this._getSceneExportData();
+        if (!sceneExportData?.bowlMeshes?.length) {
+            return buildRhinoExportDescriptor({
+                sportName,
+                sceneExportData
+            });
+        }
+
+        const bowlConfig = this._getBowlConfig();
+        const rhino = await this._loadRhino3dm();
+
+        return buildRhinoExportDescriptor({
+            rhino,
+            solvers,
+            bowlConfig,
+            sportName,
+            nativeSpectatorBlockLimit: Number(globalThis?.__SBS_RHINO_NATIVE_SPECTATOR_MAX_BLOCKS),
+            tierArtifacts: this._buildRhinoTierArtifacts(solvers, bowlConfig, sportName),
+            sceneExportData
+        });
+    }
+
+    _buildPlanDxfDescriptor(solvers, sportName) {
+        const bowlConfig = this._getBowlConfig();
+        const egressParams = this._getEgressParams();
+        const tierPlanArtifacts = this._buildTierRuntimeArtifacts(solvers, bowlConfig, egressParams).map((artifact) => ({
+            tierIndex: artifact.tierIndex,
+            rowGeometries: artifact.rowGeometries,
+            aislePolygons: artifact.aislePolygons,
+            overlayData: artifact.overlayData
+        }));
+
+        return buildPlanDxfExportDescriptor({
+            template: this._currentTemplate,
+            runoffFt: this._getRunoffDistance(),
+            visualFocalXFt: this._getFocalPointFt().x,
+            tierPlanArtifacts,
+            sportName
+        });
+    }
+
     async _buildExportDescriptor(kind) {
         const solvers = this._getActiveSolvers();
         const sportName = this.state.sport;
 
-        if (kind === 'json') {
-            const bowlConfig = this._getBowlConfig();
-            const egressParams = this._getEgressParams();
-            return buildStudyResultsJsonExportDescriptor({
-                solvers,
-                sportName,
-                profileType: this.state.tiers[0]?.profileType || 'Parabolic',
-                template: this._currentTemplate,
-                bowlConfig,
-                egressParams,
-                focalPointFt: this._getFocalPointFt(),
-                primaryTierParameters: {
-                    targetCValue: this.state.tiers[0]?.cValue ?? 0,
-                    firstRowDistance: this.state.tiers[0]?.firstRowDist ?? 0,
-                    firstRowElevation: this.state.tiers[0]?.firstRowElev ?? 0,
-                    treadDepth: this.state.tiers[0]?.treadDepth ?? 0,
-                    riserHeight: this.state.tiers[0]?.riserHeight ?? 0,
-                    numRows: this.state.tiers[0]?.numRows ?? 0,
-                    eyeHeight: this.state.tiers[0]?.eyeHeight ?? 0,
-                    eyeSetback: this.state.tiers[0]?.eyeSetback ?? 0
-                },
-                tierArtifacts: this._buildTierRuntimeArtifacts(solvers, bowlConfig, egressParams)
-            });
-        }
-
-        if (kind === 'obj') {
+        switch (kind) {
+        case 'json':
+            return this._buildStudyResultsExportDescriptor(solvers, sportName);
+        case 'obj':
             return buildObjExportDescriptor({
                 bowlMeshes: this._getSceneExportData()?.bowlMeshes || [],
                 sportName,
                 objectName: 'SeatingBowl'
             });
-        }
-
-        if (kind === 'rhino') {
-            const sceneExportData = this._getSceneExportData();
-            if (!sceneExportData?.bowlMeshes?.length) {
-                return buildRhinoExportDescriptor({
-                    sportName,
-                    sceneExportData
-                });
-            }
-
-            const bowlConfig = this._getBowlConfig();
-            const rhino = await this._loadRhino3dm();
-
-            return buildRhinoExportDescriptor({
-                rhino,
-                solvers,
-                bowlConfig,
-                sportName,
-                nativeSpectatorBlockLimit: Number(globalThis?.__SBS_RHINO_NATIVE_SPECTATOR_MAX_BLOCKS),
-                tierArtifacts: this._buildRhinoTierArtifacts(solvers, bowlConfig, sportName),
-                sceneExportData
-            });
-        }
-
-        if (kind === 'profile-dxf') {
+        case 'rhino':
+            return this._buildRhinoSceneExportDescriptor(solvers, sportName);
+        case 'profile-dxf':
             return buildProfileDxfExportDescriptor({
                 solvers,
                 structuralDepthFt: (this.state.bowl.structuralDepth || 0) / 12.0,
                 focalPointFt: this._getFocalPointFt(),
                 sportName
             });
-        }
-
-        if (kind === 'plan-dxf') {
-            const bowlConfig = this._getBowlConfig();
-            const egressParams = this._getEgressParams();
-            const tierPlanArtifacts = this._buildTierRuntimeArtifacts(solvers, bowlConfig, egressParams).map((artifact) => ({
-                tierIndex: artifact.tierIndex,
-                rowGeometries: artifact.rowGeometries,
-                aislePolygons: artifact.aislePolygons,
-                overlayData: artifact.overlayData
-            }));
-
-            return buildPlanDxfExportDescriptor({
-                template: this._currentTemplate,
-                runoffFt: this._getRunoffDistance(),
-                visualFocalXFt: this._getFocalPointFt().x,
-                tierPlanArtifacts,
-                sportName
-            });
-        }
-
-        if (kind === 'csv') {
+        case 'plan-dxf':
+            return this._buildPlanDxfDescriptor(solvers, sportName);
+        case 'csv':
             return buildTierMetricsCsvExportDescriptor({
                 solvers,
                 focalPointFt: this._getFocalPointFt(),
                 sportName
             });
-        }
-
-        if (kind === 'config') {
+        case 'config':
             return buildConfigExportDescriptor({
                 config: this.state.toJSON()
             });
+        default:
+            return null;
         }
-
-        return null;
     }
 
 
@@ -1609,8 +930,7 @@ export class SeatingBowlApp {
         const { logSuccess = false } = options;
         this.state.fromJSON(config);
         this._syncTemplateFromState();
-        this._tier2Initialized = Array.isArray(config.tiers) && config.tiers.length > 1;
-        this._tier3Initialized = Array.isArray(config.tiers) && config.tiers.length > 2;
+        this.editorControls?.hydrateTierInitialization(config);
         this._applyStateToDom();
         this.cameraBookmarks?.render();
         this._refreshProjectChrome();
@@ -1676,12 +996,13 @@ export class SeatingBowlApp {
         input.min = String(lo);
         input.max = String(hi);
 
-        let curr = this._getInputValue('clipPosition');
+        let curr = Number(this.state.bowl.clipPosition);
         if (!Number.isFinite(curr)) curr = 0;
         const clamped = Math.max(lo, Math.min(hi, curr));
         if (clamped !== curr) {
             this.state.bowl.clipPosition = clamped;
-            this._setInputValue('clipPosition', clamped);
+            slider.value = String(clamped);
+            input.value = String(clamped);
         }
     }
 
@@ -1717,78 +1038,4 @@ export class SeatingBowlApp {
         return { minX, minY, maxX, maxY };
     }
 
-    // ========== 3D VIEW CAMERA BOOKMARKS ==========
-    _createCurrentCameraBookmark() {
-        if (!this.scene3D || !this.scene3D.camera || !this.scene3D.controls || !this.scene3D.renderer) return;
-        const cam = /** @type {any} */ (this.scene3D.camera);
-        const ctrl = /** @type {any} */ (this.scene3D.controls);
-
-        // Capture what the user currently sees as a 100x100 thumbnail.
-        this.scene3D.renderer.render(this.scene3D.scene, this.scene3D.camera);
-        const thumbnail = this._captureBookmarkThumbnail(150, 150);
-
-        const bm = {
-            name: `View ${this.state.bookmarks.length + 1}`,
-            position: { x: cam.position.x, y: cam.position.y, z: cam.position.z },
-            target: { x: ctrl.target.x, y: ctrl.target.y, z: ctrl.target.z },
-            thumbnail
-        };
-        this.state.bookmarks.push(bm);
-        return bm;
-    }
-
-    _captureBookmarkThumbnail(width = 100, height = 100) {
-        try {
-            if (!this.scene3D || !this.scene3D.renderer) return '';
-            const src = this.scene3D.renderer.domElement;
-            const sw = src.width || src.clientWidth;
-            const sh = src.height || src.clientHeight;
-            if (!sw || !sh) return '';
-
-            const crop = Math.min(sw, sh);
-            const sx = Math.floor((sw - crop) / 2);
-            const sy = Math.floor((sh - crop) / 2);
-
-            const thumb = document.createElement('canvas');
-            thumb.width = width;
-            thumb.height = height;
-            const ctx = thumb.getContext('2d');
-            if (!ctx) return '';
-
-            ctx.drawImage(src, sx, sy, crop, crop, 0, 0, width, height);
-            return thumb.toDataURL('image/png');
-        } catch (err) {
-            console.warn('Failed to capture camera bookmark thumbnail:', err);
-            return '';
-        }
-    }
-
-    _restoreCameraBookmark(bookmark) {
-        if (!bookmark || !this.scene3D || !this.scene3D.camera || !this.scene3D.controls) return;
-        const camera = /** @type {any} */ (this.scene3D.camera);
-        const controls = /** @type {any} */ (this.scene3D.controls);
-        camera.position.set(
-            bookmark.position.x,
-            bookmark.position.y,
-            bookmark.position.z
-        );
-        controls.target.set(
-            bookmark.target.x,
-            bookmark.target.y,
-            bookmark.target.z
-        );
-        controls.update();
-    }
-
-    _build3DImageExportDescriptor(viewName = null) {
-        if (!this.scene3D || !this.scene3D.renderer) return;
-        this.scene3D.renderer.render(this.scene3D.scene, this.scene3D.camera);
-        const dataUrl = this.scene3D.renderer.domElement.toDataURL('image/png');
-        const sportName = this.state.sport;
-        const suffix = viewName ? `-${viewName.toLowerCase().replace(/\s/g, '-')}` : '';
-        return {
-            filename: `3d-view-${sportName.toLowerCase().replace(/\s/g, '-')}${suffix}.png`,
-            dataUrl
-        };
-    }
 }

@@ -19,6 +19,22 @@ export function cloneProjectMetadata(project = null) {
     };
 }
 
+export function cloneSessionDto(session) {
+    return session && typeof session === 'object'
+        ? { ...session }
+        : null;
+}
+
+export function buildProjectChromeSnapshot({ name = '', projectMetadata = null, session = null } = {}) {
+    const metadata = cloneProjectMetadata(projectMetadata);
+    return {
+        name: typeof name === 'string' ? name.trim() : '',
+        metadata,
+        session: cloneSessionDto(session),
+        canSave: Boolean(metadata.id && session)
+    };
+}
+
 export function normalizeProjectEnvelope(project = null, fallbackState = null) {
     const metadata = cloneProjectMetadata(project);
     const defaultState = fallbackState && typeof fallbackState === 'object'
