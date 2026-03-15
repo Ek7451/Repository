@@ -1,4 +1,6 @@
 import { getSportNames, getTemplate as getSportTemplate } from '../core/sports-templates.js';
+import { buildNextTierDefaultsFromTiers } from '../core/profile-solver.js';
+import { buildFocalPointFt, getRunoffDistance, resolveSportTemplate } from '../state/app-state.js';
 
 const NUMERIC_INPUT_STATE_PATHS = {
     focalZ: ['setup', 'focalZ'],
@@ -131,31 +133,15 @@ export class EditorControls {
     constructor(options = {}) {
         const settings = /** @type {{
             state?: object,
-            getTemplate?: (() => object | null),
-            getRunoffDistance?: (() => number),
-            onStateChanged?: (() => void),
-            onSportChanged?: (() => void),
-            getTierDefaults?: ((tierNum: number) => object | null)
+            onChange?: ((change: { reason: string, controlId: string }) => void)
         }} */ (options && typeof options === 'object' ? options : {});
 
         this.state = settings.state && typeof settings.state === 'object'
             ? settings.state
             : {};
-        this._getTemplate = typeof settings.getTemplate === 'function'
-            ? settings.getTemplate
-            : () => null;
-        this._getRunoffDistance = typeof settings.getRunoffDistance === 'function'
-            ? settings.getRunoffDistance
-            : () => 0;
-        this._onStateChanged = typeof settings.onStateChanged === 'function'
-            ? settings.onStateChanged
+        this._onChange = typeof settings.onChange === 'function'
+            ? settings.onChange
             : () => {};
-        this._onSportChanged = typeof settings.onSportChanged === 'function'
-            ? settings.onSportChanged
-            : () => {};
-        this._getTierDefaults = typeof settings.getTierDefaults === 'function'
-            ? settings.getTierDefaults
-            : () => null;
 
         this._cleanup = [];
         this._initialized = false;
@@ -185,7 +171,7 @@ export class EditorControls {
 
         const runoffInput = getInputElement('customRunoffInput');
         const runoffSlider = getInputElement('customRunoffSlider');
-        const runoffValue = this._getRunoffDistance();
+        const runoffValue = this._resolveRunoffDistance();
         if (runoffInput) {
             runoffInput.value = String(this.state.setup?.customRunoff ?? '');
         }
@@ -250,9 +236,13 @@ export class EditorControls {
         input.value = String(nextValue);
     }
 
-    hydrateTierInitialization(config) {
+    applyImportedConfig(config) {
         this._tier2Initialized = Array.isArray(config?.tiers) && config.tiers.length > 1;
         this._tier3Initialized = Array.isArray(config?.tiers) && config.tiers.length > 2;
+    }
+
+    hydrateTierInitialization(config) {
+        this.applyImportedConfig(config);
     }
 
     _populateSports() {
@@ -273,7 +263,7 @@ export class EditorControls {
         if (sportSelect) {
             this._addListener(sportSelect, 'change', () => {
                 this.state.sport = sportSelect.value;
-                this._onSportChanged();
+                this._emitChange('sport', 'sportSelect');
             });
         }
 
@@ -283,8 +273,8 @@ export class EditorControls {
             this._addListener(runoffInput, 'input', () => {
                 if (runoffInput.value === '') {
                     this.state.setup.customRunoff = null;
-                    runoffSlider.value = String(this._getRunoffDistance());
-                    this._onStateChanged();
+                    runoffSlider.value = String(this._resolveRunoffDistance());
+                    this._emitChange('state', 'customRunoffInput');
                     return;
                 }
 
@@ -292,14 +282,14 @@ export class EditorControls {
                 if (!Number.isFinite(nextValue)) return;
                 this.state.setup.customRunoff = nextValue;
                 runoffSlider.value = runoffInput.value;
-                this._onStateChanged();
+                this._emitChange('state', 'customRunoffInput');
             });
             this._addListener(runoffSlider, 'input', () => {
                 const nextValue = Number(runoffSlider.value);
                 if (!Number.isFinite(nextValue)) return;
                 this.state.setup.customRunoff = nextValue;
                 runoffInput.value = runoffSlider.value;
-                this._onStateChanged();
+                this._emitChange('state', 'customRunoffSlider');
             });
         }
 
@@ -350,7 +340,7 @@ export class EditorControls {
             this.state.setup.sightlineVisuals = checked;
             if (sightlinesBtn && sightlinesBtn !== sourceEl) sightlinesBtn.checked = checked;
             if (sightlinesBtnField && sightlinesBtnField !== sourceEl) sightlinesBtnField.checked = checked;
-            this._onStateChanged();
+            this._emitChange('state', sourceEl?.id || 'toggleSightlines');
         };
         if (sightlinesBtn) {
             this._addListener(sightlinesBtn, 'change', () => syncSightlinesToggles(sightlinesBtn));
@@ -375,7 +365,7 @@ export class EditorControls {
                 if (nextValue === null) return;
                 setValueAtPath(this.state, path, nextValue);
                 if (input) input.value = slider.value;
-                this._onStateChanged();
+                this._emitChange('state', `${baseId}Slider`);
             });
         }
 
@@ -385,7 +375,7 @@ export class EditorControls {
                 if (nextValue === null) return;
                 setValueAtPath(this.state, path, nextValue);
                 if (slider) slider.value = input.value;
-                this._onStateChanged();
+                this._emitChange('state', `${baseId}Input`);
             });
         }
     }
@@ -400,7 +390,7 @@ export class EditorControls {
             if (typeof handler === 'function') {
                 handler(el.value);
             }
-            this._onStateChanged();
+            this._emitChange('state', id);
         });
     }
 
@@ -414,7 +404,7 @@ export class EditorControls {
             if (typeof handler === 'function') {
                 handler(!!el.checked);
             }
-            this._onStateChanged();
+            this._emitChange('state', id);
         });
     }
 
@@ -426,7 +416,7 @@ export class EditorControls {
             const isInitialized = tierNum === 2 ? this._tier2Initialized : this._tier3Initialized;
             if (!isInitialized) {
                 const tierState = this.state.tiers?.[tierNum - 1];
-                const defaults = this._getTierDefaults(tierNum);
+                const defaults = this._resolveTierDefaults(tierNum);
                 if (tierState && defaults && typeof defaults === 'object') {
                     Object.assign(tierState, defaults);
                 }
@@ -449,5 +439,24 @@ export class EditorControls {
     _addListener(target, eventName, handler) {
         target.addEventListener(eventName, handler);
         this._cleanup.push(() => target.removeEventListener(eventName, handler));
+    }
+
+    _emitChange(reason, controlId) {
+        this._onChange({
+            reason: typeof reason === 'string' && reason.trim() ? reason.trim() : 'state',
+            controlId: typeof controlId === 'string' && controlId.trim() ? controlId.trim() : 'unknown'
+        });
+    }
+
+    _resolveRunoffDistance() {
+        return getRunoffDistance(this.state, resolveSportTemplate(this.state));
+    }
+
+    _resolveTierDefaults(tierNum) {
+        return buildNextTierDefaultsFromTiers(
+            this.state?.tiers,
+            buildFocalPointFt(this.state),
+            tierNum
+        );
     }
 }

@@ -240,23 +240,24 @@ describe('EditorExportController', () => {
     });
 
     test('builds the current config export descriptor contract', async () => {
+        const exportContext = createExportContext();
         const getFieldGeometryPort = vi.fn(() => {
             throw new Error('config export should not request field geometry');
         });
         const getSceneGeometryPort = vi.fn(() => {
             throw new Error('config export should not request scene geometry');
         });
-        const controller = createController({
+        const controller = new EditorExportController({
+            getExportContext: () => exportContext,
             getFieldGeometryPort,
             getSceneGeometryPort
         });
-        const stateJson = controller._getNormalizedExportContext().stateJson;
 
         const descriptor = await controller.buildDescriptor('config');
 
         expect(descriptor).toEqual({
             filename: 'bowl-config-football.json',
-            content: JSON.stringify(stateJson, null, 2),
+            content: JSON.stringify(exportContext.stateJson, null, 2),
             type: 'application/json'
         });
         expect(getFieldGeometryPort).not.toHaveBeenCalled();
@@ -309,15 +310,13 @@ describe('EditorExportController', () => {
             getSceneGeometryPort
         });
         const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-        const loadRhino3dm = vi.spyOn(controller, '_loadRhino3dm').mockResolvedValue(/** @type {any} */ ({}));
 
         await expect(controller.buildDescriptor('rhino')).resolves.toBeNull();
         expect(getSceneGeometryPort).toHaveBeenCalledTimes(1);
-        expect(loadRhino3dm).not.toHaveBeenCalled();
         expect(warnSpy).toHaveBeenCalledWith('No 3D data to export');
     });
 
-    test('uses core tier-index fallback when building tier runtime artifacts', () => {
+    test('uses core tier-index fallback when building the public study-results descriptor', async () => {
         const calculateTierMetrics = vi.spyOn(ProfileSolver, 'calculateTierMetrics').mockReturnValue(/** @type {any} */ ({
             capacity: 120,
             numAisles: 2
@@ -340,11 +339,15 @@ describe('EditorExportController', () => {
             })
         });
 
-        const artifacts = controller._buildTierRuntimeArtifacts(controller._getNormalizedExportContext());
+        const descriptor = await controller.buildDescriptor('json');
+        const payload = JSON.parse(descriptor.content);
 
-        expect(artifacts).toHaveLength(1);
-        expect(artifacts[0].tierIndex).toBe(4);
-        expect(artifacts[0].tierLayout.tierIndex).toBe('4');
+        expect(payload.tiers).toHaveLength(1);
+        expect(payload.tiers[0]).toMatchObject({
+            tierIndex: 4,
+            tierNumber: 5,
+            name: 'Tier 5'
+        });
         expect(calculateTierMetrics).toHaveBeenCalledTimes(1);
 
         calculateTierMetrics.mockRestore();

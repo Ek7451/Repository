@@ -1,3 +1,5 @@
+import { getTemplate } from '../core/sports-templates.js';
+
 const APP_STATE_VERSION = 'phase6-app-state';
 const VALID_VIEW_TABS = new Set(['profile', 'field', 'scene3d']);
 const VALID_RESULTS_TABS = new Set(['statsTab', 'detailsTab']);
@@ -87,6 +89,18 @@ const VALID_RESULTS_TABS = new Set(['statsTab', 'detailsTab']);
  *     }
  *   }
  * }} SportDefaultsOptions
+ * @typedef {{
+ *   base?: AppStateData | AppStateInstance
+ * }} AppStateFromJsonOptions
+ * @typedef {{
+ *   reset(): AppStateInstance,
+ *   fromJSON(rawState?: object, options?: AppStateFromJsonOptions): AppStateInstance,
+ *   mergeJSON(partialState?: object): AppStateInstance,
+ *   applySportDefaults(options?: SportDefaultsOptions): AppStateInstance,
+ *   applyClipPositionRange(clipRange?: { min?: number, max?: number, value?: number } | null): AppStateInstance,
+ *   toJSON(): AppStateData
+ * }} AppStateMethods
+ * @typedef {AppStateData & AppStateMethods} AppStateInstance
  */
 
 /** @returns {TierState} */
@@ -202,6 +216,10 @@ function normalizeResultsTab(value, fallback) {
     return VALID_RESULTS_TABS.has(value) ? value : fallback;
 }
 
+export function normalizeSportName(sportName) {
+    return getTemplate(sportName) ? sportName : 'Football';
+}
+
 /** @returns {TierState} */
 function normalizeTier(rawTier, fallbackTier) {
     const tier = rawTier && typeof rawTier === 'object' ? rawTier : {};
@@ -288,7 +306,7 @@ function normalizeAppState(rawState = {}, fallbackState = createDefaultStateData
 
     return {
         _version: APP_STATE_VERSION,
-        sport: parseString(state.sport, fallback.sport),
+        sport: normalizeSportName(parseString(state.sport, fallback.sport)),
         setup: {
             customRunoff: parseNullableNumber(
                 state.setup?.customRunoff,
@@ -355,9 +373,10 @@ function normalizeAppState(rawState = {}, fallbackState = createDefaultStateData
 }
 
 /**
- * @param {AppStateData} target
+ * @template {AppStateData | AppStateInstance} T
+ * @param {T} target
  * @param {AppStateData} source
- * @returns {AppStateData}
+ * @returns {T}
  */
 function applyStateData(target, source) {
     target._version = source._version;
@@ -413,6 +432,34 @@ export function getRunoffDistance(state, template) {
         : (template?.runoff || 0);
 }
 
+export function resolveSportName(state) {
+    return normalizeSportName(state?.sport);
+}
+
+export function resolveSportTemplate(stateOrSport) {
+    const nextSport = typeof stateOrSport === 'string'
+        ? normalizeSportName(stateOrSport)
+        : resolveSportName(stateOrSport);
+    return getTemplate(nextSport);
+}
+
+export function buildClipPositionControlSync(state, clipRange) {
+    if (!clipRange) return null;
+
+    const nextMin = Number.isFinite(Number(clipRange.min)) ? Number(clipRange.min) : 0;
+    const rawMax = Number.isFinite(Number(clipRange.max)) ? Number(clipRange.max) : nextMin;
+    const nextMax = Math.max(nextMin, rawMax);
+
+    let currentPosition = Number(getStateBowl(state).clipPosition);
+    if (!Number.isFinite(currentPosition)) currentPosition = 0;
+
+    return {
+        min: nextMin,
+        max: nextMax,
+        value: Math.max(nextMin, Math.min(nextMax, currentPosition))
+    };
+}
+
 export function buildFocalPointFt(state) {
     const setup = getStateSetup(state);
     return {
@@ -447,13 +494,14 @@ export function buildPrimaryTierParameters(state) {
     };
 }
 
-export function buildBowlConfig(state, template) {
+export function buildBowlConfig(state, template, overrides = {}) {
     const bowl = getStateBowl(state);
+    const clipPosition = overrides.clipPosition ?? bowl.clipPosition;
     const clip = bowl.clipEnabled
         ? {
             enabled: true,
             axis: bowl.clipAxis,
-            position: bowl.clipPosition,
+            position: clipPosition,
             side: bowl.clipSide
         }
         : { enabled: false };
@@ -496,13 +544,25 @@ export function buildSceneSeatPreviewOptions(state) {
     };
 }
 
-export const AppState = {
-    ...createDefaultStateData(),
+export function buildProfileRenderOptions(state, structuralDepth = 0) {
+    const setup = getStateSetup(state);
+    const showSightlines = !!setup.sightlineVisuals;
 
+    return {
+        structuralDepth: Number(structuralDepth) || 0,
+        showSightlines,
+        showCLabels: showSightlines
+    };
+}
+
+/** @type {AppStateMethods} */
+const appStateMethods = {
+    /** @this {AppStateInstance} */
     reset() {
         return this.fromJSON();
     },
 
+    /** @this {AppStateInstance} */
     fromJSON(rawState = {}, options = {}) {
         const fallbackState = options.base
             ? normalizeAppState(options.base)
@@ -510,15 +570,17 @@ export const AppState = {
         return applyStateData(this, normalizeAppState(rawState, fallbackState));
     },
 
+    /** @this {AppStateInstance} */
     mergeJSON(partialState = {}) {
         return this.fromJSON(partialState, { base: this.toJSON() });
     },
 
     /**
      * @param {SportDefaultsOptions} [options]
+     * @this {AppStateInstance}
      */
     applySportDefaults({ sport, template = null } = {}) {
-        const nextSport = parseString(sport, this.sport);
+        const nextSport = normalizeSportName(parseString(sport, this.sport));
         const templateDefaults = template?.defaults && typeof template.defaults === 'object'
             ? template.defaults
             : {};
@@ -540,10 +602,31 @@ export const AppState = {
         return this.mergeJSON(partialState);
     },
 
+    /** @this {AppStateInstance} */
+    applyClipPositionRange(clipRange = null) {
+        const nextRange = buildClipPositionControlSync(this, clipRange);
+        if (nextRange && this.bowl && typeof this.bowl === 'object') {
+            this.bowl.clipPosition = nextRange.value;
+        }
+        return this;
+    },
+
+    /** @this {AppStateInstance} */
     toJSON() {
         return normalizeAppState(this);
     }
 };
+
+/** @returns {AppStateInstance} */
+export function createAppState() {
+    return {
+        ...createDefaultStateData(),
+        ...appStateMethods
+    };
+}
+
+/** @type {AppStateInstance} */
+export const AppState = createAppState();
 
 export { APP_STATE_VERSION };
 export { createDefaultAppStateData };

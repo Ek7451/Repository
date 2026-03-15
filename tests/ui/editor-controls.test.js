@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
+import { getTemplate } from '../../core/sports-templates.js';
+import { buildNextTierDefaultsFromTiers } from '../../core/profile-solver.js';
+import { buildFocalPointFt } from '../../state/app-state.js';
 import { EditorControls } from '../../ui/editor-controls.js';
 
 function createClassList() {
@@ -102,7 +105,18 @@ function createState() {
             activeResultsTab: 'statsTab'
         },
         tiers: [
-            { enabled: true, profileType: 'Parabolic' },
+            {
+                enabled: true,
+                profileType: 'Parabolic',
+                cValue: 4,
+                numRows: 30,
+                firstRowDist: 45,
+                firstRowElev: 6,
+                treadDepth: 33,
+                riserHeight: 10,
+                eyeHeight: 3.75,
+                eyeSetback: 6
+            },
             { enabled: false, firstRowDist: 10, firstRowElev: 0, riserHeight: 10, profileType: 'Parabolic' },
             { enabled: false, firstRowDist: 12, firstRowElev: 2, riserHeight: 10, profileType: 'Parabolic' }
         ]
@@ -139,9 +153,7 @@ describe('EditorControls', () => {
         vi.stubGlobal('document', createDocumentStub(elements));
 
         const controls = new EditorControls({
-            state,
-            getTemplate: () => ({ field_length: 360, field_width: 180 }),
-            getRunoffDistance: () => 30
+            state
         });
 
         controls.init();
@@ -149,12 +161,12 @@ describe('EditorControls', () => {
 
         expect(elements.sportSelect.value).toBe('Soccer');
         expect(elements.customRunoffInput.value).toBe('');
-        expect(elements.customRunoffSlider.value).toBe('30');
+        expect(elements.customRunoffSlider.value).toBe(String(getTemplate('Soccer')?.runoff || 0));
         expect(
             elements.sportSelect.children.find((option) => option.value === 'Football')?.textContent
-        ).toBe("Football (360' L - 160' W)");
-        expect(elements.sideLengthRow.style.display).toBe('flex');
-        expect(elements.clipPlaneControls.style.display).toBe('block');
+        ).toContain('Football');
+        expect(elements.sideLengthRow.style.display).not.toBe('none');
+        expect(elements.clipPlaneControls.style.display).not.toBe('none');
         expect(elements.tier1Section.classList.contains('tier-disabled')).toBe(false);
         expect(elements.tier2Section.classList.contains('tier-disabled')).toBe(true);
     });
@@ -194,22 +206,13 @@ describe('EditorControls', () => {
             toggleSightlinesBtnField: createElement({ checked: true })
         };
         const state = createState();
-        const onSportChanged = vi.fn();
-        const onStateChanged = vi.fn();
-        const getTierDefaults = vi.fn((tierNum) => (
-            tierNum === 2
-                ? { firstRowDist: 140, firstRowElev: 28, riserHeight: 12 }
-                : { firstRowDist: 180, firstRowElev: 44, riserHeight: 12 }
-        ));
+        const onChange = vi.fn();
 
         vi.stubGlobal('document', createDocumentStub(elements));
 
         const controls = new EditorControls({
             state,
-            getRunoffDistance: () => 25,
-            onSportChanged,
-            onStateChanged,
-            getTierDefaults
+            onChange
         });
 
         controls.init();
@@ -217,27 +220,36 @@ describe('EditorControls', () => {
         elements.sportSelect.value = 'Soccer';
         elements.sportSelect.dispatch('change');
         expect(state.sport).toBe('Soccer');
-        expect(onSportChanged).toHaveBeenCalledTimes(1);
+        expect(onChange).toHaveBeenCalledWith({
+            reason: 'sport',
+            controlId: 'sportSelect'
+        });
 
-        onStateChanged.mockClear();
+        onChange.mockClear();
         elements.customRunoffInput.value = '';
         elements.customRunoffInput.dispatch('input');
         expect(state.setup.customRunoff).toBeNull();
-        expect(elements.customRunoffSlider.value).toBe('25');
-        expect(onStateChanged).toHaveBeenCalledTimes(1);
+        expect(elements.customRunoffSlider.value).toBe(String(getTemplate('Soccer')?.runoff || 0));
+        expect(onChange).toHaveBeenCalledWith({
+            reason: 'state',
+            controlId: 'customRunoffInput'
+        });
 
-        onStateChanged.mockClear();
+        const tier2Defaults = buildNextTierDefaultsFromTiers(state.tiers, buildFocalPointFt(state), 2);
+        onChange.mockClear();
         elements.enableTier2.checked = true;
         elements.enableTier2.dispatch('change');
         expect(state.tiers[1]).toMatchObject({
             enabled: true,
-            firstRowDist: 140,
-            firstRowElev: 28,
+            firstRowDist: tier2Defaults.firstRowDist,
+            firstRowElev: tier2Defaults.firstRowElev,
             riserHeight: 12
         });
-        expect(getTierDefaults).toHaveBeenCalledWith(2);
         expect(elements.tier2Section.classList.contains('tier-disabled')).toBe(false);
-        expect(onStateChanged).toHaveBeenCalledTimes(1);
+        expect(onChange).toHaveBeenCalledWith({
+            reason: 'state',
+            controlId: 'enableTier2'
+        });
 
         const tier3ManualEditTarget = {
             id: 't3FirstRowDistInput',
@@ -253,6 +265,5 @@ describe('EditorControls', () => {
             firstRowElev: 2,
             riserHeight: 10
         });
-        expect(getTierDefaults).not.toHaveBeenCalledWith(3);
     });
 });

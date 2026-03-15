@@ -78,18 +78,40 @@ describe('Scene3DController', () => {
 
         controller.update(snapshot, { isActive: false });
         await controller.activate();
-        await controller.activate();
 
         expect(scene3DFactory).toHaveBeenCalledTimes(1);
         expect(scene3D.init).toHaveBeenCalledTimes(1);
         expect(scene3D.applyTheme).toHaveBeenCalledWith('dark');
-        expect(scene3D.updateField).toHaveBeenCalledTimes(2);
-        expect(scene3D.updateBowl).toHaveBeenCalledTimes(2);
+        expect(scene3D.updateField).toHaveBeenCalledWith(snapshot.template, 18, 9);
+        expect(scene3D.updateBowl).toHaveBeenCalledWith(
+            snapshot.solvers,
+            snapshot.bowlConfig,
+            snapshot.template,
+            7,
+            snapshot.tierAisleLayouts,
+            snapshot.seatPreviewOptions
+        );
         expect(controller.getGeometryPort()).toEqual({
             getExportSceneData: expect.any(Function),
             buildClosedStructuralProfile: expect.any(Function),
             getBowlGeometrySegments: expect.any(Function)
         });
+
+        scene3D.updateField.mockClear();
+        scene3D.updateBowl.mockClear();
+        await controller.activate();
+
+        expect(scene3DFactory).toHaveBeenCalledTimes(1);
+        expect(scene3D.init).toHaveBeenCalledTimes(1);
+        expect(scene3D.updateField).toHaveBeenCalledWith(snapshot.template, 18, 9);
+        expect(scene3D.updateBowl).toHaveBeenCalledWith(
+            snapshot.solvers,
+            snapshot.bowlConfig,
+            snapshot.template,
+            7,
+            snapshot.tierAisleLayouts,
+            snapshot.seatPreviewOptions
+        );
 
         controller.destroy();
     });
@@ -137,14 +159,17 @@ describe('Scene3DController', () => {
         controller.destroy();
     });
 
-    it('forces resize before updating when the 3d tab is active', () => {
+    it('forces resize before updating when the 3d tab is active', async () => {
         const ensureContainerSize = vi.fn();
         const scene3D = {
+            init: vi.fn().mockResolvedValue(),
+            applyTheme: vi.fn(),
             forceResize: vi.fn(),
             updateField: vi.fn(),
             updateBowl: vi.fn(),
             dispose: vi.fn()
         };
+        scene3DFactory.mockImplementation(() => scene3D);
         const controller = new Scene3DController({
             ...createElements(),
             getBookmarks: () => [],
@@ -152,8 +177,13 @@ describe('Scene3DController', () => {
         });
         const snapshot = createSnapshot();
 
-        controller.scene3D = /** @type {any} */ (scene3D);
-        controller._scene3dReady = true;
+        controller.update(snapshot, { isActive: false });
+        await controller.activate();
+        ensureContainerSize.mockClear();
+        scene3D.forceResize.mockClear();
+        scene3D.updateField.mockClear();
+        scene3D.updateBowl.mockClear();
+
         controller.update(snapshot, { isActive: true });
 
         expect(ensureContainerSize).toHaveBeenCalledTimes(1);

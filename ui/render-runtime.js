@@ -1,41 +1,26 @@
-import { getTemplate } from '../core/sports-templates.js';
 import {
     buildActiveTierSolvers,
     buildNextTierDefaultsFromSolvers,
     buildTierMetricsByIndex
 } from '../core/profile-solver.js';
 import {
+    buildClipPositionControlSync,
     buildBowlConfig,
     buildEgressParams,
     buildFieldVisibility,
     buildFocalPointFt,
+    buildProfileRenderOptions,
     buildPrimaryTierParameters,
     buildSceneSeatPreviewOptions,
     getCustomRunoff,
-    getRunoffDistance
+    getRunoffDistance,
+    resolveSportName,
+    resolveSportTemplate
 } from '../state/app-state.js';
 import { buildStatsViewModel } from './stats-panel.js';
 
 function filterActiveSolvers(solvers = []) {
     return (solvers || []).filter((solver) => solver && Array.isArray(solver.rows) && solver.rows.length > 0);
-}
-
-function clampClipPosition(state, clipRange) {
-    if (!state?.bowl || !clipRange) return null;
-
-    let currentPosition = Number(state.bowl.clipPosition);
-    if (!Number.isFinite(currentPosition)) currentPosition = 0;
-
-    const clampedPosition = Math.max(clipRange.min, Math.min(clipRange.max, currentPosition));
-    if (clampedPosition !== currentPosition) {
-        state.bowl.clipPosition = clampedPosition;
-    }
-
-    return {
-        min: clipRange.min,
-        max: clipRange.max,
-        value: clampedPosition
-    };
 }
 
 export class RenderRuntime {
@@ -50,14 +35,42 @@ export class RenderRuntime {
         this._snapshot = null;
     }
 
-    recompute({ state, fieldRenderer } = {}) {
-        const template = this._resolveTemplate(state);
+    /**
+     * @param {{
+     *   state?: {
+     *     sport?: string,
+     *     bowl?: {
+     *       structuralDepth?: number,
+     *       clipAxis?: string,
+     *       clipPosition?: number
+     *     },
+     *     tiers?: Array<unknown>
+     *   },
+     *   fieldGeometryPort?: {
+     *     getOffsetCorrection(bowlConfig: unknown, sport: unknown): number,
+     *     getClipPositionRange(solvers: unknown[], bowlConfig: unknown, clipAxis: unknown, offsetCorrection: number): { min: number, max: number } | null,
+     *     getVisualFocalY(template: unknown, focalPointFt: { x: number, z: number }, sport: unknown): number,
+     *     calculateRowLength(bowlConfig: unknown, offsetCorrection: number): number,
+     *     buildTierAisleLayouts(
+     *       solvers: unknown[],
+     *       bowlConfig: unknown,
+     *       tierMetricsByIndex: Map<number, unknown>,
+     *       offsetCorrection: number,
+     *       egressParams: unknown
+     *     ): unknown[]
+     *   } | null
+     * }} [options]
+     */
+    recompute({ state, fieldGeometryPort } = {}) {
+        const sportName = resolveSportName(state);
+        const template = resolveSportTemplate(sportName);
+        this._template = template;
         const customRunoff = getCustomRunoff(state);
         const focalPointFt = buildFocalPointFt(state);
         const structuralDepth = Number(state?.bowl?.structuralDepth) || 0;
         const solvers = buildActiveTierSolvers(state?.tiers, focalPointFt);
         const activeSolvers = filterActiveSolvers(solvers);
-        const bowlConfig = buildBowlConfig(state, template);
+        let bowlConfig = buildBowlConfig(state, template);
         const egressParams = buildEgressParams(state);
         const visibility = buildFieldVisibility(state);
         const seatPreviewOptions = buildSceneSeatPreviewOptions(state);
@@ -68,24 +81,29 @@ export class RenderRuntime {
         let tierAisleLayouts = [];
         let clipRange = null;
 
-        if (fieldRenderer && bowlConfig) {
-            offsetCorrection = fieldRenderer.getOffsetCorrection(bowlConfig, state?.sport);
-            const rawClipRange = fieldRenderer.getClipPositionRange(
+        if (fieldGeometryPort && bowlConfig) {
+            offsetCorrection = fieldGeometryPort.getOffsetCorrection(bowlConfig, sportName);
+            const rawClipRange = fieldGeometryPort.getClipPositionRange(
                 solvers,
                 bowlConfig,
                 state?.bowl?.clipAxis,
                 offsetCorrection
             );
-            clipRange = clampClipPosition(state, rawClipRange);
-            visualFocalY = fieldRenderer.getVisualFocalY(template, focalPointFt, state?.sport);
+            clipRange = buildClipPositionControlSync(state, rawClipRange);
+            if (clipRange) {
+                bowlConfig = buildBowlConfig(state, template, {
+                    clipPosition: clipRange.value
+                });
+            }
+            visualFocalY = fieldGeometryPort.getVisualFocalY(template, focalPointFt, sportName);
             tierMetricsByIndex = buildTierMetricsByIndex({
                 solvers,
                 bowlConfig,
                 egressParams,
                 offsetCorrection,
-                calculateRowLength: (nextBowlConfig, offset) => fieldRenderer.calculateRowLength(nextBowlConfig, offset)
+                calculateRowLength: (nextBowlConfig, offset) => fieldGeometryPort.calculateRowLength(nextBowlConfig, offset)
             });
-            tierAisleLayouts = fieldRenderer.buildTierAisleLayouts(
+            tierAisleLayouts = fieldGeometryPort.buildTierAisleLayouts(
                 solvers,
                 bowlConfig,
                 tierMetricsByIndex,
@@ -111,7 +129,25 @@ export class RenderRuntime {
             tierAisleLayouts,
             seatPreviewOptions,
             clipRange,
+            controlSync: {
+                clipRange
+            },
             offsetCorrection,
+            fieldRenderInput: {
+                template,
+                customRunoff,
+                solvers,
+                visibility,
+                visualFocalY,
+                bowlConfig,
+                offsetCorrection,
+                tierAisleLayouts
+            },
+            profileRenderInput: {
+                solvers,
+                focalPointFt,
+                options: buildProfileRenderOptions(state, structuralDepth)
+            },
             scene3DInput: {
                 template,
                 customRunoff,
@@ -148,16 +184,21 @@ export class RenderRuntime {
     }
 
     getExportContext(state) {
-        const template = this._resolveTemplate(state);
+        const sportName = resolveSportName(state);
+        const template = resolveSportTemplate(sportName);
+        this._template = template;
         const structuralDepth = Number(state?.bowl?.structuralDepth) || 0;
+        const clipRange = this._snapshot?.controlSync?.clipRange ?? null;
 
         return {
             stateJson: typeof state?.toJSON === 'function' ? state.toJSON() : null,
-            sportName: state?.sport || '',
+            sportName,
             template,
             solvers: this._solvers || [],
             activeSolvers: this.getActiveSolvers(),
-            bowlConfig: buildBowlConfig(state, template),
+            bowlConfig: buildBowlConfig(state, template, {
+                clipPosition: clipRange?.value
+            }),
             egressParams: buildEgressParams(state),
             focalPointFt: buildFocalPointFt(state),
             primaryTierParameters: buildPrimaryTierParameters(state),
@@ -166,15 +207,5 @@ export class RenderRuntime {
             structuralDepthFt: structuralDepth / 12.0,
             offsetCorrection: Number(this._snapshot?.offsetCorrection) || 0
         };
-    }
-
-    _resolveTemplate(state) {
-        const nextSport = getTemplate(state?.sport) ? state.sport : 'Football';
-        if (state && nextSport !== state.sport) {
-            state.sport = nextSport;
-        }
-
-        this._template = getTemplate(nextSport);
-        return this._template;
     }
 }

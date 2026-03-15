@@ -133,7 +133,7 @@ describe('SeatingBowlApp shell callbacks', () => {
         expect(app.getProjectMetadata().name).toBe('Baseball Study');
     });
 
-    it('routes editor and export DTO getters through state selectors', () => {
+    it('builds export context DTOs through the render runtime public API', () => {
         const app = new SeatingBowlApp();
 
         app.state.setup.customRunoff = null;
@@ -152,9 +152,9 @@ describe('SeatingBowlApp shell callbacks', () => {
         app.state.occupancy.seatsBetweenAisles = 18;
         app.state.occupancy.egressFactor = 0.3;
 
-        const exportContext = app.exportController._getExportContext();
+        const exportContext = app.renderRuntime.getExportContext(app.state);
 
-        expect(app.editorControls._getRunoffDistance()).toBe(25);
+        expect(exportContext.runoffDistance).toBe(25);
         expect(exportContext.focalPointFt).toEqual({ x: 0, z: 9 });
         expect(exportContext.egressParams).toEqual({
             seatWidthIn: 22,
@@ -202,7 +202,7 @@ describe('SeatingBowlApp shell callbacks', () => {
         app.scene3DController = /** @type {any} */ (scene3DController);
         app.update = vi.fn();
 
-        app._handleThemeChanged('dark');
+        app.applyTheme('dark');
 
         expect(fieldRenderer.setTheme).toHaveBeenCalledWith('dark');
         expect(profileRenderer.setTheme).toHaveBeenCalledWith('dark');
@@ -210,62 +210,67 @@ describe('SeatingBowlApp shell callbacks', () => {
         expect(app.update).toHaveBeenCalledTimes(1);
     });
 
-    it('delegates canvas observation to the shell viewport controller', () => {
+    it('routes view-tab canvas lookup through the shell viewport controller', () => {
         const app = new SeatingBowlApp();
-        const scheduleUpdate = vi.spyOn(app, '_scheduleUpdate').mockImplementation(() => {});
         const fieldCanvas = { parentElement: { id: 'fieldParent' } };
         const profileCanvas = { parentElement: { id: 'profileParent' } };
-        const observeViewCanvases = vi.fn();
+        const update = vi.spyOn(app, 'update').mockImplementation(() => {});
 
         app.editorShell = /** @type {any} */ ({
             getViewCanvases: vi.fn(() => ({
                 fieldCanvas,
                 profileCanvas
             })),
-            observeViewCanvases
+            handleViewTabChanged: vi.fn((tab, handlers) => {
+                handlers.onFieldActivated();
+            })
         });
 
-        app._setupCanvases();
+        app.setViewTab('field');
 
-        expect(observeViewCanvases).toHaveBeenCalledTimes(1);
-        const args = observeViewCanvases.mock.calls[0][0];
-        expect(args.fieldCanvas).toBe(fieldCanvas);
-        expect(args.profileCanvas).toBe(profileCanvas);
-        args.onResize();
-        expect(scheduleUpdate).toHaveBeenCalledTimes(1);
-
+        expect(app.editorShell.getViewCanvases).toHaveBeenCalledTimes(1);
+        expect(app.editorShell.handleViewTabChanged).toHaveBeenCalledWith('field', expect.objectContaining({
+            fieldCanvas,
+            profileCanvas
+        }));
+        expect(update).toHaveBeenCalledTimes(1);
     });
 
-    it('routes narrow scene export access through the scene3d controller', () => {
+    it('routes scene export access through the scene3d controller when building public export descriptors', async () => {
         const app = new SeatingBowlApp();
-        const geometryPort = {
-            getExportSceneData: vi.fn(),
-            buildClosedStructuralProfile: vi.fn(),
-            getBowlGeometrySegments: vi.fn()
-        };
         const exportSceneData = {
-            bowlMeshes: [{ id: 'bowl' }],
-            aisleMeshes: [{ id: 'aisle' }],
-            seatMeshes: [{ id: 'seat' }],
+            bowlMeshes: [
+                {
+                    type: 'Mesh',
+                    geometry: {
+                        attributes: {
+                            position: { array: [0, 0, 0, 1, 0, 0, 0, 1, 0] }
+                        },
+                        index: { array: [0, 1, 2] }
+                    }
+                }
+            ],
+            aisleMeshes: [],
+            seatMeshes: [],
             THREE: { Scene: function Scene() {} }
         };
 
         app.scene3DController = /** @type {any} */ ({
             getGeometryPort: vi.fn(() => ({
-                ...geometryPort,
-                getExportSceneData: vi.fn(() => exportSceneData)
+                getExportSceneData: vi.fn(() => exportSceneData),
+                buildClosedStructuralProfile: vi.fn(),
+                getBowlGeometrySegments: vi.fn()
             }))
         });
 
-        const scenePort = app.exportController._getSceneGeometryPort();
+        const descriptor = await app.exportController.buildDescriptor('obj');
 
-        expect(scenePort).toEqual(expect.objectContaining({
-            buildClosedStructuralProfile: expect.any(Function),
-            getBowlGeometrySegments: expect.any(Function),
-            getExportSceneData: expect.any(Function)
-        }));
-        expect(scenePort.getExportSceneData()).toBe(exportSceneData);
         expect(app.scene3DController.getGeometryPort).toHaveBeenCalledTimes(1);
+        expect(descriptor).toMatchObject({
+            filename: 'seating - study - football.obj',
+            type: 'text/plain'
+        });
+        expect(descriptor.content).toContain('f 1 2 3');
     });
 
     it('delegates clip position control sync to editor controls instead of mutating the DOM directly', () => {
@@ -281,12 +286,16 @@ describe('SeatingBowlApp shell callbacks', () => {
         app.editorControls = /** @type {any} */ ({
             syncClipPositionRange
         });
-        app.fieldRenderer = /** @type {any} */ ({
+        const geometryPort = {
             getOffsetCorrection,
             getClipPositionRange,
             getVisualFocalY: vi.fn(() => 0),
             buildTierAisleLayouts: vi.fn(() => []),
-            calculateRowLength: vi.fn(() => 100),
+            calculateRowLength: vi.fn(() => 100)
+        };
+        app.fieldRenderer = /** @type {any} */ ({
+            ...geometryPort,
+            getGeometryPort: vi.fn(() => geometryPort),
             render: renderField
         });
         app.profileRenderer = /** @type {any} */ ({
@@ -323,10 +332,14 @@ describe('SeatingBowlApp shell callbacks', () => {
     it('does not initialize rhino when there is no scene export geometry', async () => {
         const app = new SeatingBowlApp();
         const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-        const loadRhino3dm = vi.spyOn(app.exportController, '_loadRhino3dm').mockResolvedValue(/** @type {any} */ ({}));
+        app.scene3DController = /** @type {any} */ ({
+            getGeometryPort: vi.fn(() => ({
+                getExportSceneData: () => null
+            }))
+        });
 
         await expect(app.exportController.buildDescriptor('rhino')).resolves.toBeNull();
-        expect(loadRhino3dm).not.toHaveBeenCalled();
+        expect(app.scene3DController.getGeometryPort).toHaveBeenCalledTimes(1);
         expect(warnSpy).toHaveBeenCalledWith('No 3D data to export');
     });
 
@@ -335,12 +348,16 @@ describe('SeatingBowlApp shell callbacks', () => {
         const isScene3DActive = vi.fn(() => true);
         const updateScene3D = vi.fn();
 
-        app.fieldRenderer = /** @type {any} */ ({
+        const geometryPort = {
             getClipPositionRange: vi.fn(() => ({ min: 0, max: 0 })),
             getOffsetCorrection: vi.fn(() => 0),
             getVisualFocalY: vi.fn(() => 12),
             buildTierAisleLayouts: vi.fn(() => []),
-            calculateRowLength: vi.fn(() => 100),
+            calculateRowLength: vi.fn(() => 100)
+        };
+        app.fieldRenderer = /** @type {any} */ ({
+            ...geometryPort,
+            getGeometryPort: vi.fn(() => geometryPort),
             render: vi.fn()
         });
         app.profileRenderer = /** @type {any} */ ({
@@ -377,6 +394,7 @@ describe('SeatingBowlApp shell callbacks', () => {
     it('replays the scene3d side effects when restored state opens directly to the 3D tab', () => {
         const app = new SeatingBowlApp();
         app.editorControls = /** @type {any} */ ({
+            applyImportedConfig: vi.fn(),
             syncFromState: vi.fn()
         });
         app.editorShell = /** @type {any} */ ({
@@ -384,21 +402,28 @@ describe('SeatingBowlApp shell callbacks', () => {
             getViewCanvases: vi.fn(() => ({
                 fieldCanvas: null,
                 profileCanvas: null
-            }))
+            })),
+            handleViewTabChanged: vi.fn((tab, handlers) => {
+                handlers.onScene3DActivated();
+            })
         });
-        app.state.ui.activeViewTab = 'scene3d';
-        app.state.ui.activeResultsTab = 'statsTab';
+        app.scene3DController = /** @type {any} */ ({
+            activate: vi.fn().mockResolvedValue(),
+            renderBookmarks: vi.fn()
+        });
 
-        const handleViewTabChanged = vi
-            .spyOn(app, '_handleViewTabChanged')
-            .mockImplementation(() => {});
-
-        app._applyStateToDom();
+        app.loadState({
+            ui: {
+                activeViewTab: 'scene3d',
+                activeResultsTab: 'statsTab'
+            }
+        });
 
         expect(app.editorShell.syncFromState).toHaveBeenCalledWith({
             activeViewTab: 'scene3d',
             activeResultsTab: 'statsTab'
         });
-        expect(handleViewTabChanged).toHaveBeenCalledWith('scene3d');
+        expect(app.editorShell.handleViewTabChanged).toHaveBeenCalledWith('scene3d', expect.any(Object));
+        expect(app.scene3DController.activate).toHaveBeenCalledTimes(1);
     });
 });

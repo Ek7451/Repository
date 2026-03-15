@@ -265,7 +265,8 @@ describe('StatsPanel', () => {
         panel.update(viewModel);
 
         expect(detailsEl.querySelectorAll).toHaveBeenCalledWith('.results-details:not(.collapsed)');
-        expect(detailsEl.innerHTML).toMatch(/class="collapsible\s+tier-section-1 results-details"/);
-        expect(detailsEl.innerHTML).not.toContain('collapsed tier-section-1');
+        const tierSectionClasses = detailsEl.innerHTML.match(/class="([^"]*tier-section-1[^"]*)"/)?.[1] ?? '';
+        expect(tierSectionClasses).toContain('results-details');
+        expect(tierSectionClasses).not.toContain('collapsed');
     });
 });

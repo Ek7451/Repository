@@ -4,7 +4,7 @@ import { getTemplate } from '../../core/sports-templates.js';
 import { AppState } from '../../state/app-state.js';
 import { RenderRuntime } from '../../ui/render-runtime.js';
 
-function createFieldRenderer() {
+function createFieldGeometryPort() {
     return {
         getOffsetCorrection: vi.fn(() => 6),
         getClipPositionRange: vi.fn(() => ({ min: -4, max: 48 })),
@@ -25,7 +25,7 @@ describe('RenderRuntime', () => {
     test('recompute assembles the current render snapshot and caches tier layouts', () => {
         const state = AppState.reset();
         const runtime = new RenderRuntime();
-        const fieldRenderer = createFieldRenderer();
+        const fieldGeometryPort = createFieldGeometryPort();
 
         state.setup.customRunoff = 30;
         state.setup.focalZ = 9;
@@ -35,7 +35,7 @@ describe('RenderRuntime', () => {
         state.tiers[1].enabled = true;
         state.tiers[1].numRows = 12;
 
-        const snapshot = runtime.recompute({ state, fieldRenderer });
+        const snapshot = runtime.recompute({ state, fieldGeometryPort });
 
         expect(snapshot.template).toBe(getTemplate('Football'));
         expect(snapshot.customRunoff).toBe(30);
@@ -56,6 +56,20 @@ describe('RenderRuntime', () => {
         expect(snapshot.offsetCorrection).toBe(6);
         expect(snapshot.tierMetricsByIndex).toBeInstanceOf(Map);
         expect(snapshot.tierAisleLayouts).toHaveLength(2);
+        expect(snapshot.fieldRenderInput).toEqual(expect.objectContaining({
+            template: snapshot.template,
+            customRunoff: 30,
+            solvers: snapshot.solvers
+        }));
+        expect(snapshot.profileRenderInput).toEqual(expect.objectContaining({
+            solvers: snapshot.solvers,
+            focalPointFt: { x: 0, z: 9 },
+            options: {
+                structuralDepth: 18,
+                showSightlines: true,
+                showCLabels: true
+            }
+        }));
         expect(snapshot.seatPreviewOptions).toEqual({
             showSeatCubes: true,
             seatWidthIn: 22
@@ -98,30 +112,36 @@ describe('RenderRuntime', () => {
         }));
     });
 
-    test('recompute normalizes sport names, clamps clip position, and derives next-tier defaults from solved rows', () => {
+    test('recompute keeps runtime normalization pure while deriving clamped render inputs and next-tier defaults', () => {
         const state = AppState.reset();
         const runtime = new RenderRuntime();
-        const fieldRenderer = createFieldRenderer();
+        const fieldGeometryPort = createFieldGeometryPort();
 
         state.sport = 'Invalid Sport';
+        state.bowl.clipEnabled = true;
         state.bowl.clipAxis = 'Y';
         state.bowl.clipPosition = 500;
         state.tiers[1].enabled = true;
 
-        const snapshot = runtime.recompute({ state, fieldRenderer });
+        const snapshot = runtime.recompute({ state, fieldGeometryPort });
         const tierDefaults = runtime.getTierDefaults(2);
 
-        expect(state.sport).toBe('Football');
+        expect(state.sport).toBe('Invalid Sport');
         expect(snapshot.template).toBe(getTemplate('Football'));
-        expect(state.bowl.clipPosition).toBe(48);
+        expect(snapshot.bowlConfig.clip.position).toBe(48);
+        expect(state.bowl.clipPosition).toBe(500);
         expect(snapshot.clipRange).toEqual({
             min: -4,
             max: 48,
             value: 48
         });
-        expect(fieldRenderer.getClipPositionRange).toHaveBeenCalledWith(
+        expect(fieldGeometryPort.getClipPositionRange).toHaveBeenCalledWith(
             snapshot.solvers,
-            snapshot.bowlConfig,
+            expect.objectContaining({
+                clip: expect.objectContaining({
+                    position: 500
+                })
+            }),
             'Y',
             6
         );

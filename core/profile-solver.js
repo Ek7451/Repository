@@ -62,6 +62,13 @@ export function buildNextTierDefaultsFromSolvers(solvers, tierNum) {
     };
 }
 
+export function buildNextTierDefaultsFromTiers(tiers, focalPointFt, tierNum) {
+    return buildNextTierDefaultsFromSolvers(
+        buildActiveTierSolvers(tiers, focalPointFt),
+        tierNum
+    );
+}
+
 export function buildTierMetricsByIndex({
     solvers,
     bowlConfig,

@@ -274,6 +274,20 @@ export class FieldRenderer {
         syncFieldThemeColors(this._theme);
     }
 
+    getGeometryPort() {
+        return {
+            calculateRowLength: this.calculateRowLength.bind(this),
+            generateTierAisleLayout: this.generateTierAisleLayout.bind(this),
+            getTierSectionMetricsOverlayData: this.getTierSectionMetricsOverlayData.bind(this),
+            getTierAisleBandPolygons: this.getTierAisleBandPolygons.bind(this),
+            getBowlGeometrySegments: this.getBowlGeometrySegments.bind(this),
+            getOffsetCorrection: this.getOffsetCorrection.bind(this),
+            getVisualFocalY: this.getVisualFocalY.bind(this),
+            buildTierAisleLayouts: this.buildTierAisleLayouts.bind(this),
+            getClipPositionRange: this.getClipPositionRange.bind(this)
+        };
+    }
+
     _rerenderFromLastArgs() {
         if (!this._lastArgs) return;
         this.render(

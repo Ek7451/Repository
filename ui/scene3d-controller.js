@@ -20,6 +20,13 @@ function getErrorMessage(error) {
     return String(error);
 }
 
+function getDefaultElement(id) {
+    if (typeof document === 'undefined' || !document || typeof document.getElementById !== 'function') {
+        return null;
+    }
+    return document.getElementById(id);
+}
+
 export class Scene3DController {
     constructor(options = {}) {
         const settings = /** @type {{
@@ -36,11 +43,11 @@ export class Scene3DController {
             onLayoutChanged?: (() => void)
         }} */ (options && typeof options === 'object' ? options : {});
 
-        this.containerEl = settings.containerEl ?? null;
-        this.bookmarksBarEl = settings.bookmarksBarEl ?? null;
-        this.bookmarksListEl = settings.bookmarksListEl ?? null;
-        this.saveBookmarkBtnEl = settings.saveBookmarkBtnEl ?? null;
-        this.toggleBookmarksBtnEl = settings.toggleBookmarksBtnEl ?? null;
+        this.containerEl = settings.containerEl ?? getDefaultElement('scene3dContainer');
+        this.bookmarksBarEl = settings.bookmarksBarEl ?? getDefaultElement('cameraBookmarksBar');
+        this.bookmarksListEl = settings.bookmarksListEl ?? getDefaultElement('cameraBookmarksList');
+        this.saveBookmarkBtnEl = settings.saveBookmarkBtnEl ?? getDefaultElement('saveCameraViewBtn');
+        this.toggleBookmarksBtnEl = settings.toggleBookmarksBtnEl ?? getDefaultElement('toggleBookmarksBtn');
         this.getTheme = typeof settings.getTheme === 'function'
             ? settings.getTheme
             : () => 'light';

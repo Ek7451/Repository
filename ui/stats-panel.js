@@ -1,5 +1,12 @@
 import { SightlineAnalyzer, getCValueQuality } from '../core/sightline-calc.js';
 
+function getDefaultElement(id) {
+    if (typeof document === 'undefined' || !document || typeof document.getElementById !== 'function') {
+        return null;
+    }
+    return document.getElementById(id);
+}
+
 const QUALITY_LEGEND = [
     { label: 'Excellent', color: '#7aae1a', rangeLabel: '>= 4.75"' },
     { label: 'Good', color: '#37996e', rangeLabel: '3.5 - 4.71"' },
@@ -530,8 +537,8 @@ export function buildStatsViewModel({
 
 export class StatsPanel {
     constructor({ statsEl = null, detailsEl = null } = {}) {
-        this.statsEl = statsEl;
-        this.detailsEl = detailsEl;
+        this.statsEl = statsEl ?? getDefaultElement('statsContent');
+        this.detailsEl = detailsEl ?? getDefaultElement('detailsContent');
         this.openDetailSections = new Set();
     }
 

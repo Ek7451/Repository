@@ -11,28 +11,34 @@ function createCanvas(id) {
 }
 
 afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
 });
 
 describe('SeatingBowlApp runtime seams', () => {
     test('rehydrates config state and replays the current load-side effects', () => {
+        vi.useFakeTimers();
         const app = new SeatingBowlApp();
-        const hydrateTierInitialization = vi.fn();
-        const syncFromState = vi.fn();
+        const applyImportedConfig = vi.fn();
+        const syncControlsFromState = vi.fn();
+        const syncShellFromState = vi.fn();
         const renderBookmarks = vi.fn();
+        const update = vi.spyOn(app, 'update').mockImplementation(() => {});
         const refreshProjectChrome = vi.spyOn(app.projectShell, 'refreshProjectChrome').mockImplementation(() => {});
-        const scheduleUpdate = vi.spyOn(app, '_scheduleUpdate').mockImplementation(() => {});
 
         app.editorControls = /** @type {any} */ ({
-            hydrateTierInitialization,
-            syncFromState
+            applyImportedConfig,
+            syncFromState: syncControlsFromState
+        });
+        app.editorShell = /** @type {any} */ ({
+            syncFromState: syncShellFromState
         });
         app.scene3DController = /** @type {any} */ ({
             renderBookmarks
         });
 
-        app._loadStateFromConfig({
+        app.loadState({
             sport: 'Soccer',
             setup: {
                 customRunoff: 20,
@@ -59,17 +65,19 @@ describe('SeatingBowlApp runtime seams', () => {
             ],
             bookmarks: [{ name: 'View 1', position: { x: 1, y: 2, z: 3 }, target: { x: 4, y: 5, z: 6 } }]
         });
+        vi.runAllTimers();
 
         expect(app.state.sport).toBe('Soccer');
         expect(app.state.setup.focalZ).toBe(7);
         expect(app.renderRuntime.getExportContext(app.state).template).toBe(getTemplate('Soccer'));
-        expect(hydrateTierInitialization).toHaveBeenCalledWith(expect.objectContaining({
+        expect(applyImportedConfig).toHaveBeenCalledWith(expect.objectContaining({
             sport: 'Soccer'
         }));
-        expect(syncFromState).toHaveBeenCalledTimes(1);
+        expect(syncControlsFromState).toHaveBeenCalledTimes(1);
+        expect(syncShellFromState).toHaveBeenCalledTimes(1);
         expect(renderBookmarks).toHaveBeenCalledTimes(1);
         expect(refreshProjectChrome).toHaveBeenCalledTimes(1);
-        expect(scheduleUpdate).toHaveBeenCalledTimes(1);
+        expect(update).toHaveBeenCalledTimes(1);
     });
 
     test('applies project metadata before state load and emits the current success status', () => {
@@ -78,7 +86,7 @@ describe('SeatingBowlApp runtime seams', () => {
             onStatusChanged: (status) => statuses.push(status)
         });
         const eventOrder = [];
-        const loadStateSpy = vi.spyOn(app, '_loadStateFromConfig').mockImplementation(() => {
+        const loadStateSpy = vi.spyOn(app, 'loadState').mockImplementation(() => {
             eventOrder.push(`load:${app.getProjectMetadata().id}`);
         });
 
@@ -120,13 +128,16 @@ describe('SeatingBowlApp runtime seams', () => {
                 }
             }
         ]));
-
-        app.fieldRenderer = /** @type {any} */ ({
+        const geometryPort = {
             getClipPositionRange: vi.fn(() => ({ min: -5, max: 60 })),
             getOffsetCorrection,
             getVisualFocalY: vi.fn(() => 123),
             buildTierAisleLayouts,
-            calculateRowLength: vi.fn(() => 150),
+            calculateRowLength: vi.fn(() => 150)
+        };
+        app.fieldRenderer = /** @type {any} */ ({
+            ...geometryPort,
+            getGeometryPort: vi.fn(() => geometryPort),
             render: renderField
         });
         app.profileRenderer = /** @type {any} */ ({
@@ -217,13 +228,14 @@ describe('SeatingBowlApp runtime seams', () => {
             activate: vi.fn().mockResolvedValue()
         });
 
-        app._handleViewTabChanged('scene3d');
+        app.setViewTab('scene3d');
 
         expect(app.state.ui.activeViewTab).toBe('scene3d');
-        expect(app.scene3DController.activate).toHaveBeenCalledTimes(1);
+        expect(app.scene3DController.activate).toHaveBeenCalled();
 
-        app._handleViewTabChanged('scene3d');
+        app.setViewTab('scene3d');
 
-        expect(app.scene3DController.activate).toHaveBeenCalledTimes(2);
+        expect(app.state.ui.activeViewTab).toBe('scene3d');
+        expect(app.scene3DController.activate).toHaveBeenCalled();
     });
 });

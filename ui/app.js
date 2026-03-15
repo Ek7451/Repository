@@ -6,7 +6,7 @@
 import { FieldRenderer } from '../viz/field-renderer.js';
 import { ProfileRenderer } from '../viz/profile-renderer.js';
 import { DEFAULT_STARTUP_PROFILE } from '../core/default-starting-profile.js';
-import { AppState } from '../state/app-state.js';
+import { createAppState, resolveSportName, resolveSportTemplate } from '../state/app-state.js';
 import { EditorControls } from './editor-controls.js';
 import { EditorExportController } from './editor-export-controller.js';
 import { EditorShell } from './editor-shell.js';
@@ -14,10 +14,6 @@ import { ProjectShellController } from './project-shell-controller.js';
 import { RenderRuntime } from './render-runtime.js';
 import { Scene3DController } from './scene3d-controller.js';
 import { StatsPanel } from './stats-panel.js';
-
-function normalizeThemeName(theme) {
-    return theme === 'dark' ? 'dark' : 'light';
-}
 
 export class SeatingBowlApp {
     constructor(options = {}) {
@@ -30,8 +26,7 @@ export class SeatingBowlApp {
             }) => void),
             onStatusChanged?: ((status: { message: string, tone: string }) => void)
         }} */ (options && typeof options === 'object' ? options : {});
-        /** @type {typeof AppState} */
-        this.state = /** @type {typeof AppState} */ (AppState.reset());
+        this.state = createAppState();
         this.fieldRenderer = null;
         this.profileRenderer = null;
         this.scene3DController = null;
@@ -40,30 +35,22 @@ export class SeatingBowlApp {
         this.statsPanel = null;
         this.editorControls = new EditorControls({
             state: this.state,
-            getTemplate: () => this.renderRuntime.getExportContext(this.state).template,
-            getRunoffDistance: () => this.renderRuntime.getExportContext(this.state).runoffDistance,
-            onStateChanged: () => this._scheduleUpdate(),
-            onSportChanged: () => this._handleSportChanged(),
-            getTierDefaults: (tierNum) => this.renderRuntime.getTierDefaults(tierNum)
+            onChange: ({ reason }) => {
+                if (reason === 'sport') {
+                    this._handleSportChanged();
+                    return;
+                }
+                this._scheduleUpdate();
+            }
         });
         this.exportController = new EditorExportController({
             getExportContext: () => this.renderRuntime.getExportContext(this.state),
-            getFieldGeometryPort: () => {
-                if (!this.fieldRenderer) return null;
-                return {
-                    calculateRowLength: this.fieldRenderer.calculateRowLength.bind(this.fieldRenderer),
-                    generateTierAisleLayout: this.fieldRenderer.generateTierAisleLayout.bind(this.fieldRenderer),
-                    getTierSectionMetricsOverlayData: this.fieldRenderer.getTierSectionMetricsOverlayData.bind(this.fieldRenderer),
-                    getTierAisleBandPolygons: this.fieldRenderer.getTierAisleBandPolygons.bind(this.fieldRenderer),
-                    getBowlGeometrySegments: this.fieldRenderer.getBowlGeometrySegments.bind(this.fieldRenderer),
-                    getOffsetCorrection: this.fieldRenderer.getOffsetCorrection.bind(this.fieldRenderer)
-                };
-            },
+            getFieldGeometryPort: () => this.fieldRenderer?.getGeometryPort?.() ?? null,
             getSceneGeometryPort: () => this.scene3DController?.getGeometryPort() ?? null
         });
         this.editorShell = null;
         this.projectShell = new ProjectShellController({
-            getSportName: () => this.state?.sport,
+            getSportName: () => resolveSportName(this.state),
             onProjectChromeChanged: callbacks.onProjectChromeChanged,
             onStatusChanged: callbacks.onStatusChanged
         });
@@ -72,10 +59,10 @@ export class SeatingBowlApp {
     async init() {
         try {
             this._initEditorShell();
-            this._setupCanvases();
-
-            const activeTheme = this._getActiveThemeName();
-            const { fieldCanvas, profileCanvas } = this.editorShell?.getViewCanvases?.() ?? {};
+            const { fieldCanvas, profileCanvas } = this.editorShell?.connectViewCanvases?.({
+                onResize: () => this._scheduleUpdate()
+            }) ?? {};
+            const activeTheme = this.editorShell?.getTheme?.() ?? 'light';
 
             // Init 2D renderers
             this.fieldRenderer = new FieldRenderer(fieldCanvas, { theme: activeTheme });
@@ -83,25 +70,19 @@ export class SeatingBowlApp {
 
             this.editorControls?.init();
             this.scene3DController = new Scene3DController({
-                containerEl: document.getElementById('scene3dContainer'),
-                bookmarksBarEl: document.getElementById('cameraBookmarksBar'),
-                bookmarksListEl: document.getElementById('cameraBookmarksList'),
-                saveBookmarkBtnEl: document.getElementById('saveCameraViewBtn'),
-                toggleBookmarksBtnEl: document.getElementById('toggleBookmarksBtn'),
-                getTheme: () => this._getActiveThemeName(),
+                getTheme: () => this.editorShell?.getTheme?.() ?? 'light',
                 getBookmarks: () => this.state.bookmarks,
-                getSportName: () => this.state.sport,
+                getSportName: () => resolveSportName(this.state),
                 download: (descriptor) => this.editorShell?.download(descriptor),
                 ensureContainerSize: () => this.editorShell?.ensure3DContainerSize(),
                 onLayoutChanged: () => {
                     this.editorShell?.ensure3DContainerSize();
                 }
             });
-            this._initStatsPanel();
+            this.statsPanel = new StatsPanel();
 
             this.state.fromJSON(DEFAULT_STARTUP_PROFILE);
-            this.renderRuntime.getExportContext(this.state);
-            this._applyStateToDom();
+            this.syncShellFromState();
             this.scene3DController?.renderBookmarks();
             this.projectShell.refreshProjectChrome();
             this.setProjectStatus('Project persistence ready');
@@ -171,7 +152,7 @@ export class SeatingBowlApp {
     loadProject(project) {
         if (!project || typeof project !== 'object') return;
         this.setProjectMetadata(project);
-        this._loadStateFromConfig(project.state ?? {}, { logSuccess: true });
+        this.loadState(project.state ?? {}, { logSuccess: true });
         this.setProjectStatus(
             `Loaded ${this.getProjectChrome().name}`,
             'success'
@@ -183,10 +164,10 @@ export class SeatingBowlApp {
         this.editorShell = new EditorShell({
             themeStorageKey: 'jlg-seating-theme',
             onThemeChanged: (theme, options = {}) => {
-                this._handleThemeChanged(theme, options);
+                this.applyTheme(theme, options);
             },
             onViewTabChanged: (tab) => {
-                this._handleViewTabChanged(tab);
+                this.setViewTab(tab);
             },
             onResultsTabChanged: (tab) => {
                 this.state.ui.activeResultsTab = tab;
@@ -202,65 +183,45 @@ export class SeatingBowlApp {
         this.editorShell.init();
     }
 
-    _handleThemeChanged(theme, { rerender = true } = {}) {
+    applyTheme(theme, { rerender = true } = {}) {
         this._applyThemeToVisualizers(theme);
         if (rerender && this.fieldRenderer && this.profileRenderer) {
             this.update();
         }
     }
 
-    _getActiveThemeName() {
-        return normalizeThemeName(this.editorShell?.getTheme?.());
-    }
-
-    _applyThemeToVisualizers(theme = this._getActiveThemeName()) {
-        const nextTheme = normalizeThemeName(theme);
+    _applyThemeToVisualizers(theme = this.editorShell?.getTheme?.() ?? 'light') {
+        const nextTheme = theme === 'dark' ? 'dark' : 'light';
         this.fieldRenderer?.setTheme?.(nextTheme);
         this.profileRenderer?.setTheme?.(nextTheme);
         this.scene3DController?.applyTheme(nextTheme);
         return nextTheme;
     }
 
-    _initStatsPanel() {
-        this.statsPanel = new StatsPanel({
-            statsEl: document.getElementById('statsContent'),
-            detailsEl: document.getElementById('detailsContent')
-        });
-    }
-
-    _setupCanvases() {
-        const { fieldCanvas, profileCanvas } = this.editorShell?.getViewCanvases?.() ?? {};
-        if (!fieldCanvas || !profileCanvas) return;
-        this.editorShell?.observeViewCanvases({
-            fieldCanvas,
-            profileCanvas,
-            onResize: () => this._scheduleUpdate()
-        });
-    }
-
-    _applyStateToDom() {
+    syncShellFromState() {
         this.editorControls?.syncFromState();
         this.editorShell?.syncFromState({
             activeViewTab: this.state.ui?.activeViewTab,
             activeResultsTab: this.state.ui?.activeResultsTab
         });
         if (this.state.ui?.activeViewTab === 'scene3d') {
-            this._handleViewTabChanged('scene3d');
+            this.setViewTab('scene3d');
         }
     }
 
     _handleSportChanged() {
+        const sportName = resolveSportName(this.state);
+        const template = resolveSportTemplate(sportName);
         this.state.applySportDefaults({
-            sport: this.state.sport,
-            template: this.renderRuntime.getExportContext(this.state).template
+            sport: sportName,
+            template
         });
-        this.renderRuntime.getExportContext(this.state);
-        this._applyStateToDom();
+        this.syncShellFromState();
         this.projectShell.refreshProjectChrome();
         this._scheduleUpdate();
     }
 
-    _handleViewTabChanged(tab) {
+    setViewTab(tab) {
         const nextTab = ['profile', 'field', 'scene3d'].includes(tab) ? tab : 'profile';
         const { fieldCanvas, profileCanvas } = this.editorShell?.getViewCanvases?.() ?? {};
         this.state.ui.activeViewTab = nextTab;
@@ -284,30 +245,33 @@ export class SeatingBowlApp {
         try {
             const snapshot = this.renderRuntime.recompute({
                 state: this.state,
-                fieldRenderer: this.fieldRenderer
+                fieldGeometryPort: this.fieldRenderer?.getGeometryPort?.() ?? null
             });
-            if (snapshot?.clipRange) {
-                this.editorControls?.syncClipPositionRange(snapshot.clipRange);
+            if (snapshot?.controlSync?.clipRange) {
+                this.state.applyClipPositionRange(snapshot.controlSync.clipRange);
+                this.editorControls?.syncClipPositionRange(snapshot.controlSync.clipRange);
             }
-            if (this.fieldRenderer) {
+            if (this.fieldRenderer && snapshot?.fieldRenderInput) {
+                const fieldRenderInput = snapshot.fieldRenderInput;
                 this.fieldRenderer.render(
-                    snapshot.template,
-                    snapshot.customRunoff,
-                    snapshot.solvers,
-                    snapshot.visibility,
-                    snapshot.visualFocalY,
-                    snapshot.bowlConfig,
-                    snapshot.offsetCorrection,
-                    snapshot.tierAisleLayouts
+                    fieldRenderInput.template,
+                    fieldRenderInput.customRunoff,
+                    fieldRenderInput.solvers,
+                    fieldRenderInput.visibility,
+                    fieldRenderInput.visualFocalY,
+                    fieldRenderInput.bowlConfig,
+                    fieldRenderInput.offsetCorrection,
+                    fieldRenderInput.tierAisleLayouts
                 );
             }
-            if (this.profileRenderer) {
-                const showSightlines = this.state.setup.sightlineVisuals;
-                this.profileRenderer.renderMulti(snapshot.solvers, snapshot.focalPointFt.x, snapshot.focalPointFt.z, {
-                    structuralDepth: snapshot.structuralDepth,
-                    showSightlines,
-                    showCLabels: showSightlines
-                });
+            if (this.profileRenderer && snapshot?.profileRenderInput) {
+                const profileRenderInput = snapshot.profileRenderInput;
+                this.profileRenderer.renderMulti(
+                    profileRenderInput.solvers,
+                    profileRenderInput.focalPointFt.x,
+                    profileRenderInput.focalPointFt.z,
+                    profileRenderInput.options
+                );
             }
             this.scene3DController?.update(snapshot.scene3DInput, {
                 isActive: this.editorShell?.isScene3DActive() ?? false
@@ -321,20 +285,19 @@ export class SeatingBowlApp {
     _loadConfigText(text) {
         try {
             const config = JSON.parse(text);
-            this._loadStateFromConfig(config, { logSuccess: true });
+            this.loadState(config, { logSuccess: true });
         } catch (err) {
             console.error('Failed to load config:', err);
             throw err;
         }
     }
 
-    _loadStateFromConfig(config, options = {}) {
+    loadState(config, options = {}) {
         if (!config || typeof config !== 'object') return;
         const { logSuccess = false } = options;
         this.state.fromJSON(config);
-        this.renderRuntime.getExportContext(this.state);
-        this.editorControls?.hydrateTierInitialization(config);
-        this._applyStateToDom();
+        this.editorControls?.applyImportedConfig(config);
+        this.syncShellFromState();
         this.scene3DController?.renderBookmarks();
         this.projectShell.refreshProjectChrome();
         this._scheduleUpdate();

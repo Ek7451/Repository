@@ -152,6 +152,24 @@ export class EditorShell {
         };
     }
 
+    connectViewCanvases({ onResize = null } = {}) {
+        const { fieldCanvas, profileCanvas } = this.getViewCanvases();
+        if (!fieldCanvas || !profileCanvas) {
+            return { fieldCanvas, profileCanvas };
+        }
+
+        this.observeViewCanvases({
+            fieldCanvas,
+            profileCanvas,
+            onResize
+        });
+
+        return {
+            fieldCanvas,
+            profileCanvas
+        };
+    }
+
     applyUrlViewOverride() {
         try {
             const params = new URLSearchParams(window.location.search);
