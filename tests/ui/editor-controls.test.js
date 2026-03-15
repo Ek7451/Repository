@@ -114,7 +114,7 @@ afterEach(() => {
 });
 
 describe('EditorControls', () => {
-    test('syncs the live AppState into editor DOM controls and shell state', () => {
+    test('syncs the live AppState into editor DOM controls only', () => {
         const elements = {
             sportSelect: createElement(),
             customRunoffInput: createElement(),
@@ -135,19 +135,13 @@ describe('EditorControls', () => {
         state.setup.customRunoff = null;
         state.bowl.type = 'Side1';
         state.bowl.clipEnabled = true;
-        state.ui.activeViewTab = 'scene3d';
-        state.ui.activeResultsTab = 'detailsTab';
 
         vi.stubGlobal('document', createDocumentStub(elements));
 
-        const syncShellState = vi.fn();
-        const onScene3DTabRestored = vi.fn();
         const controls = new EditorControls({
             state,
             getTemplate: () => ({ field_length: 360, field_width: 180 }),
-            getRunoffDistance: () => 30,
-            syncShellState,
-            onScene3DTabRestored
+            getRunoffDistance: () => 30
         });
 
         controls.init();
@@ -163,11 +157,6 @@ describe('EditorControls', () => {
         expect(elements.clipPlaneControls.style.display).toBe('block');
         expect(elements.tier1Section.classList.contains('tier-disabled')).toBe(false);
         expect(elements.tier2Section.classList.contains('tier-disabled')).toBe(true);
-        expect(syncShellState).toHaveBeenCalledWith({
-            activeViewTab: 'scene3d',
-            activeResultsTab: 'detailsTab'
-        });
-        expect(onScene3DTabRestored).toHaveBeenCalledWith('scene3d');
     });
 
     test('owns clip position control range sync for the shared AppState UI', () => {

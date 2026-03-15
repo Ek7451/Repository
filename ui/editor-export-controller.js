@@ -1,4 +1,4 @@
-import { ProfileSolver } from '../core/profile-solver.js';
+import { getSolverTierIndex, ProfileSolver } from '../core/profile-solver.js';
 import { buildPlanDxfExportDescriptor, buildProfileDxfExportDescriptor } from '../export/dxf-exporter.js';
 import {
     buildConfigExportDescriptor,
@@ -8,137 +8,110 @@ import {
 } from '../export/obj-csv-exporter.js';
 import { buildRhinoExportDescriptor } from '../export/rhino/rhino-exporter.js';
 
-function getSolverTierIndex(solver, fallbackIndex = 0) {
-    const tierIndex = Number(solver?.tierIndex);
-    return Number.isInteger(tierIndex) ? tierIndex : fallbackIndex;
-}
-
 export class EditorExportController {
     constructor(options = {}) {
         const settings = /** @type {{
-            getActiveSolvers?: (() => Array<object>),
-            getBowlConfig?: (() => object | null),
-            getCurrentTemplate?: (() => object | null),
-            getEgressParams?: (() => object | null),
-            getFieldRenderer?: (() => object | null),
-            getFocalPointFt?: (() => { x: number, z: number }),
-            getOffsetCorrection?: ((bowlConfig: object | null, sportName?: string) => number),
-            getPrimaryTierParameters?: (() => object | null),
-            getRunoffDistance?: (() => number),
-            getScene3D?: (() => object | null),
-            getSceneExportData?: (() => object | null),
-            getSportName?: (() => string),
-            getState?: (() => object | null),
-            getTierAisleLayouts?: (() => Array<object>)
+            getExportContext?: (() => {
+                stateJson?: object | null,
+                sportName?: string,
+                template?: object | null,
+                runoffDistance?: number,
+                focalPointFt?: { x: number, z: number },
+                bowlConfig?: object | null,
+                egressParams?: object | null,
+                primaryTierParameters?: object | null,
+                solvers?: Array<object>,
+                activeSolvers?: Array<object>,
+                tierAisleLayouts?: Array<object>,
+                structuralDepthFt?: number,
+                offsetCorrection?: number
+            } | null),
+            getFieldGeometryPort?: (() => object | null),
+            getSceneGeometryPort?: (() => object | null)
         }} */ (options && typeof options === 'object' ? options : {});
 
-        this._getActiveSolvers = typeof settings.getActiveSolvers === 'function'
-            ? settings.getActiveSolvers
-            : () => [];
-        this._getBowlConfig = typeof settings.getBowlConfig === 'function'
-            ? settings.getBowlConfig
+        this._getExportContext = typeof settings.getExportContext === 'function'
+            ? settings.getExportContext
             : () => null;
-        this._getCurrentTemplate = typeof settings.getCurrentTemplate === 'function'
-            ? settings.getCurrentTemplate
+        this._getFieldGeometryPort = typeof settings.getFieldGeometryPort === 'function'
+            ? settings.getFieldGeometryPort
             : () => null;
-        this._getEgressParams = typeof settings.getEgressParams === 'function'
-            ? settings.getEgressParams
-            : () => ({});
-        this._getFieldRenderer = typeof settings.getFieldRenderer === 'function'
-            ? settings.getFieldRenderer
+        this._getSceneGeometryPort = typeof settings.getSceneGeometryPort === 'function'
+            ? settings.getSceneGeometryPort
             : () => null;
-        this._getFocalPointFt = typeof settings.getFocalPointFt === 'function'
-            ? settings.getFocalPointFt
-            : () => ({ x: 0, z: 0 });
-        this._getOffsetCorrection = typeof settings.getOffsetCorrection === 'function'
-            ? settings.getOffsetCorrection
-            : () => 0;
-        this._getPrimaryTierParameters = typeof settings.getPrimaryTierParameters === 'function'
-            ? settings.getPrimaryTierParameters
-            : () => null;
-        this._getRunoffDistance = typeof settings.getRunoffDistance === 'function'
-            ? settings.getRunoffDistance
-            : () => 0;
-        this._getScene3D = typeof settings.getScene3D === 'function'
-            ? settings.getScene3D
-            : () => null;
-        this._getSceneExportData = typeof settings.getSceneExportData === 'function'
-            ? settings.getSceneExportData
-            : () => null;
-        this._getSportName = typeof settings.getSportName === 'function'
-            ? settings.getSportName
-            : () => '';
-        this._getState = typeof settings.getState === 'function'
-            ? settings.getState
-            : () => null;
-        this._getTierAisleLayouts = typeof settings.getTierAisleLayouts === 'function'
-            ? settings.getTierAisleLayouts
-            : () => [];
 
         this._rhino3dmPromise = null;
     }
 
     async buildDescriptor(kind) {
-        const state = this._getState();
-        const solvers = this._getActiveSolvers();
-        const sportName = this._getSportName();
+        const exportContext = this._getNormalizedExportContext();
+        const solvers = exportContext.activeSolvers;
+        const sportName = exportContext.sportName;
 
         switch (kind) {
         case 'json':
-            return this._buildStudyResultsExportDescriptor(solvers, sportName, state);
+            return this._buildStudyResultsExportDescriptor(exportContext);
         case 'obj':
-            return buildObjExportDescriptor({
-                bowlMeshes: this._getSceneExportData()?.bowlMeshes || [],
-                sportName,
-                objectName: 'SeatingBowl'
-            });
+            return this._buildObjDescriptor(sportName);
         case 'rhino':
-            return this._buildRhinoSceneExportDescriptor(solvers, sportName);
+            return this._buildRhinoDescriptor(exportContext);
         case 'profile-dxf':
             return buildProfileDxfExportDescriptor({
                 solvers,
-                structuralDepthFt: (Number(state?.bowl?.structuralDepth) || 0) / 12.0,
-                focalPointFt: this._getFocalPointFt(),
+                structuralDepthFt: exportContext.structuralDepthFt,
+                focalPointFt: exportContext.focalPointFt,
                 sportName
             });
         case 'plan-dxf':
-            return this._buildPlanDxfDescriptor(solvers, sportName);
+            return this._buildPlanDxfDescriptor(exportContext);
         case 'csv':
             return buildTierMetricsCsvExportDescriptor({
                 solvers,
-                focalPointFt: this._getFocalPointFt(),
+                focalPointFt: exportContext.focalPointFt,
                 sportName
             });
         case 'config':
             return buildConfigExportDescriptor({
-                config: typeof state?.toJSON === 'function' ? state.toJSON() : null
+                config: exportContext.stateJson
             });
         default:
             return null;
         }
     }
 
-    _buildStudyResultsExportDescriptor(solvers, sportName, state) {
-        const bowlConfig = this._getBowlConfig();
-        const egressParams = this._getEgressParams();
+    _buildObjDescriptor(sportName) {
+        const sceneGeometryPort = this._getSceneGeometryPort() || null;
+        const sceneExportData = sceneGeometryPort?.getExportSceneData?.() || null;
 
-        return buildStudyResultsJsonExportDescriptor({
-            solvers,
+        return buildObjExportDescriptor({
+            bowlMeshes: sceneExportData?.bowlMeshes || [],
             sportName,
-            profileType: state?.tiers?.[0]?.profileType || 'Parabolic',
-            template: this._getCurrentTemplate(),
-            bowlConfig,
-            egressParams,
-            focalPointFt: this._getFocalPointFt(),
-            primaryTierParameters: this._getPrimaryTierParameters(),
-            tierArtifacts: this._buildTierRuntimeArtifacts(solvers, bowlConfig, egressParams, sportName)
+            objectName: 'SeatingBowl'
         });
     }
 
-    _buildPlanDxfDescriptor(solvers, sportName) {
-        const bowlConfig = this._getBowlConfig();
-        const egressParams = this._getEgressParams();
-        const tierPlanArtifacts = this._buildTierRuntimeArtifacts(solvers, bowlConfig, egressParams, sportName).map((artifact) => ({
+    async _buildRhinoDescriptor(exportContext) {
+        const sceneGeometryPort = this._getSceneGeometryPort() || null;
+        const sceneExportData = sceneGeometryPort?.getExportSceneData?.() || null;
+        return this._buildRhinoSceneExportDescriptor(exportContext, sceneExportData);
+    }
+
+    _buildStudyResultsExportDescriptor(exportContext) {
+        return buildStudyResultsJsonExportDescriptor({
+            solvers: exportContext.activeSolvers,
+            sportName: exportContext.sportName,
+            profileType: exportContext.stateJson?.tiers?.[0]?.profileType || 'Parabolic',
+            template: exportContext.template,
+            bowlConfig: exportContext.bowlConfig,
+            egressParams: exportContext.egressParams,
+            focalPointFt: exportContext.focalPointFt,
+            primaryTierParameters: exportContext.primaryTierParameters,
+            tierArtifacts: this._buildTierRuntimeArtifacts(exportContext)
+        });
+    }
+
+    _buildPlanDxfDescriptor(exportContext) {
+        const tierPlanArtifacts = this._buildTierRuntimeArtifacts(exportContext).map((artifact) => ({
             tierIndex: artifact.tierIndex,
             rowGeometries: artifact.rowGeometries,
             aislePolygons: artifact.aislePolygons,
@@ -146,43 +119,42 @@ export class EditorExportController {
         }));
 
         return buildPlanDxfExportDescriptor({
-            template: this._getCurrentTemplate(),
-            runoffFt: this._getRunoffDistance(),
-            visualFocalXFt: this._getFocalPointFt().x,
+            template: exportContext.template,
+            runoffFt: exportContext.runoffDistance,
+            visualFocalXFt: exportContext.focalPointFt.x,
             tierPlanArtifacts,
-            sportName
+            sportName: exportContext.sportName
         });
     }
 
-    _buildTierRuntimeArtifacts(solvers, bowlConfig, egressParams, sportName) {
-        const fieldRenderer = this._getFieldRenderer();
-        if (!fieldRenderer) return [];
+    _buildTierRuntimeArtifacts(exportContext) {
+        const fieldGeometryPort = this._getFieldGeometryPort();
+        if (!fieldGeometryPort) return [];
 
-        const offsetCorrection = this._getOffsetCorrection(bowlConfig, sportName);
         const tierLayoutMap = new Map(
-            (this._getTierAisleLayouts() || []).map((layout, index) => [getSolverTierIndex(layout, index), layout])
+            (exportContext.tierAisleLayouts || []).map((layout, index) => [getSolverTierIndex(layout, index), layout])
         );
 
-        return (solvers || []).map((solver, index) => {
+        return (exportContext.activeSolvers || []).map((solver, index) => {
             if (!solver?.rows || solver.rows.length === 0) return null;
 
             const tierIndex = getSolverTierIndex(solver, index);
             const tierMetrics = ProfileSolver.calculateTierMetrics(
                 solver,
-                bowlConfig,
-                fieldRenderer,
-                egressParams,
-                offsetCorrection
+                exportContext.bowlConfig,
+                fieldGeometryPort,
+                exportContext.egressParams,
+                exportContext.offsetCorrection
             );
 
             let tierLayout = tierLayoutMap.get(tierIndex) || null;
             if (!tierLayout && tierMetrics) {
-                tierLayout = fieldRenderer.generateTierAisleLayout(
+                tierLayout = fieldGeometryPort.generateTierAisleLayout(
                     solver,
-                    bowlConfig,
+                    exportContext.bowlConfig,
                     tierMetrics,
-                    offsetCorrection,
-                    egressParams
+                    exportContext.offsetCorrection,
+                    exportContext.egressParams
                 );
                 if (tierLayout) {
                     tierLayout.tierIndex = tierIndex;
@@ -190,14 +162,24 @@ export class EditorExportController {
             }
 
             const overlayData = tierLayout
-                ? fieldRenderer.getTierSectionMetricsOverlayData(solver, bowlConfig, tierLayout, offsetCorrection)
+                ? fieldGeometryPort.getTierSectionMetricsOverlayData(
+                    solver,
+                    exportContext.bowlConfig,
+                    tierLayout,
+                    exportContext.offsetCorrection
+                )
                 : { sectionLabels: [], rowSeatLabels: [] };
             const aislePolygons = tierLayout
-                ? fieldRenderer.getTierAisleBandPolygons(solver, bowlConfig, tierLayout, offsetCorrection)
+                ? fieldGeometryPort.getTierAisleBandPolygons(
+                    solver,
+                    exportContext.bowlConfig,
+                    tierLayout,
+                    exportContext.offsetCorrection
+                )
                 : [];
             const rowGeometries = solver.rows.map((row) => {
-                const frontOffset = (row.x - row.tread_depth) - offsetCorrection;
-                return fieldRenderer.getBowlGeometrySegments(bowlConfig, frontOffset);
+                const frontOffset = (row.x - row.tread_depth) - exportContext.offsetCorrection;
+                return fieldGeometryPort.getBowlGeometrySegments(exportContext.bowlConfig, frontOffset);
             });
 
             return {
@@ -211,30 +193,29 @@ export class EditorExportController {
         }).filter(Boolean);
     }
 
-    _buildRhinoTierArtifacts(solvers, bowlConfig, sportName) {
-        const scene3D = this._getScene3D();
-        if (!scene3D) return [];
+    _buildRhinoTierArtifacts(exportContext) {
+        const sceneGeometryPort = this._getSceneGeometryPort();
+        if (!sceneGeometryPort) return [];
 
-        const offsetCorrection = this._getOffsetCorrection(bowlConfig, sportName);
-        const structuralDepthFt = Math.max(0, (Number(bowlConfig?.structuralDepth) || 0) / 12.0);
+        const structuralDepthFt = Math.max(0, Number(exportContext.structuralDepthFt) || 0);
 
-        return (solvers || []).map((solver, index) => {
+        return (exportContext.activeSolvers || []).map((solver, index) => {
             if (!solver?.rows || solver.rows.length === 0) return null;
 
             const tierIndex = getSolverTierIndex(solver, index);
             const offsetSet = new Set();
             solver.rows.forEach((row) => {
-                offsetSet.add((row.x - row.tread_depth) - offsetCorrection);
-                offsetSet.add(row.x - offsetCorrection);
+                offsetSet.add((row.x - row.tread_depth) - exportContext.offsetCorrection);
+                offsetSet.add(row.x - exportContext.offsetCorrection);
             });
 
             let structuralProfile = null;
-            if (structuralDepthFt > 0 && typeof scene3D?.buildClosedStructuralProfile === 'function') {
-                structuralProfile = scene3D.buildClosedStructuralProfile(solver, structuralDepthFt, tierIndex);
+            if (structuralDepthFt > 0 && typeof sceneGeometryPort.buildClosedStructuralProfile === 'function') {
+                structuralProfile = sceneGeometryPort.buildClosedStructuralProfile(solver, structuralDepthFt, tierIndex);
                 if (Array.isArray(structuralProfile)) {
                     structuralProfile.forEach((point) => {
                         if (point && Number.isFinite(point.x)) {
-                            offsetSet.add(point.x - offsetCorrection);
+                            offsetSet.add(point.x - exportContext.offsetCorrection);
                         }
                     });
                 }
@@ -244,7 +225,7 @@ export class EditorExportController {
                 .filter((offset) => Number.isFinite(offset))
                 .map((offsetFt) => ({
                     offsetFt,
-                    segments: scene3D.getBowlGeometrySegments(bowlConfig, offsetFt)
+                    segments: sceneGeometryPort.getBowlGeometrySegments(exportContext.bowlConfig, offsetFt)
                 }));
 
             return {
@@ -255,27 +236,44 @@ export class EditorExportController {
         }).filter(Boolean);
     }
 
-    async _buildRhinoSceneExportDescriptor(solvers, sportName) {
-        const sceneExportData = this._getSceneExportData();
+    async _buildRhinoSceneExportDescriptor(exportContext, sceneExportData) {
         if (!sceneExportData?.bowlMeshes?.length) {
             return buildRhinoExportDescriptor({
-                sportName,
+                sportName: exportContext.sportName,
                 sceneExportData
             });
         }
 
-        const bowlConfig = this._getBowlConfig();
         const rhino = await this._loadRhino3dm();
 
         return buildRhinoExportDescriptor({
             rhino,
-            solvers,
-            bowlConfig,
-            sportName,
+            solvers: exportContext.activeSolvers,
+            bowlConfig: exportContext.bowlConfig,
+            sportName: exportContext.sportName,
             nativeSpectatorBlockLimit: Number(globalThis?.__SBS_RHINO_NATIVE_SPECTATOR_MAX_BLOCKS),
-            tierArtifacts: this._buildRhinoTierArtifacts(solvers, bowlConfig, sportName),
+            tierArtifacts: this._buildRhinoTierArtifacts(exportContext),
             sceneExportData
         });
+    }
+
+    _getNormalizedExportContext() {
+        const context = this._getExportContext();
+        return {
+            stateJson: context?.stateJson ?? null,
+            sportName: context?.sportName ?? '',
+            template: context?.template ?? null,
+            runoffDistance: Number(context?.runoffDistance) || 0,
+            focalPointFt: context?.focalPointFt ?? { x: 0, z: 0 },
+            bowlConfig: context?.bowlConfig ?? null,
+            egressParams: context?.egressParams ?? {},
+            primaryTierParameters: context?.primaryTierParameters ?? null,
+            solvers: Array.isArray(context?.solvers) ? context.solvers : [],
+            activeSolvers: Array.isArray(context?.activeSolvers) ? context.activeSolvers : [],
+            tierAisleLayouts: Array.isArray(context?.tierAisleLayouts) ? context.tierAisleLayouts : [],
+            structuralDepthFt: Number(context?.structuralDepthFt) || 0,
+            offsetCorrection: Number(context?.offsetCorrection) || 0
+        };
     }
 
     async _loadRhino3dm() {

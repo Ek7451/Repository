@@ -133,8 +133,6 @@ export class EditorControls {
             state?: object,
             getTemplate?: (() => object | null),
             getRunoffDistance?: (() => number),
-            syncShellState?: ((payload: { activeViewTab?: string, activeResultsTab?: string }) => void),
-            onScene3DTabRestored?: ((tab: string) => void),
             onStateChanged?: (() => void),
             onSportChanged?: (() => void),
             getTierDefaults?: ((tierNum: number) => object | null)
@@ -149,12 +147,6 @@ export class EditorControls {
         this._getRunoffDistance = typeof settings.getRunoffDistance === 'function'
             ? settings.getRunoffDistance
             : () => 0;
-        this._syncShellState = typeof settings.syncShellState === 'function'
-            ? settings.syncShellState
-            : () => {};
-        this._onScene3DTabRestored = typeof settings.onScene3DTabRestored === 'function'
-            ? settings.onScene3DTabRestored
-            : () => {};
         this._onStateChanged = typeof settings.onStateChanged === 'function'
             ? settings.onStateChanged
             : () => {};
@@ -239,15 +231,6 @@ export class EditorControls {
                 !!this.state.tiers?.[tierNum - 1]?.enabled
             );
         });
-
-        this._syncShellState({
-            activeViewTab: this.state.ui?.activeViewTab,
-            activeResultsTab: this.state.ui?.activeResultsTab
-        });
-
-        if (this.state.ui?.activeViewTab === 'scene3d') {
-            this._onScene3DTabRestored('scene3d');
-        }
     }
 
     syncClipPositionRange({ min = 0, max = 1, value = 0 } = {}) {

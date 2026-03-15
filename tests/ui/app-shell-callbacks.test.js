@@ -116,17 +116,26 @@ describe('SeatingBowlApp shell callbacks', () => {
         expect(chromeUpdates.at(-1)?.name).toBe('Basketball Study');
     });
 
+    it('only normalizes whitespace-only project names when building a save request', () => {
+        const app = new SeatingBowlApp();
+        app.state.sport = 'Baseball';
+        app.setProjectMetadata({
+            id: 'project-1',
+            name: '   ',
+            createdAt: '2026-03-14T00:00:00.000Z',
+            updatedAt: '2026-03-14T01:00:00.000Z'
+        });
+
+        expect(app.getProjectChrome().name).toBe('');
+
+        const saveRequest = app.getProjectSaveRequest();
+        expect(saveRequest.name).toBe('Baseball Study');
+        expect(app.getProjectMetadata().name).toBe('Baseball Study');
+    });
+
     it('routes editor and export DTO getters through state selectors', () => {
         const app = new SeatingBowlApp();
 
-        app._currentTemplate = {
-            runoff: 18,
-            field_width: 160,
-            field_length: 360,
-            shape: 'rectangle',
-            field_radius: 12,
-            arc_angle: 90
-        };
         app.state.setup.customRunoff = null;
         app.state.setup.focalZ = 9;
         app.state.bowl.type = 'Side1';
@@ -143,16 +152,18 @@ describe('SeatingBowlApp shell callbacks', () => {
         app.state.occupancy.seatsBetweenAisles = 18;
         app.state.occupancy.egressFactor = 0.3;
 
-        expect(app.editorControls._getRunoffDistance()).toBe(18);
-        expect(app.exportController._getFocalPointFt()).toEqual({ x: 0, z: 9 });
-        expect(app.exportController._getEgressParams()).toEqual({
+        const exportContext = app.exportController._getExportContext();
+
+        expect(app.editorControls._getRunoffDistance()).toBe(25);
+        expect(exportContext.focalPointFt).toEqual({ x: 0, z: 9 });
+        expect(exportContext.egressParams).toEqual({
             seatWidthIn: 22,
             maxAisleWidthIn: 66,
             minAisleWidthIn: 44,
             egressFactor: 0.3,
             seatsBetweenAisles: 18
         });
-        expect(app.exportController._getPrimaryTierParameters()).toEqual({
+        expect(exportContext.primaryTierParameters).toEqual({
             targetCValue: 4,
             firstRowDistance: 45,
             firstRowElevation: 6,
@@ -162,12 +173,10 @@ describe('SeatingBowlApp shell callbacks', () => {
             eyeHeight: 3.75,
             eyeSetback: 6
         });
-        expect(app.exportController._getBowlConfig()).toEqual({
+        expect(exportContext.bowlConfig).toMatchObject({
             width: 160,
             length: 360,
             shape: 'rectangle',
-            radius_arc: 12,
-            arc_angle: 90,
             type: 'Side1',
             corner: 'Chamfer',
             radius: 24,
@@ -186,18 +195,18 @@ describe('SeatingBowlApp shell callbacks', () => {
         const app = new SeatingBowlApp();
         const fieldRenderer = { setTheme: vi.fn() };
         const profileRenderer = { setTheme: vi.fn() };
-        const scene3D = { applyTheme: vi.fn() };
+        const scene3DController = { applyTheme: vi.fn() };
 
         app.fieldRenderer = /** @type {any} */ (fieldRenderer);
         app.profileRenderer = /** @type {any} */ (profileRenderer);
-        app.scene3D = /** @type {any} */ (scene3D);
+        app.scene3DController = /** @type {any} */ (scene3DController);
         app.update = vi.fn();
 
         app._handleThemeChanged('dark');
 
         expect(fieldRenderer.setTheme).toHaveBeenCalledWith('dark');
         expect(profileRenderer.setTheme).toHaveBeenCalledWith('dark');
-        expect(scene3D.applyTheme).toHaveBeenCalledWith('dark');
+        expect(scene3DController.applyTheme).toHaveBeenCalledWith('dark');
         expect(app.update).toHaveBeenCalledTimes(1);
     });
 
@@ -208,15 +217,11 @@ describe('SeatingBowlApp shell callbacks', () => {
         const profileCanvas = { parentElement: { id: 'profileParent' } };
         const observeViewCanvases = vi.fn();
 
-        vi.stubGlobal('document', {
-            getElementById: vi.fn((id) => {
-                if (id === 'fieldCanvas') return fieldCanvas;
-                if (id === 'profileCanvas') return profileCanvas;
-                return null;
-            })
-        });
-
         app.editorShell = /** @type {any} */ ({
+            getViewCanvases: vi.fn(() => ({
+                fieldCanvas,
+                profileCanvas
+            })),
             observeViewCanvases
         });
 
@@ -229,44 +234,45 @@ describe('SeatingBowlApp shell callbacks', () => {
         args.onResize();
         expect(scheduleUpdate).toHaveBeenCalledTimes(1);
 
-        vi.unstubAllGlobals();
     });
 
-    it('uses the explicit scene export accessor without falling back to scene internals', () => {
+    it('routes narrow scene export access through the scene3d controller', () => {
         const app = new SeatingBowlApp();
+        const geometryPort = {
+            getExportSceneData: vi.fn(),
+            buildClosedStructuralProfile: vi.fn(),
+            getBowlGeometrySegments: vi.fn()
+        };
         const exportSceneData = {
             bowlMeshes: [{ id: 'bowl' }],
             aisleMeshes: [{ id: 'aisle' }],
             seatMeshes: [{ id: 'seat' }],
             THREE: { Scene: function Scene() {} }
         };
-        const getExportSceneData = vi.fn(() => exportSceneData);
 
-        app.scene3D = /** @type {any} */ ({
-            getExportSceneData,
-            bowlGroup: { children: ['private-bowl'] },
-            aisleGroup: { children: ['private-aisle'] },
-            seatGroup: { children: ['private-seat'] },
-            THREE: { Private: true }
+        app.scene3DController = /** @type {any} */ ({
+            getGeometryPort: vi.fn(() => ({
+                ...geometryPort,
+                getExportSceneData: vi.fn(() => exportSceneData)
+            }))
         });
 
-        expect(app._getSceneExportData()).toBe(exportSceneData);
-        expect(getExportSceneData).toHaveBeenCalledTimes(1);
+        const scenePort = app.exportController._getSceneGeometryPort();
 
-        app.scene3D = /** @type {any} */ ({
-            bowlGroup: { children: ['private-bowl'] },
-            aisleGroup: { children: ['private-aisle'] },
-            seatGroup: { children: ['private-seat'] },
-            THREE: { Private: true }
-        });
-
-        expect(app._getSceneExportData()).toBeNull();
+        expect(scenePort).toEqual(expect.objectContaining({
+            buildClosedStructuralProfile: expect.any(Function),
+            getBowlGeometrySegments: expect.any(Function),
+            getExportSceneData: expect.any(Function)
+        }));
+        expect(scenePort.getExportSceneData()).toBe(exportSceneData);
+        expect(app.scene3DController.getGeometryPort).toHaveBeenCalledTimes(1);
     });
 
     it('delegates clip position control sync to editor controls instead of mutating the DOM directly', () => {
         const app = new SeatingBowlApp();
         const syncClipPositionRange = vi.fn();
         const getOffsetCorrection = vi.fn(() => 0);
+        const renderField = vi.fn();
         const getClipPositionRange = vi.fn(() => ({
             min: -10,
             max: 80
@@ -277,26 +283,36 @@ describe('SeatingBowlApp shell callbacks', () => {
         });
         app.fieldRenderer = /** @type {any} */ ({
             getOffsetCorrection,
-            getClipPositionRange
+            getClipPositionRange,
+            getVisualFocalY: vi.fn(() => 0),
+            buildTierAisleLayouts: vi.fn(() => []),
+            calculateRowLength: vi.fn(() => 100),
+            render: renderField
+        });
+        app.profileRenderer = /** @type {any} */ ({
+            renderMulti: vi.fn()
+        });
+        app.statsPanel = /** @type {any} */ ({
+            update: vi.fn()
+        });
+        app.editorShell = /** @type {any} */ ({
+            isScene3DActive: vi.fn(() => false)
         });
         app.state.sport = 'Football';
         app.state.bowl.clipAxis = 'X';
         app.state.bowl.clipPosition = 200;
 
-        app._updateClipSliderRange([
-            { rows: [{ x: 60, tread_depth: 10 }] }
-        ], {
-            width: 100
-        });
+        app.update();
 
         expect(app.state.bowl.clipPosition).toBe(80);
-        expect(getOffsetCorrection).toHaveBeenCalledWith({ width: 100 }, 'Football');
+        expect(getOffsetCorrection).toHaveBeenCalledWith(expect.objectContaining({ width: 160 }), 'Football');
         expect(getClipPositionRange).toHaveBeenCalledWith(
-            [{ rows: [{ x: 60, tread_depth: 10 }] }],
-            { width: 100 },
+            expect.any(Array),
+            expect.objectContaining({ width: 160 }),
             'X',
             0
         );
+        expect(renderField).toHaveBeenCalledTimes(1);
         expect(syncClipPositionRange).toHaveBeenCalledWith({
             min: -10,
             max: 80,
@@ -309,55 +325,66 @@ describe('SeatingBowlApp shell callbacks', () => {
         const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
         const loadRhino3dm = vi.spyOn(app.exportController, '_loadRhino3dm').mockResolvedValue(/** @type {any} */ ({}));
 
-        await expect(app._buildExportDescriptor('rhino')).resolves.toBeNull();
+        await expect(app.exportController.buildDescriptor('rhino')).resolves.toBeNull();
         expect(loadRhino3dm).not.toHaveBeenCalled();
         expect(warnSpy).toHaveBeenCalledWith('No 3D data to export');
     });
 
-    it('uses shell visibility state when resizing the 3D scene', () => {
+    it('uses shell visibility state when updating the scene3d controller', () => {
         const app = new SeatingBowlApp();
-        const ensure3DContainerSize = vi.fn();
         const isScene3DActive = vi.fn(() => true);
-        const forceResize = vi.fn();
-        const updateField = vi.fn();
-        const updateBowl = vi.fn();
+        const updateScene3D = vi.fn();
 
+        app.fieldRenderer = /** @type {any} */ ({
+            getClipPositionRange: vi.fn(() => ({ min: 0, max: 0 })),
+            getOffsetCorrection: vi.fn(() => 0),
+            getVisualFocalY: vi.fn(() => 12),
+            buildTierAisleLayouts: vi.fn(() => []),
+            calculateRowLength: vi.fn(() => 100),
+            render: vi.fn()
+        });
+        app.profileRenderer = /** @type {any} */ ({
+            renderMulti: vi.fn()
+        });
+        app.editorControls = /** @type {any} */ ({
+            syncClipPositionRange: vi.fn()
+        });
         app.editorShell = /** @type {any} */ ({
-            ensure3DContainerSize,
             isScene3DActive
         });
-        app.scene3D = /** @type {any} */ ({
-            forceResize,
-            updateField,
-            updateBowl
+        app.scene3DController = /** @type {any} */ ({
+            update: updateScene3D
         });
-        app._scene3dReady = true;
-        app._currentTemplate = {
-            field_width: 160,
-            field_length: 360,
-            shape: 'rectangle',
-            field_radius: 0,
-            arc_angle: 0
-        };
-        app._solvers = [];
-        app._tierAisleLayouts = [];
+        app.statsPanel = /** @type {any} */ ({
+            update: vi.fn()
+        });
 
-        app._update3D();
+        app.update();
 
         expect(isScene3DActive).toHaveBeenCalledTimes(1);
-        expect(ensure3DContainerSize).toHaveBeenCalledTimes(1);
-        expect(forceResize).toHaveBeenCalledTimes(1);
-        expect(updateField).toHaveBeenCalledTimes(1);
-        expect(updateBowl).toHaveBeenCalledTimes(1);
+        expect(updateScene3D).toHaveBeenCalledWith(
+            expect.objectContaining({
+                template: app.renderRuntime.getSnapshot()?.template,
+                focalZ: app.state.setup.focalZ,
+                bowlConfig: expect.objectContaining({
+                    width: 160
+                })
+            }),
+            { isActive: true }
+        );
     });
 
     it('replays the scene3d side effects when restored state opens directly to the 3D tab', () => {
         const app = new SeatingBowlApp();
-        vi.stubGlobal('document', {
-            getElementById: () => null
+        app.editorControls = /** @type {any} */ ({
+            syncFromState: vi.fn()
         });
         app.editorShell = /** @type {any} */ ({
-            syncFromState: vi.fn()
+            syncFromState: vi.fn(),
+            getViewCanvases: vi.fn(() => ({
+                fieldCanvas: null,
+                profileCanvas: null
+            }))
         });
         app.state.ui.activeViewTab = 'scene3d';
         app.state.ui.activeResultsTab = 'statsTab';
@@ -373,7 +400,5 @@ describe('SeatingBowlApp shell callbacks', () => {
             activeResultsTab: 'statsTab'
         });
         expect(handleViewTabChanged).toHaveBeenCalledWith('scene3d');
-
-        vi.unstubAllGlobals();
     });
 });

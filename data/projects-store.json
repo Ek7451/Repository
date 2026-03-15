@@ -1727,10 +1727,10 @@
     {
       "id": "project_2783d5b0-d999-4416-b5ec-e52c0fad844d",
       "ownerId": "e@jlg.com",
-      "name": "F",
+      "name": "F- Hockey",
       "sport": "Ice Hockey",
       "createdAt": "2026-03-14T21:55:20.259Z",
-      "updatedAt": "2026-03-14T21:59:26.150Z",
+      "updatedAt": "2026-03-15T16:39:27.671Z",
       "state": {
         "_version": "phase6-app-state",
         "sport": "Ice Hockey",
@@ -1759,7 +1759,7 @@
           "showSeatCubes3D": false
         },
         "ui": {
-          "activeViewTab": "field",
+          "activeViewTab": "scene3d",
           "activeResultsTab": "statsTab"
         },
         "tiers": [
@@ -2043,10 +2043,10 @@
     {
       "id": "project_643b4ff4-7111-4352-a84e-d4353df7fbe1",
       "ownerId": "e@jlg.com",
-      "name": "j",
+      "name": "J Flag",
       "sport": "Football",
       "createdAt": "2026-03-15T14:56:06.396Z",
-      "updatedAt": "2026-03-15T15:09:05.761Z",
+      "updatedAt": "2026-03-15T16:28:40.936Z",
       "state": {
         "_version": "phase6-app-state",
         "sport": "Football",
@@ -2083,21 +2083,21 @@
             "enabled": true,
             "profileType": "Linear",
             "cValue": 5.5,
-            "numRows": 47,
-            "firstRowDist": 115,
-            "firstRowElev": 13,
+            "numRows": 15,
+            "firstRowDist": 50,
+            "firstRowElev": 9,
             "treadDepth": 33,
             "riserHeight": 14.5,
             "eyeHeight": 3.9,
             "eyeSetback": 4
           },
           {
-            "enabled": false,
+            "enabled": true,
             "profileType": "Parabolic",
             "cValue": 4,
             "numRows": 10,
-            "firstRowDist": 10,
-            "firstRowElev": 0,
+            "firstRowDist": 88,
+            "firstRowElev": 44,
             "treadDepth": 33,
             "riserHeight": 10,
             "eyeHeight": 3.75,

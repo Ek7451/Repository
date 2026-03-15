@@ -91,6 +91,10 @@ body.dashboard-shell {
     margin: 0;
 }
 
+.project-card h3 {
+  color: #1a1f23; /* ← choose whatever color you want */
+}
+
 .dashboard-copy {
     margin: 8px 0 0;
     color: #55606a;

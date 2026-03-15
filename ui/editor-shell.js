@@ -145,6 +145,13 @@ export class EditorShell {
         this.setResultsTab(activeResultsTab, { notify: false });
     }
 
+    getViewCanvases() {
+        return {
+            fieldCanvas: /** @type {HTMLCanvasElement | null} */ (document.getElementById('fieldCanvas')),
+            profileCanvas: /** @type {HTMLCanvasElement | null} */ (document.getElementById('profileCanvas'))
+        };
+    }
+
     applyUrlViewOverride() {
         try {
             const params = new URLSearchParams(window.location.search);
