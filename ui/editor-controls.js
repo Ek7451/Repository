@@ -234,6 +234,23 @@ export class EditorControls {
         }
     }
 
+    syncClipPositionRange({ min = 0, max = 1, value = 0 } = {}) {
+        const slider = getInputElement('clipPositionSlider');
+        const input = getInputElement('clipPositionInput');
+        if (!slider || !input) return;
+
+        const nextMin = Number.isFinite(min) ? min : 0;
+        const nextMax = Number.isFinite(max) ? max : (nextMin + 1);
+        const nextValue = Number.isFinite(value) ? value : nextMin;
+
+        slider.min = String(nextMin);
+        slider.max = String(nextMax);
+        input.min = String(nextMin);
+        input.max = String(nextMax);
+        slider.value = String(nextValue);
+        input.value = String(nextValue);
+    }
+
     hydrateTierInitialization(config) {
         this._tier2Initialized = Array.isArray(config?.tiers) && config.tiers.length > 1;
         this._tier3Initialized = Array.isArray(config?.tiers) && config.tiers.length > 2;

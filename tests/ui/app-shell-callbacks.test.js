@@ -197,10 +197,41 @@ describe('SeatingBowlApp shell callbacks', () => {
         expect(app._getSceneExportData()).toBeNull();
     });
 
+    it('delegates clip position control sync to editor controls instead of mutating the DOM directly', () => {
+        const app = new SeatingBowlApp();
+        const syncClipPositionRange = vi.fn();
+
+        app.editorControls = /** @type {any} */ ({
+            syncClipPositionRange
+        });
+        app.fieldRenderer = /** @type {any} */ ({
+            getBowlGeometrySegments: vi.fn(() => [
+                { cmd: 'moveTo', x: -10, y: -20 },
+                { cmd: 'lineTo', x: 80, y: 40 }
+            ])
+        });
+        app.state.sport = 'Football';
+        app.state.bowl.clipAxis = 'X';
+        app.state.bowl.clipPosition = 200;
+
+        app._updateClipSliderRange([
+            { rows: [{ x: 60, tread_depth: 10 }] }
+        ], {
+            width: 100
+        });
+
+        expect(app.state.bowl.clipPosition).toBe(80);
+        expect(syncClipPositionRange).toHaveBeenCalledWith({
+            min: -10,
+            max: 80,
+            value: 80
+        });
+    });
+
     it('does not initialize rhino when there is no scene export geometry', async () => {
         const app = new SeatingBowlApp();
         const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-        const loadRhino3dm = vi.spyOn(app, '_loadRhino3dm').mockResolvedValue(/** @type {any} */ ({}));
+        const loadRhino3dm = vi.spyOn(app.exportController, '_loadRhino3dm').mockResolvedValue(/** @type {any} */ ({}));
 
         await expect(app._buildExportDescriptor('rhino')).resolves.toBeNull();
         expect(loadRhino3dm).not.toHaveBeenCalled();

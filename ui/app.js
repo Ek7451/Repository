@@ -8,14 +8,6 @@ import { ProfileSolver } from '../core/profile-solver.js';
 import { FieldRenderer } from '../viz/field-renderer.js';
 import { ProfileRenderer } from '../viz/profile-renderer.js';
 import { DEFAULT_STARTUP_PROFILE } from '../core/default-starting-profile.js';
-import { buildPlanDxfExportDescriptor, buildProfileDxfExportDescriptor } from '../export/dxf-exporter.js';
-import {
-    buildConfigExportDescriptor,
-    buildObjExportDescriptor,
-    buildStudyResultsJsonExportDescriptor,
-    buildTierMetricsCsvExportDescriptor
-} from '../export/obj-csv-exporter.js';
-import { buildRhinoExportDescriptor } from '../export/rhino/rhino-exporter.js';
 import { AppState } from '../state/app-state.js';
 import {
     buildProjectChromeSnapshot,
@@ -25,15 +17,12 @@ import {
 } from '../state/project.js';
 import { CameraBookmarks } from './camera-bookmarks.js';
 import { EditorControls } from './editor-controls.js';
+import { EditorExportController } from './editor-export-controller.js';
 import { EditorShell } from './editor-shell.js';
 import { buildStatsViewModel, StatsPanel } from './stats-panel.js';
 // Scene3D is imported lazily in _init3DAsync to avoid blocking if Three.js CDN is unavailable
 
 const EDGE_SPORTS = ['Ice Hockey', 'Football', 'Concert', 'Soccer', 'Basketball'];
-
-function getInputElement(id) {
-    return /** @type {HTMLInputElement | null} */ (document.getElementById(id));
-}
 
 function getCanvasElement(id) {
     return /** @type {HTMLCanvasElement | null} */ (document.getElementById(id));
@@ -80,7 +69,6 @@ export class SeatingBowlApp {
         this._solvers = [];
         this._scene3dReady = false;
         this._tierAisleLayouts = [];
-        this._rhino3dmPromise = null;
         this.cameraBookmarks = null;
         this.statsPanel = null;
         this.editorControls = new EditorControls({
@@ -92,6 +80,22 @@ export class SeatingBowlApp {
             onStateChanged: () => this._scheduleUpdate(),
             onSportChanged: () => this._handleSportChanged(),
             getTierDefaults: (tierNum) => this._getTierDefaultsForEnabledTier(tierNum)
+        });
+        this.exportController = new EditorExportController({
+            getActiveSolvers: () => this._getActiveSolvers(),
+            getBowlConfig: () => this._getBowlConfig(),
+            getCurrentTemplate: () => this._currentTemplate,
+            getEgressParams: () => this._getEgressParams(),
+            getFieldRenderer: () => this.fieldRenderer,
+            getFocalPointFt: () => this._getFocalPointFt(),
+            getOffsetCorrection: (bowlConfig, sportName) => this._getOffsetCorrection(bowlConfig, sportName),
+            getPrimaryTierParameters: () => this._buildPrimaryTierParameters(),
+            getRunoffDistance: () => this._getRunoffDistance(),
+            getScene3D: () => this.scene3D,
+            getSceneExportData: () => this._getSceneExportData(),
+            getSportName: () => this.state.sport,
+            getState: () => this.state,
+            getTierAisleLayouts: () => this._tierAisleLayouts || []
         });
         this.editorShell = null;
 
@@ -156,6 +160,7 @@ export class SeatingBowlApp {
             this._debounceTimer = null;
         }
         this._solvers = [];
+        this.exportController = null;
         this._onProjectChromeChanged = null;
         this._onStatusChanged = null;
     }
@@ -615,105 +620,6 @@ export class SeatingBowlApp {
         return this.scene3D.getExportSceneData();
     }
 
-    _buildTierRuntimeArtifacts(solvers, bowlConfig, egressParams) {
-        if (!this.fieldRenderer) return [];
-
-        const offsetCorrection = this._getOffsetCorrection(bowlConfig, this.state.sport);
-        const tierLayoutMap = new Map(
-            (this._tierAisleLayouts || []).map((layout, index) => [getSolverTierIndex(layout, index), layout])
-        );
-
-        return (solvers || []).map((solver, index) => {
-            if (!solver?.rows || solver.rows.length === 0) return null;
-
-            const tierIndex = getSolverTierIndex(solver, index);
-            const tierMetrics = ProfileSolver.calculateTierMetrics(
-                solver,
-                bowlConfig,
-                this.fieldRenderer,
-                egressParams,
-                offsetCorrection
-            );
-
-            let tierLayout = tierLayoutMap.get(tierIndex) || null;
-            if (!tierLayout && tierMetrics) {
-                tierLayout = this.fieldRenderer.generateTierAisleLayout(
-                    solver,
-                    bowlConfig,
-                    tierMetrics,
-                    offsetCorrection,
-                    egressParams
-                );
-                if (tierLayout) {
-                    tierLayout.tierIndex = tierIndex;
-                }
-            }
-
-            const overlayData = tierLayout
-                ? this.fieldRenderer.getTierSectionMetricsOverlayData(solver, bowlConfig, tierLayout, offsetCorrection)
-                : { sectionLabels: [], rowSeatLabels: [] };
-            const aislePolygons = tierLayout
-                ? this.fieldRenderer.getTierAisleBandPolygons(solver, bowlConfig, tierLayout, offsetCorrection)
-                : [];
-            const rowGeometries = solver.rows.map((row) => {
-                const frontOffset = (row.x - row.tread_depth) - offsetCorrection;
-                return this.fieldRenderer.getBowlGeometrySegments(bowlConfig, frontOffset);
-            });
-
-            return {
-                tierIndex,
-                tierMetrics,
-                tierLayout,
-                overlayData,
-                aislePolygons,
-                rowGeometries
-            };
-        }).filter(Boolean);
-    }
-
-    _buildRhinoTierArtifacts(solvers, bowlConfig, sportName) {
-        if (!this.scene3D) return [];
-
-        const offsetCorrection = this._getOffsetCorrection(bowlConfig, sportName);
-        const structuralDepthFt = Math.max(0, (Number(bowlConfig?.structuralDepth) || 0) / 12.0);
-
-        return (solvers || []).map((solver, index) => {
-            if (!solver?.rows || solver.rows.length === 0) return null;
-
-            const tierIndex = getSolverTierIndex(solver, index);
-            const offsetSet = new Set();
-            solver.rows.forEach((row) => {
-                offsetSet.add((row.x - row.tread_depth) - offsetCorrection);
-                offsetSet.add(row.x - offsetCorrection);
-            });
-
-            let structuralProfile = null;
-            if (structuralDepthFt > 0 && typeof this.scene3D?.buildClosedStructuralProfile === 'function') {
-                structuralProfile = this.scene3D.buildClosedStructuralProfile(solver, structuralDepthFt, tierIndex);
-                if (Array.isArray(structuralProfile)) {
-                    structuralProfile.forEach((point) => {
-                        if (point && Number.isFinite(point.x)) {
-                            offsetSet.add(point.x - offsetCorrection);
-                        }
-                    });
-                }
-            }
-
-            const bowlGeometryByOffset = Array.from(offsetSet)
-                .filter((offset) => Number.isFinite(offset))
-                .map((offsetFt) => ({
-                    offsetFt,
-                    segments: this.scene3D.getBowlGeometrySegments(bowlConfig, offsetFt)
-                }));
-
-            return {
-                tierIndex,
-                structuralProfile: Array.isArray(structuralProfile) ? structuralProfile : null,
-                bowlGeometryByOffset
-            };
-        }).filter(Boolean);
-    }
-
     _buildPrimaryTierParameters() {
         const primaryTier = this.state.tiers[0];
 
@@ -729,190 +635,8 @@ export class SeatingBowlApp {
         };
     }
 
-    _buildStudyResultsExportDescriptor(solvers, sportName) {
-        const bowlConfig = this._getBowlConfig();
-        const egressParams = this._getEgressParams();
-
-        return buildStudyResultsJsonExportDescriptor({
-            solvers,
-            sportName,
-            profileType: this.state.tiers[0]?.profileType || 'Parabolic',
-            template: this._currentTemplate,
-            bowlConfig,
-            egressParams,
-            focalPointFt: this._getFocalPointFt(),
-            primaryTierParameters: this._buildPrimaryTierParameters(),
-            tierArtifacts: this._buildTierRuntimeArtifacts(solvers, bowlConfig, egressParams)
-        });
-    }
-
-    async _buildRhinoSceneExportDescriptor(solvers, sportName) {
-        const sceneExportData = this._getSceneExportData();
-        if (!sceneExportData?.bowlMeshes?.length) {
-            return buildRhinoExportDescriptor({
-                sportName,
-                sceneExportData
-            });
-        }
-
-        const bowlConfig = this._getBowlConfig();
-        const rhino = await this._loadRhino3dm();
-
-        return buildRhinoExportDescriptor({
-            rhino,
-            solvers,
-            bowlConfig,
-            sportName,
-            nativeSpectatorBlockLimit: Number(globalThis?.__SBS_RHINO_NATIVE_SPECTATOR_MAX_BLOCKS),
-            tierArtifacts: this._buildRhinoTierArtifacts(solvers, bowlConfig, sportName),
-            sceneExportData
-        });
-    }
-
-    _buildPlanDxfDescriptor(solvers, sportName) {
-        const bowlConfig = this._getBowlConfig();
-        const egressParams = this._getEgressParams();
-        const tierPlanArtifacts = this._buildTierRuntimeArtifacts(solvers, bowlConfig, egressParams).map((artifact) => ({
-            tierIndex: artifact.tierIndex,
-            rowGeometries: artifact.rowGeometries,
-            aislePolygons: artifact.aislePolygons,
-            overlayData: artifact.overlayData
-        }));
-
-        return buildPlanDxfExportDescriptor({
-            template: this._currentTemplate,
-            runoffFt: this._getRunoffDistance(),
-            visualFocalXFt: this._getFocalPointFt().x,
-            tierPlanArtifacts,
-            sportName
-        });
-    }
-
     async _buildExportDescriptor(kind) {
-        const solvers = this._getActiveSolvers();
-        const sportName = this.state.sport;
-
-        switch (kind) {
-        case 'json':
-            return this._buildStudyResultsExportDescriptor(solvers, sportName);
-        case 'obj':
-            return buildObjExportDescriptor({
-                bowlMeshes: this._getSceneExportData()?.bowlMeshes || [],
-                sportName,
-                objectName: 'SeatingBowl'
-            });
-        case 'rhino':
-            return this._buildRhinoSceneExportDescriptor(solvers, sportName);
-        case 'profile-dxf':
-            return buildProfileDxfExportDescriptor({
-                solvers,
-                structuralDepthFt: (this.state.bowl.structuralDepth || 0) / 12.0,
-                focalPointFt: this._getFocalPointFt(),
-                sportName
-            });
-        case 'plan-dxf':
-            return this._buildPlanDxfDescriptor(solvers, sportName);
-        case 'csv':
-            return buildTierMetricsCsvExportDescriptor({
-                solvers,
-                focalPointFt: this._getFocalPointFt(),
-                sportName
-            });
-        case 'config':
-            return buildConfigExportDescriptor({
-                config: this.state.toJSON()
-            });
-        default:
-            return null;
-        }
-    }
-
-
-
-    async _loadRhino3dm() {
-        if (this._rhino3dmPromise) return this._rhino3dmPromise;
-
-        const sources = [
-            { script: './lib/rhino3dm.js', base: './lib/' },
-            { script: 'https://cdn.jsdelivr.net/npm/rhino3dm@8.17.0/rhino3dm.js', base: 'https://cdn.jsdelivr.net/npm/rhino3dm@8.17.0/' },
-            { script: 'https://unpkg.com/rhino3dm@8.17.0/rhino3dm.js', base: 'https://unpkg.com/rhino3dm@8.17.0/' }
-        ];
-
-        const initFromGlobal = async (wasmBase) => {
-            const initRhino = /** @type {any} */ (window).rhino3dm;
-            if (typeof initRhino !== 'function') {
-                throw new Error('rhino3dm.js did not expose window.rhino3dm');
-            }
-            const rhino = await initRhino({
-                locateFile: (file) => `${wasmBase}${file}`
-            });
-            if (!rhino || typeof rhino.File3dm !== 'function') {
-                throw new Error('rhino3dm initialization returned an invalid module');
-            }
-            return rhino;
-        };
-
-        this._rhino3dmPromise = (async () => {
-            const errors = [];
-
-            // If script was already loaded, try known WASM bases first.
-            if (typeof /** @type {any} */ (window).rhino3dm === 'function') {
-                for (const s of sources) {
-                    try {
-                        return await initFromGlobal(s.base);
-                    } catch (err) {
-                        errors.push(`init ${s.base}: ${err && err.message ? err.message : err}`);
-                    }
-                }
-            }
-
-            // Load script and initialize from each fallback source.
-            for (const s of sources) {
-                try {
-                    await this._loadScriptOnce(s.script);
-                    return await initFromGlobal(s.base);
-                } catch (err) {
-                    errors.push(`${s.script}: ${err && err.message ? err.message : err}`);
-                }
-            }
-
-            throw new Error(`unable to load rhino3dm. ${errors.join(' | ')}`);
-        })().catch((err) => {
-            this._rhino3dmPromise = null;
-            throw err;
-        });
-
-        return this._rhino3dmPromise;
-    }
-
-    _loadScriptOnce(src) {
-        const absoluteSrc = new URL(src, window.location.href).href;
-        const existing = Array.from(document.querySelectorAll('script')).find(s => s.src === absoluteSrc);
-        if (existing) {
-            if (existing.dataset && existing.dataset.loaded === 'true') return Promise.resolve();
-            return new Promise((resolve, reject) => {
-                existing.addEventListener('load', () => resolve(), { once: true });
-                existing.addEventListener('error', () => reject(new Error(`Failed to load script ${absoluteSrc}`)), { once: true });
-            });
-        }
-
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = src;
-            script.async = true;
-            if (/^https?:\/\//i.test(src)) {
-                script.crossOrigin = 'anonymous';
-                script.referrerPolicy = 'no-referrer';
-            }
-            script.addEventListener('load', () => {
-                script.dataset.loaded = 'true';
-                resolve();
-            }, { once: true });
-            script.addEventListener('error', () => {
-                reject(new Error(`Failed to load script ${src}`));
-            }, { once: true });
-            document.head.appendChild(script);
-        });
+        return this.exportController?.buildDescriptor(kind) ?? null;
     }
 
     _loadConfigText(text) {
@@ -966,9 +690,7 @@ export class SeatingBowlApp {
     }
 
     _updateClipSliderRange(solvers, bowlConfig) {
-        const slider = getInputElement('clipPositionSlider');
-        const input = getInputElement('clipPositionInput');
-        if (!slider || !input || !this.fieldRenderer || !bowlConfig) return;
+        if (!this.fieldRenderer || !bowlConfig) return;
 
         // Use current solved bowl outer edge to derive dynamic clip extents.
         let maxRowX = 0;
@@ -991,19 +713,18 @@ export class SeatingBowlApp {
         const lo = Math.min(minVal, maxVal - 1);
         const hi = Math.max(maxVal, minVal + 1);
 
-        slider.min = String(lo);
-        slider.max = String(hi);
-        input.min = String(lo);
-        input.max = String(hi);
-
         let curr = Number(this.state.bowl.clipPosition);
         if (!Number.isFinite(curr)) curr = 0;
         const clamped = Math.max(lo, Math.min(hi, curr));
         if (clamped !== curr) {
             this.state.bowl.clipPosition = clamped;
-            slider.value = String(clamped);
-            input.value = String(clamped);
         }
+
+        this.editorControls?.syncClipPositionRange({
+            min: lo,
+            max: hi,
+            value: clamped
+        });
     }
 
     _computeBowlBounds(bowlConfig, offset) {

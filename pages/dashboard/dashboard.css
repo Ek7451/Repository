@@ -1,31 +1,14 @@
 html,
 body {
     min-height: 100%;
-    margin: 0;
     background:
         radial-gradient(circle at top left, rgba(122, 174, 26, 0.22), transparent 32%),
         linear-gradient(135deg, #111315 0%, #191d18 52%, #222820 100%);
     color: #f5f7f1;
-    font-family: 'Manrope', system-ui, sans-serif;
 }
 
 body.dashboard-shell {
     min-height: 100vh;
-}
-
-*,
-*::before,
-*::after {
-    box-sizing: border-box;
-}
-
-*::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-}
-
-*::-webkit-scrollbar-track {
-    background: transparent;
 }
 
 *::-webkit-scrollbar-thumb {
@@ -163,43 +146,6 @@ body.dashboard-shell {
     gap: 10px;
     flex-wrap: wrap;
     justify-content: flex-end;
-}
-
-.dashboard-primary-btn,
-.dashboard-secondary-btn {
-    min-height: 44px;
-    padding: 0 16px;
-    border-radius: 999px;
-    font-family: inherit;
-    font-size: 13px;
-    font-weight: 800;
-    letter-spacing: 0.01em;
-    transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
-}
-
-.dashboard-primary-btn {
-    border: 1px solid #0f1113;
-    background: #0f1113;
-    color: #ffffff;
-    box-shadow: 0 8px 18px rgba(15, 17, 19, 0.14);
-}
-
-.dashboard-secondary-btn {
-    border: 1px solid rgba(15, 17, 19, 0.12);
-    background: #ffffff;
-    color: #111827;
-}
-
-.dashboard-primary-btn:hover,
-.dashboard-secondary-btn:hover {
-    transform: translateY(-1px);
-}
-
-.dashboard-primary-btn:disabled,
-.dashboard-secondary-btn:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
-    transform: none;
 }
 
 .dashboard-overview-header {

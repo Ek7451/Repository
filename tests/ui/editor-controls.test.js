@@ -168,6 +168,28 @@ describe('EditorControls', () => {
         expect(onScene3DTabRestored).toHaveBeenCalledWith('scene3d');
     });
 
+    test('owns clip position control range sync for the shared AppState UI', () => {
+        const elements = {
+            clipPositionSlider: createElement(),
+            clipPositionInput: createElement()
+        };
+
+        vi.stubGlobal('document', createDocumentStub(elements));
+
+        const controls = new EditorControls({
+            state: createState()
+        });
+
+        controls.syncClipPositionRange({ min: -24, max: 88, value: 42 });
+
+        expect(elements.clipPositionSlider.min).toBe('-24');
+        expect(elements.clipPositionSlider.max).toBe('88');
+        expect(elements.clipPositionSlider.value).toBe('42');
+        expect(elements.clipPositionInput.min).toBe('-24');
+        expect(elements.clipPositionInput.max).toBe('88');
+        expect(elements.clipPositionInput.value).toBe('42');
+    });
+
     test('owns control bindings while mutating only the single shared AppState object', () => {
         const elements = {
             sportSelect: createElement(),
