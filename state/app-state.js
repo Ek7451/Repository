@@ -377,6 +377,125 @@ function getTemplateSideLength(template, fallback) {
     return Number.isFinite(Number(candidate)) ? Number(candidate) : fallback;
 }
 
+function getStateOccupancy(state) {
+    return state?.occupancy && typeof state.occupancy === 'object'
+        ? state.occupancy
+        : {};
+}
+
+function getStateBowl(state) {
+    return state?.bowl && typeof state.bowl === 'object'
+        ? state.bowl
+        : {};
+}
+
+function getStateSetup(state) {
+    return state?.setup && typeof state.setup === 'object'
+        ? state.setup
+        : {};
+}
+
+function getPrimaryTier(state) {
+    return Array.isArray(state?.tiers) && state.tiers[0] && typeof state.tiers[0] === 'object'
+        ? state.tiers[0]
+        : {};
+}
+
+export function getCustomRunoff(state) {
+    const setup = getStateSetup(state);
+    return setup.customRunoff ?? null;
+}
+
+export function getRunoffDistance(state, template) {
+    const customRunoff = getCustomRunoff(state);
+    return customRunoff !== null && customRunoff !== undefined
+        ? customRunoff
+        : (template?.runoff || 0);
+}
+
+export function buildFocalPointFt(state) {
+    const setup = getStateSetup(state);
+    return {
+        x: 0,
+        z: setup.focalZ ?? 0
+    };
+}
+
+export function buildEgressParams(state) {
+    const occupancy = getStateOccupancy(state);
+    return {
+        seatWidthIn: occupancy.seatWidth ?? 0,
+        maxAisleWidthIn: occupancy.maxAisle ?? 0,
+        minAisleWidthIn: occupancy.minAisle ?? 0,
+        egressFactor: occupancy.egressFactor ?? 0,
+        seatsBetweenAisles: occupancy.seatsBetweenAisles ?? 0
+    };
+}
+
+export function buildPrimaryTierParameters(state) {
+    const primaryTier = getPrimaryTier(state);
+
+    return {
+        targetCValue: primaryTier.cValue ?? 0,
+        firstRowDistance: primaryTier.firstRowDist ?? 0,
+        firstRowElevation: primaryTier.firstRowElev ?? 0,
+        treadDepth: primaryTier.treadDepth ?? 0,
+        riserHeight: primaryTier.riserHeight ?? 0,
+        numRows: primaryTier.numRows ?? 0,
+        eyeHeight: primaryTier.eyeHeight ?? 0,
+        eyeSetback: primaryTier.eyeSetback ?? 0
+    };
+}
+
+export function buildBowlConfig(state, template) {
+    const bowl = getStateBowl(state);
+    const clip = bowl.clipEnabled
+        ? {
+            enabled: true,
+            axis: bowl.clipAxis,
+            position: bowl.clipPosition,
+            side: bowl.clipSide
+        }
+        : { enabled: false };
+
+    return {
+        width: template?.field_width,
+        length: template?.field_length,
+        shape: template?.shape,
+        radius_arc: template?.field_radius,
+        arc_angle: template?.arc_angle,
+        type: bowl.type,
+        corner: 'Chamfer',
+        radius: bowl.cornerRad,
+        sideLength: bowl.sideLength,
+        structuralDepth: bowl.structuralDepth || 0,
+        clip
+    };
+}
+
+export function buildFieldVisibility(state) {
+    const setup = getStateSetup(state);
+    const tiers = Array.isArray(state?.tiers) ? state.tiers : [];
+
+    return {
+        showSeating: true,
+        t1: !!tiers[0]?.enabled,
+        t2: !!tiers[1]?.enabled,
+        t3: !!tiers[2]?.enabled,
+        colorByCValue: !!setup.sightlineVisuals,
+        showSectionMetrics: !!setup.sectionMetrics
+    };
+}
+
+export function buildSceneSeatPreviewOptions(state) {
+    const occupancy = getStateOccupancy(state);
+
+    return {
+        showSeatCubes: !!occupancy.showSeatCubes3D,
+        seatWidthIn: occupancy.seatWidth ?? 0
+    };
+}
+
 export const AppState = {
     ...createDefaultStateData(),
 

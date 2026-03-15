@@ -1,6 +1,18 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { DEFAULT_STARTUP_PROFILE } from '../../core/default-starting-profile.js';
-import { APP_STATE_VERSION, AppState, createDefaultAppStateData } from '../../state/app-state.js';
+import {
+    APP_STATE_VERSION,
+    AppState,
+    buildBowlConfig,
+    buildEgressParams,
+    buildFieldVisibility,
+    buildFocalPointFt,
+    buildPrimaryTierParameters,
+    buildSceneSeatPreviewOptions,
+    createDefaultAppStateData,
+    getCustomRunoff,
+    getRunoffDistance
+} from '../../state/app-state.js';
 
 describe('AppState', () => {
     beforeEach(() => {
@@ -91,5 +103,144 @@ describe('AppState', () => {
 
         first.tiers[0].numRows = 99;
         expect(second.tiers[0].numRows).toBe(30);
+    });
+
+    test('builds state-derived DTO selectors with the existing bowl and scene shapes', () => {
+        const state = createDefaultAppStateData();
+        const template = {
+            runoff: 18,
+            field_width: 160,
+            field_length: 360,
+            shape: 'rectangle',
+            field_radius: 12,
+            arc_angle: 90
+        };
+
+        state.setup.customRunoff = null;
+        state.setup.focalZ = 7.5;
+        state.setup.sightlineVisuals = false;
+        state.setup.sectionMetrics = true;
+        state.bowl.type = 'Side1';
+        state.bowl.cornerRad = 24;
+        state.bowl.sideLength = 280;
+        state.bowl.structuralDepth = 18;
+        state.bowl.clipEnabled = true;
+        state.bowl.clipAxis = 'Y';
+        state.bowl.clipPosition = 42;
+        state.bowl.clipSide = 'negative';
+        state.occupancy.seatWidth = 22;
+        state.occupancy.minAisle = 44;
+        state.occupancy.maxAisle = 66;
+        state.occupancy.seatsBetweenAisles = 18;
+        state.occupancy.egressFactor = 0.3;
+        state.occupancy.showSeatCubes3D = true;
+        state.tiers[1].enabled = true;
+        state.tiers[2].enabled = false;
+
+        expect(getCustomRunoff(state)).toBeNull();
+        expect(getRunoffDistance(state, template)).toBe(18);
+        expect(buildFocalPointFt(state)).toEqual({ x: 0, z: 7.5 });
+        expect(buildEgressParams(state)).toEqual({
+            seatWidthIn: 22,
+            maxAisleWidthIn: 66,
+            minAisleWidthIn: 44,
+            egressFactor: 0.3,
+            seatsBetweenAisles: 18
+        });
+        expect(buildPrimaryTierParameters(state)).toEqual({
+            targetCValue: 4,
+            firstRowDistance: 45,
+            firstRowElevation: 6,
+            treadDepth: 33,
+            riserHeight: 10,
+            numRows: 30,
+            eyeHeight: 3.75,
+            eyeSetback: 6
+        });
+        expect(buildBowlConfig(state, template)).toEqual({
+            width: 160,
+            length: 360,
+            shape: 'rectangle',
+            radius_arc: 12,
+            arc_angle: 90,
+            type: 'Side1',
+            corner: 'Chamfer',
+            radius: 24,
+            sideLength: 280,
+            structuralDepth: 18,
+            clip: {
+                enabled: true,
+                axis: 'Y',
+                position: 42,
+                side: 'negative'
+            }
+        });
+        expect(buildFieldVisibility(state)).toEqual({
+            showSeating: true,
+            t1: true,
+            t2: true,
+            t3: false,
+            colorByCValue: false,
+            showSectionMetrics: true
+        });
+        expect(buildSceneSeatPreviewOptions(state)).toEqual({
+            showSeatCubes: true,
+            seatWidthIn: 22
+        });
+    });
+
+    test('tolerates partial state and template inputs when building selector DTOs', () => {
+        const partialState = {
+            setup: {},
+            bowl: {},
+            occupancy: {},
+            tiers: []
+        };
+
+        expect(getCustomRunoff(partialState)).toBeNull();
+        expect(getRunoffDistance(partialState, null)).toBe(0);
+        expect(buildFocalPointFt(partialState)).toEqual({ x: 0, z: 0 });
+        expect(buildEgressParams(partialState)).toEqual({
+            seatWidthIn: 0,
+            maxAisleWidthIn: 0,
+            minAisleWidthIn: 0,
+            egressFactor: 0,
+            seatsBetweenAisles: 0
+        });
+        expect(buildPrimaryTierParameters(partialState)).toEqual({
+            targetCValue: 0,
+            firstRowDistance: 0,
+            firstRowElevation: 0,
+            treadDepth: 0,
+            riserHeight: 0,
+            numRows: 0,
+            eyeHeight: 0,
+            eyeSetback: 0
+        });
+        expect(buildBowlConfig(partialState, null)).toEqual({
+            width: undefined,
+            length: undefined,
+            shape: undefined,
+            radius_arc: undefined,
+            arc_angle: undefined,
+            type: undefined,
+            corner: 'Chamfer',
+            radius: undefined,
+            sideLength: undefined,
+            structuralDepth: 0,
+            clip: { enabled: false }
+        });
+        expect(buildFieldVisibility(partialState)).toEqual({
+            showSeating: true,
+            t1: false,
+            t2: false,
+            t3: false,
+            colorByCValue: false,
+            showSectionMetrics: false
+        });
+        expect(buildSceneSeatPreviewOptions(partialState)).toEqual({
+            showSeatCubes: false,
+            seatWidthIn: 0
+        });
     });
 });

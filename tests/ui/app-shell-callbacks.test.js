@@ -116,6 +116,72 @@ describe('SeatingBowlApp shell callbacks', () => {
         expect(chromeUpdates.at(-1)?.name).toBe('Basketball Study');
     });
 
+    it('routes editor and export DTO getters through state selectors', () => {
+        const app = new SeatingBowlApp();
+
+        app._currentTemplate = {
+            runoff: 18,
+            field_width: 160,
+            field_length: 360,
+            shape: 'rectangle',
+            field_radius: 12,
+            arc_angle: 90
+        };
+        app.state.setup.customRunoff = null;
+        app.state.setup.focalZ = 9;
+        app.state.bowl.type = 'Side1';
+        app.state.bowl.cornerRad = 24;
+        app.state.bowl.sideLength = 280;
+        app.state.bowl.structuralDepth = 18;
+        app.state.bowl.clipEnabled = true;
+        app.state.bowl.clipAxis = 'Y';
+        app.state.bowl.clipPosition = 42;
+        app.state.bowl.clipSide = 'negative';
+        app.state.occupancy.seatWidth = 22;
+        app.state.occupancy.minAisle = 44;
+        app.state.occupancy.maxAisle = 66;
+        app.state.occupancy.seatsBetweenAisles = 18;
+        app.state.occupancy.egressFactor = 0.3;
+
+        expect(app.editorControls._getRunoffDistance()).toBe(18);
+        expect(app.exportController._getFocalPointFt()).toEqual({ x: 0, z: 9 });
+        expect(app.exportController._getEgressParams()).toEqual({
+            seatWidthIn: 22,
+            maxAisleWidthIn: 66,
+            minAisleWidthIn: 44,
+            egressFactor: 0.3,
+            seatsBetweenAisles: 18
+        });
+        expect(app.exportController._getPrimaryTierParameters()).toEqual({
+            targetCValue: 4,
+            firstRowDistance: 45,
+            firstRowElevation: 6,
+            treadDepth: 33,
+            riserHeight: 10,
+            numRows: 30,
+            eyeHeight: 3.75,
+            eyeSetback: 6
+        });
+        expect(app.exportController._getBowlConfig()).toEqual({
+            width: 160,
+            length: 360,
+            shape: 'rectangle',
+            radius_arc: 12,
+            arc_angle: 90,
+            type: 'Side1',
+            corner: 'Chamfer',
+            radius: 24,
+            sideLength: 280,
+            structuralDepth: 18,
+            clip: {
+                enabled: true,
+                axis: 'Y',
+                position: 42,
+                side: 'negative'
+            }
+        });
+    });
+
     it('pushes explicit theme state into visualizers without requiring viz to read the DOM', () => {
         const app = new SeatingBowlApp();
         const fieldRenderer = { setTheme: vi.fn() };
@@ -200,15 +266,18 @@ describe('SeatingBowlApp shell callbacks', () => {
     it('delegates clip position control sync to editor controls instead of mutating the DOM directly', () => {
         const app = new SeatingBowlApp();
         const syncClipPositionRange = vi.fn();
+        const getOffsetCorrection = vi.fn(() => 0);
+        const getClipPositionRange = vi.fn(() => ({
+            min: -10,
+            max: 80
+        }));
 
         app.editorControls = /** @type {any} */ ({
             syncClipPositionRange
         });
         app.fieldRenderer = /** @type {any} */ ({
-            getBowlGeometrySegments: vi.fn(() => [
-                { cmd: 'moveTo', x: -10, y: -20 },
-                { cmd: 'lineTo', x: 80, y: 40 }
-            ])
+            getOffsetCorrection,
+            getClipPositionRange
         });
         app.state.sport = 'Football';
         app.state.bowl.clipAxis = 'X';
@@ -221,6 +290,13 @@ describe('SeatingBowlApp shell callbacks', () => {
         });
 
         expect(app.state.bowl.clipPosition).toBe(80);
+        expect(getOffsetCorrection).toHaveBeenCalledWith({ width: 100 }, 'Football');
+        expect(getClipPositionRange).toHaveBeenCalledWith(
+            [{ rows: [{ x: 60, tread_depth: 10 }] }],
+            { width: 100 },
+            'X',
+            0
+        );
         expect(syncClipPositionRange).toHaveBeenCalledWith({
             min: -10,
             max: 80,

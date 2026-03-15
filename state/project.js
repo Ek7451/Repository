@@ -4,10 +4,31 @@ function cloneJson(value) {
     return JSON.parse(JSON.stringify(value ?? null));
 }
 
+export function deriveProjectNameFromSport(sport, fallback = 'Seating') {
+    const fallbackName = typeof fallback === 'string' && fallback.trim()
+        ? fallback.trim()
+        : 'Seating';
+    const sportName = typeof sport === 'string' && sport.trim()
+        ? sport.trim()
+        : fallbackName;
+    return `${sportName} Study`;
+}
+
 export function normalizeProjectName(name, fallback = 'Untitled Seating Study') {
     return typeof name === 'string' && name.trim()
         ? name.trim()
         : fallback;
+}
+
+export function normalizeProjectStatus(message, tone = 'default') {
+    return {
+        message: typeof message === 'string' && message.trim()
+            ? message.trim()
+            : 'Project persistence ready',
+        tone: typeof tone === 'string' && tone.trim()
+            ? tone.trim()
+            : 'default'
+    };
 }
 
 export function cloneProjectMetadata(project = null) {

@@ -1,4 +1,4 @@
-import { getSportNames } from '../core/sports-templates.js';
+import { getSportNames, getTemplate as getSportTemplate } from '../core/sports-templates.js';
 
 const NUMERIC_INPUT_STATE_PATHS = {
     focalZ: ['setup', 'focalZ'],
@@ -63,6 +63,24 @@ const INTEGER_INPUT_IDS = new Set([
     'maxAisle',
     'seatsBetweenAisles'
 ]);
+
+function formatSportOptionLabel(name, template) {
+    if (!template) return name;
+
+    if (template.field_length && template.field_width) {
+        return `${name} (${template.field_length}' L - ${template.field_width}' W)`;
+    }
+
+    if (template.straight_length && template.field_width) {
+        return `${name} (${template.straight_length}' L - ${template.field_width}' W)`;
+    }
+
+    if (template.field_radius) {
+        return `${name} (${template.field_radius}' Radius)`;
+    }
+
+    return name;
+}
 
 function getValueAtPath(root, path) {
     return path.reduce((value, key) => value?.[key], root);
@@ -168,8 +186,6 @@ export class EditorControls {
     }
 
     syncFromState() {
-        this._updateFieldDimensions(this._getTemplate());
-
         const sportSelect = getSelectElement('sportSelect');
         if (sportSelect) {
             sportSelect.value = this.state.sport;
@@ -264,20 +280,9 @@ export class EditorControls {
         names.forEach((name) => {
             const option = document.createElement('option');
             option.value = name;
-            option.textContent = name;
+            option.textContent = formatSportOptionLabel(name, getSportTemplate(name));
             select.appendChild(option);
         });
-    }
-
-    _updateFieldDimensions(template) {
-        const dimEl = getHtmlElement('fieldDimensions');
-        if (!dimEl || !template) return;
-
-        let text = '';
-        if (template.field_length) text += `${template.field_length}' L`;
-        if (template.field_width) text += ` - ${template.field_width}' W`;
-        if (template.field_radius) text += `Radius: ${template.field_radius}'`;
-        dimEl.textContent = text;
     }
 
     _wireEvents() {

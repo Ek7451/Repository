@@ -60,7 +60,6 @@
                     <div class="section-body">
                         <div class="control-group">
                             <select id="sportSelect"></select>
-                            <div id="fieldDimensions" class="field-dimensions"></div>
                         </div>
 
                         <div class="control-row">
@@ -634,34 +633,36 @@
                 <!-- 3D Panel -->
                 <div id="scene3dPanel" class="view-panel">
                     <div id="scene3dContainer"></div>
-                    <div class="view-overlay-controls view-overlay-controls-3d" aria-label="3D view toggles">
-                        <div class="toggle-row sightline-toggle-row">
-                            <label class="header-toggle overlay-icon-toggle" style="margin: 0;" title="3D Seat Cubes" aria-label="Toggle 3D seat cubes">
-                                <input type="checkbox" id="showSeatCubes3D">
-                                <svg class="toggle-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M12 2 4 6.5 12 11l8-4.5L12 2z"></path>
-                                    <path d="M4 6.5V17.5L12 22V11"></path>
-                                    <path d="M20 6.5V17.5L12 22"></path>
-                                </svg>
-                            </label>
+                    <div class="scene3d-bottom-dock">
+                        <div class="view-overlay-controls view-overlay-controls-3d" aria-label="3D view toggles">
+                            <div class="toggle-row sightline-toggle-row">
+                                <label class="header-toggle overlay-icon-toggle" style="margin: 0;" title="3D Seat Cubes" aria-label="Toggle 3D seat cubes">
+                                    <input type="checkbox" id="showSeatCubes3D">
+                                    <svg class="toggle-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M12 2 4 6.5 12 11l8-4.5L12 2z"></path>
+                                        <path d="M4 6.5V17.5L12 22V11"></path>
+                                        <path d="M20 6.5V17.5L12 22"></path>
+                                    </svg>
+                                </label>
+                            </div>
                         </div>
-                    </div>
-                    <!-- Camera Bookmarks Toolbar -->
-                    <div class="camera-bookmarks-bar collapsed" id="cameraBookmarksBar">
-                        <div class="cam-bookmarks-header">
-                            <button id="toggleBookmarksBtn" class="icon-btn" title="Toggle Saved Views">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" style="transition: transform 0.2s;">
-                                    <polyline points="6 9 12 15 18 9"></polyline>
-                                </svg>
+                        <!-- Camera Bookmarks Toolbar -->
+                        <div class="camera-bookmarks-bar collapsed" id="cameraBookmarksBar">
+                            <div class="cam-bookmarks-header">
+                                <button id="toggleBookmarksBtn" class="icon-btn" title="Toggle Saved Views">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" style="transition: transform 0.2s;">
+                                        <polyline points="6 9 12 15 18 9"></polyline>
+                                    </svg>
+                                </button>
+                            </div>
+                            <button class="cam-bookmark-btn cam-bookmark-primary" id="saveCameraViewBtn"
+                                title="Save current camera view">
+                                Save View
                             </button>
-                        </div>
-                        <button class="cam-bookmark-btn cam-bookmark-primary" id="saveCameraViewBtn"
-                            title="Save current camera view">
-                            Save View
-                        </button>
-                        <div class="cam-bookmarks-list" id="cameraBookmarksList">
-                            <!-- Bookmark buttons injected here -->
+                            <div class="cam-bookmarks-list" id="cameraBookmarksList">
+                                <!-- Bookmark buttons injected here -->
+                            </div>
                         </div>
                     </div>
                 </div>

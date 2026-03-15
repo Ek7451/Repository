@@ -4,16 +4,32 @@
  */
 
 import { getTemplate } from '../core/sports-templates.js';
-import { ProfileSolver } from '../core/profile-solver.js';
+import {
+    buildActiveTierSolvers,
+    buildNextTierDefaultsFromSolvers,
+    buildTierMetricsByIndex
+} from '../core/profile-solver.js';
 import { FieldRenderer } from '../viz/field-renderer.js';
 import { ProfileRenderer } from '../viz/profile-renderer.js';
 import { DEFAULT_STARTUP_PROFILE } from '../core/default-starting-profile.js';
-import { AppState } from '../state/app-state.js';
+import {
+    AppState,
+    buildBowlConfig,
+    buildEgressParams,
+    buildFieldVisibility,
+    buildFocalPointFt,
+    buildPrimaryTierParameters,
+    buildSceneSeatPreviewOptions,
+    getCustomRunoff,
+    getRunoffDistance
+} from '../state/app-state.js';
 import {
     buildProjectChromeSnapshot,
     buildProjectSaveRequest,
     cloneProjectMetadata,
-    cloneSessionDto
+    cloneSessionDto,
+    deriveProjectNameFromSport,
+    normalizeProjectStatus
 } from '../state/project.js';
 import { CameraBookmarks } from './camera-bookmarks.js';
 import { EditorControls } from './editor-controls.js';
@@ -22,30 +38,12 @@ import { EditorShell } from './editor-shell.js';
 import { buildStatsViewModel, StatsPanel } from './stats-panel.js';
 // Scene3D is imported lazily in _init3DAsync to avoid blocking if Three.js CDN is unavailable
 
-const EDGE_SPORTS = ['Ice Hockey', 'Football', 'Concert', 'Soccer', 'Basketball'];
-
 function getCanvasElement(id) {
     return /** @type {HTMLCanvasElement | null} */ (document.getElementById(id));
 }
 
 function normalizeThemeName(theme) {
     return theme === 'dark' ? 'dark' : 'light';
-}
-
-function normalizeProjectStatus(message, tone = 'default') {
-    return {
-        message: typeof message === 'string' && message.trim()
-            ? message.trim()
-            : 'Project persistence ready',
-        tone: typeof tone === 'string' && tone.trim()
-            ? tone.trim()
-            : 'default'
-    };
-}
-
-function getSolverTierIndex(solver, fallbackIndex = 0) {
-    const tierIndex = Number(solver?.tierIndex);
-    return Number.isInteger(tierIndex) ? tierIndex : fallbackIndex;
 }
 
 export class SeatingBowlApp {
@@ -74,23 +72,23 @@ export class SeatingBowlApp {
         this.editorControls = new EditorControls({
             state: this.state,
             getTemplate: () => this._currentTemplate,
-            getRunoffDistance: () => this._getRunoffDistance(),
+            getRunoffDistance: () => getRunoffDistance(this.state, this._currentTemplate),
             syncShellState: (uiState) => this.editorShell?.syncFromState(uiState),
             onScene3DTabRestored: (tab) => this._handleViewTabChanged(tab),
             onStateChanged: () => this._scheduleUpdate(),
             onSportChanged: () => this._handleSportChanged(),
-            getTierDefaults: (tierNum) => this._getTierDefaultsForEnabledTier(tierNum)
+            getTierDefaults: (tierNum) => buildNextTierDefaultsFromSolvers(this._solvers, tierNum)
         });
         this.exportController = new EditorExportController({
             getActiveSolvers: () => this._getActiveSolvers(),
-            getBowlConfig: () => this._getBowlConfig(),
+            getBowlConfig: () => buildBowlConfig(this.state, this._currentTemplate),
             getCurrentTemplate: () => this._currentTemplate,
-            getEgressParams: () => this._getEgressParams(),
+            getEgressParams: () => buildEgressParams(this.state),
             getFieldRenderer: () => this.fieldRenderer,
-            getFocalPointFt: () => this._getFocalPointFt(),
-            getOffsetCorrection: (bowlConfig, sportName) => this._getOffsetCorrection(bowlConfig, sportName),
-            getPrimaryTierParameters: () => this._buildPrimaryTierParameters(),
-            getRunoffDistance: () => this._getRunoffDistance(),
+            getFocalPointFt: () => buildFocalPointFt(this.state),
+            getOffsetCorrection: (bowlConfig, sportName) => this.fieldRenderer?.getOffsetCorrection(bowlConfig, sportName) ?? 0,
+            getPrimaryTierParameters: () => buildPrimaryTierParameters(this.state),
+            getRunoffDistance: () => getRunoffDistance(this.state, this._currentTemplate),
             getScene3D: () => this.scene3D,
             getSceneExportData: () => this._getSceneExportData(),
             getSportName: () => this.state.sport,
@@ -186,7 +184,7 @@ export class SeatingBowlApp {
 
     getProjectChrome() {
         return buildProjectChromeSnapshot({
-            name: this._projectMetadata.name || this._deriveProjectName(),
+            name: this._projectMetadata.name || deriveProjectNameFromSport(this.state?.sport),
             projectMetadata: this._projectMetadata,
             session: this._session
         });
@@ -197,7 +195,7 @@ export class SeatingBowlApp {
     }
 
     getProjectSaveRequest() {
-        const name = (this._projectMetadata.name || this._deriveProjectName()).trim();
+        const name = (this._projectMetadata.name || deriveProjectNameFromSport(this.state?.sport)).trim();
         this._projectMetadata.name = name;
         this._refreshProjectChrome();
 
@@ -216,14 +214,7 @@ export class SeatingBowlApp {
         if (!project || typeof project !== 'object') return;
         this.setProjectMetadata(project);
         this._loadStateFromConfig(project.state ?? {}, { logSuccess: true });
-        this.setProjectStatus(`Loaded ${this._projectMetadata.name || this._deriveProjectName()}`, 'success');
-    }
-
-    _deriveProjectName() {
-        const sportName = typeof this.state?.sport === 'string' && this.state.sport.trim()
-            ? this.state.sport.trim()
-            : 'Seating';
-        return `${sportName} Study`;
+        this.setProjectStatus(`Loaded ${this._projectMetadata.name || deriveProjectNameFromSport(this.state?.sport)}`, 'success');
     }
 
     _refreshProjectChrome() {
@@ -373,20 +364,6 @@ export class SeatingBowlApp {
         this._scheduleUpdate();
     }
 
-    _getTierDefaultsForEnabledTier(tierNum) {
-        if (tierNum <= 1 || this._solvers.length < tierNum - 1) return null;
-
-        const prevTier = this._solvers[tierNum - 2];
-        if (!prevTier?.rows?.length) return null;
-
-        const lastRow = prevTier.rows[prevTier.rows.length - 1];
-        return {
-            firstRowDist: Number(lastRow.x.toFixed(2)),
-            firstRowElev: Number((lastRow.z + 20).toFixed(2)),
-            riserHeight: 12
-        };
-    }
-
     _handleViewTabChanged(tab) {
         const nextTab = ['profile', 'field', 'scene3d'].includes(tab) ? tab : 'profile';
         this.state.ui.activeViewTab = nextTab;
@@ -411,108 +388,38 @@ export class SeatingBowlApp {
         this._debounceTimer = setTimeout(() => this.update(), 25);
     }
 
-    _getCustomRunoff() {
-        return this.state.setup.customRunoff;
-    }
-
-    _getRunoffDistance() {
-        const customRunoff = this._getCustomRunoff();
-        return customRunoff !== null ? customRunoff : (this._currentTemplate?.runoff || 0);
-    }
-
-    _getFocalPointFt() {
-        return {
-            x: 0,
-            z: this.state.setup.focalZ
-        };
-    }
-
-    _getOffsetCorrection(bowlConfig, sportName = this.state.sport) {
-        const safeWidth = Number.isFinite(bowlConfig?.width) ? bowlConfig.width : 0;
-        return EDGE_SPORTS.includes(sportName) ? 0 : (safeWidth / 2);
-    }
-
-    _solveActiveTiers(focalPointFt) {
-        const solvers = [];
-
-        this.state.tiers.forEach((tierState, tierIndex) => {
-            if (!tierState?.enabled) return;
-
-            const solver = new ProfileSolver({
-                targetCValue: tierState.cValue,
-                firstRowDistance: tierState.firstRowDist,
-                firstRowElevation: tierState.firstRowElev,
-                treadDepth: tierState.treadDepth,
-                defaultRiser: tierState.riserHeight,
-                numRows: Math.round(tierState.numRows),
-                eyeHeight: tierState.eyeHeight,
-                eyeSetback: tierState.eyeSetback,
-                focalX: focalPointFt.x,
-                focalZ: focalPointFt.z
-            });
-            solver.solve(tierState.profileType);
-            solver.tierIndex = tierIndex;
-            solvers.push(solver);
-        });
-
-        return solvers;
-    }
-
     _renderFieldView({ solvers, focalPointFt, bowlConfig, egressParams }) {
-        const tierMetricsByIndex = new Map();
-
         if (!this.fieldRenderer) {
             this._tierAisleLayouts = [];
-            return tierMetricsByIndex;
+            return new Map();
         }
 
-        const sportName = this.state.sport;
-        const visibility = {
-            showSeating: true,
-            t1: !!this.state.tiers[0]?.enabled,
-            t2: !!this.state.tiers[1]?.enabled,
-            t3: !!this.state.tiers[2]?.enabled,
-            colorByCValue: this.state.setup.sightlineVisuals,
-            showSectionMetrics: this.state.setup.sectionMetrics
-        };
-        const baseY = EDGE_SPORTS.includes(sportName)
-            ? (this._currentTemplate.focal_y || 0)
-            : 0;
-        const visualFocalY = baseY + focalPointFt.x;
-        const offsetCorrection = this._getOffsetCorrection(bowlConfig, sportName);
-        const tierAisleLayouts = [];
-
-        solvers.forEach((solver, index) => {
-            if (!solver?.rows || solver.rows.length === 0) return;
-
-            const tierIndex = getSolverTierIndex(solver, index);
-            const metrics = ProfileSolver.calculateTierMetrics(
-                solver,
-                bowlConfig,
-                this.fieldRenderer,
-                egressParams,
-                offsetCorrection
-            );
-            if (!metrics) return;
-
-            tierMetricsByIndex.set(tierIndex, metrics);
-            const tierLayout = this.fieldRenderer.generateTierAisleLayout(
-                solver,
-                bowlConfig,
-                metrics,
-                offsetCorrection,
-                egressParams
-            );
-            if (!tierLayout) return;
-
-            tierLayout.tierIndex = tierIndex;
-            tierAisleLayouts.push(tierLayout);
+        const visibility = buildFieldVisibility(this.state);
+        const offsetCorrection = this.fieldRenderer.getOffsetCorrection(bowlConfig, this.state.sport);
+        const visualFocalY = this.fieldRenderer.getVisualFocalY(
+            this._currentTemplate,
+            focalPointFt,
+            this.state.sport
+        );
+        const tierMetricsByIndex = buildTierMetricsByIndex({
+            solvers,
+            bowlConfig,
+            egressParams,
+            offsetCorrection,
+            calculateRowLength: (nextBowlConfig, offset) => this.fieldRenderer.calculateRowLength(nextBowlConfig, offset)
         });
+        const tierAisleLayouts = this.fieldRenderer.buildTierAisleLayouts(
+            solvers,
+            bowlConfig,
+            tierMetricsByIndex,
+            offsetCorrection,
+            egressParams
+        );
 
         this._tierAisleLayouts = tierAisleLayouts;
         this.fieldRenderer.render(
             this._currentTemplate,
-            this._getCustomRunoff(),
+            getCustomRunoff(this.state),
             solvers,
             visibility,
             visualFocalY,
@@ -538,12 +445,12 @@ export class SeatingBowlApp {
     update() {
         try {
             this._syncTemplateFromState();
-            const focalPointFt = this._getFocalPointFt();
+            const focalPointFt = buildFocalPointFt(this.state);
             const structuralDepth = this.state.bowl.structuralDepth || 0;
-            const solvers = this._solveActiveTiers(focalPointFt);
+            const solvers = buildActiveTierSolvers(this.state.tiers, focalPointFt);
             this._solvers = solvers;
-            const bowlConfig = this._getBowlConfig();
-            const egressParams = this._getEgressParams();
+            const bowlConfig = buildBowlConfig(this.state, this._currentTemplate);
+            const egressParams = buildEgressParams(this.state);
             this._updateClipSliderRange(solvers, bowlConfig);
             const tierMetricsByIndex = this._renderFieldView({
                 solvers,
@@ -574,12 +481,11 @@ export class SeatingBowlApp {
                 this.scene3D.forceResize();
             }
 
-            const customRunoff = this._getCustomRunoff();
+            const customRunoff = getCustomRunoff(this.state);
             this.scene3D.updateField(this._currentTemplate, customRunoff, this.state.setup.focalZ);
 
-            const bowlConfig = this._getBowlConfig();
-            const sportName = this.state.sport;
-            const offsetCorrection = this._getOffsetCorrection(bowlConfig, sportName);
+            const bowlConfig = buildBowlConfig(this.state, this._currentTemplate);
+            const offsetCorrection = this.fieldRenderer?.getOffsetCorrection(bowlConfig, this.state.sport) ?? 0;
 
             if (this.scene3D) {
                 this.scene3D.updateBowl(
@@ -588,25 +494,12 @@ export class SeatingBowlApp {
                     this._currentTemplate,
                     offsetCorrection,
                     this._tierAisleLayouts || [],
-                    {
-                        showSeatCubes: this.state.occupancy.showSeatCubes3D,
-                        seatWidthIn: this.state.occupancy.seatWidth
-                    }
+                    buildSceneSeatPreviewOptions(this.state)
                 );
             }
         } catch (e) {
             console.warn('3D update error:', e);
         }
-    }
-
-    _getEgressParams() {
-        return {
-            seatWidthIn: this.state.occupancy.seatWidth,
-            maxAisleWidthIn: this.state.occupancy.maxAisle,
-            minAisleWidthIn: this.state.occupancy.minAisle,
-            egressFactor: this.state.occupancy.egressFactor,
-            seatsBetweenAisles: this.state.occupancy.seatsBetweenAisles
-        };
     }
 
     _getActiveSolvers() {
@@ -618,21 +511,6 @@ export class SeatingBowlApp {
         if (!this.scene3D) return null;
         if (typeof this.scene3D.getExportSceneData !== 'function') return null;
         return this.scene3D.getExportSceneData();
-    }
-
-    _buildPrimaryTierParameters() {
-        const primaryTier = this.state.tiers[0];
-
-        return {
-            targetCValue: primaryTier?.cValue ?? 0,
-            firstRowDistance: primaryTier?.firstRowDist ?? 0,
-            firstRowElevation: primaryTier?.firstRowElev ?? 0,
-            treadDepth: primaryTier?.treadDepth ?? 0,
-            riserHeight: primaryTier?.riserHeight ?? 0,
-            numRows: primaryTier?.numRows ?? 0,
-            eyeHeight: primaryTier?.eyeHeight ?? 0,
-            eyeSetback: primaryTier?.eyeSetback ?? 0
-        };
     }
 
     async _buildExportDescriptor(kind) {
@@ -665,98 +543,28 @@ export class SeatingBowlApp {
         }
     }
 
-    // ========== HELPER: Get standard bowl config ==========
-    _getBowlConfig() {
-        const clipCfg = this.state.bowl.clipEnabled ? {
-            enabled: true,
-            axis: this.state.bowl.clipAxis,
-            position: this.state.bowl.clipPosition,
-            side: this.state.bowl.clipSide
-        } : { enabled: false };
-
-        return {
-            width: this._currentTemplate.field_width,
-            length: this._currentTemplate.field_length,
-            shape: this._currentTemplate.shape,
-            radius_arc: this._currentTemplate.field_radius,
-            arc_angle: this._currentTemplate.arc_angle,
-            type: this.state.bowl.type,
-            corner: 'Chamfer',
-            radius: this.state.bowl.cornerRad,
-            sideLength: this.state.bowl.sideLength,
-            structuralDepth: this.state.bowl.structuralDepth || 0,
-            clip: clipCfg
-        };
-    }
-
     _updateClipSliderRange(solvers, bowlConfig) {
         if (!this.fieldRenderer || !bowlConfig) return;
 
-        // Use current solved bowl outer edge to derive dynamic clip extents.
-        let maxRowX = 0;
-        (solvers || []).forEach(s => {
-            if (!s || !s.rows || s.rows.length === 0) return;
-            const last = s.rows[s.rows.length - 1];
-            if (last && Number.isFinite(last.x)) maxRowX = Math.max(maxRowX, last.x);
-        });
-
-        const offsetCorrection = this._getOffsetCorrection(bowlConfig, this.state.sport);
-        const outerOffset = maxRowX - offsetCorrection;
-
-        const cfgNoClip = { ...bowlConfig, clip: { enabled: false } };
-        const bounds = this._computeBowlBounds(cfgNoClip, outerOffset);
-        if (!bounds) return;
-
-        const axis = (this.state.bowl.clipAxis || 'X').toUpperCase();
-        const minVal = Math.floor(axis === 'X' ? bounds.minX : bounds.minY);
-        const maxVal = Math.ceil(axis === 'X' ? bounds.maxX : bounds.maxY);
-        const lo = Math.min(minVal, maxVal - 1);
-        const hi = Math.max(maxVal, minVal + 1);
+        const clipRange = this.fieldRenderer.getClipPositionRange(
+            solvers,
+            bowlConfig,
+            this.state.bowl.clipAxis,
+            this.fieldRenderer.getOffsetCorrection(bowlConfig, this.state.sport)
+        );
+        if (!clipRange) return;
 
         let curr = Number(this.state.bowl.clipPosition);
         if (!Number.isFinite(curr)) curr = 0;
-        const clamped = Math.max(lo, Math.min(hi, curr));
+        const clamped = Math.max(clipRange.min, Math.min(clipRange.max, curr));
         if (clamped !== curr) {
             this.state.bowl.clipPosition = clamped;
         }
 
         this.editorControls?.syncClipPositionRange({
-            min: lo,
-            max: hi,
+            min: clipRange.min,
+            max: clipRange.max,
             value: clamped
         });
     }
-
-    _computeBowlBounds(bowlConfig, offset) {
-        const segments = this.fieldRenderer?.getBowlGeometrySegments(bowlConfig, offset) || [];
-        if (!segments || !segments.length) return null;
-
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        const addPt = (x, y) => {
-            if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-            if (x < minX) minX = x;
-            if (x > maxX) maxX = x;
-            if (y < minY) minY = y;
-            if (y > maxY) maxY = y;
-        };
-
-        segments.forEach(s => {
-            if (s.cmd === 'moveTo' || s.cmd === 'lineTo') {
-                addPt(s.x, s.y);
-            } else if (s.cmd === 'arc') {
-                const steps = 96;
-                for (let i = 0; i <= steps; i++) {
-                    const t = i / steps;
-                    const a = s.sa + (s.ea - s.sa) * t;
-                    addPt(s.x + s.r * Math.cos(a), s.y + s.r * Math.sin(a));
-                }
-            }
-        });
-
-        if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
-            return null;
-        }
-        return { minX, minY, maxX, maxY };
-    }
-
 }

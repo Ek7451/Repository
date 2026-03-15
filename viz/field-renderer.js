@@ -3,6 +3,7 @@
  * Renders top-down field shapes, runoff perimeters, and focal point markers.
  */
 
+import { getSolverTierIndex } from '../core/profile-solver.js';
 import { getCValueQuality } from '../core/sightline-calc.js';
 import {
     buildGeometryPaths,
@@ -99,6 +100,8 @@ const FIELD_QUALITY_COLORS_DARK = {
     Acceptable: 'rgba(194, 126, 30, 0.86)',
     Poor: 'rgba(181, 74, 71, 0.86)'
 };
+
+const EDGE_SPORTS = ['Ice Hockey', 'Football', 'Concert', 'Soccer', 'Basketball'];
 
 /**
  * @typedef {Object} BowlCornerPoints
@@ -835,6 +838,116 @@ export class FieldRenderer {
         });
 
         return totalLength;
+    }
+
+    getOffsetCorrection(bowlConfig, sportName) {
+        const safeWidth = Number.isFinite(bowlConfig?.width) ? bowlConfig.width : 0;
+        return EDGE_SPORTS.includes(sportName) ? 0 : (safeWidth / 2);
+    }
+
+    getVisualFocalY(template, focalPointFt, sportName) {
+        const baseY = EDGE_SPORTS.includes(sportName) ? (Number(template?.focal_y) || 0) : 0;
+        return baseY + (Number(focalPointFt?.x) || 0);
+    }
+
+    buildTierAisleLayouts(solvers, bowlConfig, tierMetricsByIndex, offsetCorrection = 0, egressParams = null) {
+        const tierAisleLayouts = [];
+
+        (solvers || []).forEach((solver, index) => {
+            if (!solver?.rows?.length) return;
+
+            const tierIndex = getSolverTierIndex(solver, index);
+            const metrics = tierMetricsByIndex?.get?.(tierIndex);
+            if (!metrics) return;
+
+            const tierLayout = this.generateTierAisleLayout(
+                solver,
+                bowlConfig,
+                metrics,
+                offsetCorrection,
+                egressParams
+            );
+            if (!tierLayout) return;
+
+            tierLayout.tierIndex = tierIndex;
+            tierAisleLayouts.push(tierLayout);
+        });
+
+        return tierAisleLayouts;
+    }
+
+    getClipPositionRange(solvers, bowlConfig, axis = 'X', offsetCorrection = 0) {
+        if (!bowlConfig) return null;
+
+        let maxRowX = 0;
+        (solvers || []).forEach((solver) => {
+            if (!solver?.rows?.length) return;
+            const lastRow = solver.rows[solver.rows.length - 1];
+            if (lastRow && Number.isFinite(lastRow.x)) {
+                maxRowX = Math.max(maxRowX, lastRow.x);
+            }
+        });
+
+        const outerOffset = maxRowX - offsetCorrection;
+        const bounds = this._computeBowlBounds(
+            { ...bowlConfig, clip: { enabled: false } },
+            outerOffset
+        );
+        if (!bounds) return null;
+
+        const clipAxis = (axis || 'X').toUpperCase();
+        const minVal = Math.floor(clipAxis === 'X' ? bounds.minX : bounds.minY);
+        const maxVal = Math.ceil(clipAxis === 'X' ? bounds.maxX : bounds.maxY);
+
+        return {
+            min: Math.min(minVal, maxVal - 1),
+            max: Math.max(maxVal, minVal + 1)
+        };
+    }
+
+    _computeBowlBounds(bowlConfig, offset) {
+        return this._computeSegmentBounds(this._getBowlGeometry(bowlConfig, offset) || []);
+    }
+
+    _computeSegmentBounds(segments) {
+        if (!segments.length) return null;
+
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        const addPoint = (x, y) => {
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+        };
+
+        segments.forEach((segment) => {
+            if (segment.cmd === 'moveTo' || segment.cmd === 'lineTo') {
+                addPoint(segment.x, segment.y);
+                return;
+            }
+
+            if (segment.cmd === 'arc') {
+                const steps = 96;
+                for (let i = 0; i <= steps; i++) {
+                    const t = i / steps;
+                    const angle = segment.sa + ((segment.ea - segment.sa) * t);
+                    addPoint(
+                        segment.x + (segment.r * Math.cos(angle)),
+                        segment.y + (segment.r * Math.sin(angle))
+                    );
+                }
+            }
+        });
+
+        if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+            return null;
+        }
+
+        return { minX, minY, maxX, maxY };
     }
 
     _generateBufferPath(bowlConfig, offset) {

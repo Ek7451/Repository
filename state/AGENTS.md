@@ -1,10 +1,26 @@
-# export/AGENTS.md
+# state/AGENTS.md
 
-Export modules accept solver output and required inputs as arguments.
+## Scope
 
-Rules:
-- no imports from ui/
-- no direct DOM reads
-- no hidden reads from AppState
-- keep exporter helpers inside the exporter unless reused broadly
-- prefer pure functions or small focused classes
+Applies to all files under `state/`.
+
+## state responsibilities
+
+- own normalized application state
+- provide serialization and merge behavior
+- provide pure state-derived selectors and DTO builders
+- provide pure project/session helpers in `project.js`
+
+## forbidden
+
+- no DOM
+- no renderer calls
+- no imports from `ui/`
+- no business duplicated from `core/`
+
+## placement rules
+
+Move logic here when it:
+- reads nested state and returns plain config/DTO objects
+- normalizes state or project payloads
+- clones metadata/session data

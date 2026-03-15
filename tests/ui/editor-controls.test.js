@@ -124,7 +124,6 @@ describe('EditorControls', () => {
             enableTier1: createElement(),
             enableTier2: createElement(),
             enableTier3: createElement(),
-            fieldDimensions: createElement(),
             sideLengthRow: createElement(),
             clipPlaneControls: createElement(),
             tier1Section: createElement(),
@@ -151,12 +150,15 @@ describe('EditorControls', () => {
             onScene3DTabRestored
         });
 
+        controls.init();
         controls.syncFromState();
 
         expect(elements.sportSelect.value).toBe('Soccer');
         expect(elements.customRunoffInput.value).toBe('');
         expect(elements.customRunoffSlider.value).toBe('30');
-        expect(elements.fieldDimensions.textContent).toBe("360' L - 180' W");
+        expect(
+            elements.sportSelect.children.find((option) => option.value === 'Football')?.textContent
+        ).toBe("Football (360' L - 160' W)");
         expect(elements.sideLengthRow.style.display).toBe('flex');
         expect(elements.clipPlaneControls.style.display).toBe('block');
         expect(elements.tier1Section.classList.contains('tier-disabled')).toBe(false);

@@ -17,6 +17,86 @@
  *     R = (C + N) * (D + T) / D - N
  */
 
+export function getSolverTierIndex(solver, fallbackIndex = 0) {
+    const tierIndex = Number(solver?.tierIndex);
+    return Number.isInteger(tierIndex) ? tierIndex : fallbackIndex;
+}
+
+export function buildActiveTierSolvers(tiers, focalPointFt) {
+    const solvers = [];
+
+    (tiers || []).forEach((tierState, tierIndex) => {
+        if (!tierState?.enabled) return;
+
+        const solver = new ProfileSolver({
+            targetCValue: tierState.cValue,
+            firstRowDistance: tierState.firstRowDist,
+            firstRowElevation: tierState.firstRowElev,
+            treadDepth: tierState.treadDepth,
+            defaultRiser: tierState.riserHeight,
+            numRows: Math.round(tierState.numRows),
+            eyeHeight: tierState.eyeHeight,
+            eyeSetback: tierState.eyeSetback,
+            focalX: focalPointFt?.x,
+            focalZ: focalPointFt?.z
+        });
+        solver.solve(tierState.profileType);
+        solver.tierIndex = tierIndex;
+        solvers.push(solver);
+    });
+
+    return solvers;
+}
+
+export function buildNextTierDefaultsFromSolvers(solvers, tierNum) {
+    if (tierNum <= 1 || solvers.length < tierNum - 1) return null;
+
+    const prevTier = solvers[tierNum - 2];
+    if (!prevTier?.rows?.length) return null;
+
+    const lastRow = prevTier.rows[prevTier.rows.length - 1];
+    return {
+        firstRowDist: Number(lastRow.x.toFixed(2)),
+        firstRowElev: Number((lastRow.z + 20).toFixed(2)),
+        riserHeight: 12
+    };
+}
+
+export function buildTierMetricsByIndex({
+    solvers,
+    bowlConfig,
+    egressParams,
+    offsetCorrection = 0,
+    calculateRowLength
+}) {
+    const tierMetricsByIndex = new Map();
+    if (typeof calculateRowLength !== 'function') return tierMetricsByIndex;
+
+    const rowLengthAdapter = {
+        calculateRowLength(nextBowlConfig, offset) {
+            return calculateRowLength(nextBowlConfig, offset);
+        }
+    };
+
+    (solvers || []).forEach((solver, index) => {
+        if (!solver?.rows?.length) return;
+
+        const tierIndex = getSolverTierIndex(solver, index);
+        const metrics = ProfileSolver.calculateTierMetrics(
+            solver,
+            bowlConfig,
+            rowLengthAdapter,
+            egressParams,
+            offsetCorrection
+        );
+        if (!metrics) return;
+
+        tierMetricsByIndex.set(tierIndex, metrics);
+    });
+
+    return tierMetricsByIndex;
+}
+
 export class RowData {
     constructor(rowNumber) {
         this.row_number = rowNumber;
