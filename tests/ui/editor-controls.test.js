@@ -114,8 +114,30 @@ function createState() {
                 eyeHeight: 3.75,
                 eyeSetback: 6
             },
-            { enabled: false, firstRowDist: 10, firstRowElev: 0, riserHeight: 10, profileType: 'Parabolic' },
-            { enabled: false, firstRowDist: 12, firstRowElev: 2, riserHeight: 10, profileType: 'Parabolic' }
+            {
+                enabled: false,
+                profileType: 'Parabolic',
+                cValue: 4,
+                numRows: 10,
+                firstRowDist: 10,
+                firstRowElev: 0,
+                treadDepth: 33,
+                riserHeight: 10,
+                eyeHeight: 3.75,
+                eyeSetback: 6
+            },
+            {
+                enabled: false,
+                profileType: 'Parabolic',
+                cValue: 4,
+                numRows: 10,
+                firstRowDist: 12,
+                firstRowElev: 2,
+                treadDepth: 33,
+                riserHeight: 10,
+                eyeHeight: 3.75,
+                eyeSetback: 6
+            }
         ]
     };
 }
@@ -273,6 +295,103 @@ describe('EditorControls', () => {
             firstRowDist: 12,
             firstRowElev: 2,
             riserHeight: 10
+        });
+    });
+
+    test('applies tier defaults only on first enable and preserves later user positions', () => {
+        const elements = {
+            enableTier2: createElement(),
+            enableTier3: createElement(),
+            tier2Section: createElement(),
+            tier3Section: createElement()
+        };
+        const state = createState();
+
+        vi.stubGlobal('document', createDocumentStub(elements));
+
+        const controls = new EditorControls({
+            state
+        });
+
+        controls.init();
+        controls.syncFromState();
+        controls.applyImportedConfig({ tiers: state.tiers });
+
+        const tier2Defaults = buildNextTierDefaultsFromTiers(state.tiers, buildFocalPointFt(state), 2);
+        elements.enableTier2.checked = true;
+        elements.enableTier2.dispatch('change');
+        expect(state.tiers[1]).toMatchObject({
+            enabled: true,
+            firstRowDist: tier2Defaults.firstRowDist,
+            firstRowElev: tier2Defaults.firstRowElev,
+            riserHeight: 12
+        });
+
+        state.tiers[1].firstRowDist = tier2Defaults.firstRowDist + 7;
+        state.tiers[1].firstRowElev = tier2Defaults.firstRowElev + 4;
+        elements.enableTier2.checked = false;
+        elements.enableTier2.dispatch('change');
+        elements.enableTier2.checked = true;
+        elements.enableTier2.dispatch('change');
+        expect(state.tiers[1]).toMatchObject({
+            enabled: true,
+            firstRowDist: tier2Defaults.firstRowDist + 7,
+            firstRowElev: tier2Defaults.firstRowElev + 4,
+            riserHeight: 12
+        });
+
+        const tier3Defaults = buildNextTierDefaultsFromTiers(state.tiers, buildFocalPointFt(state), 3);
+        elements.enableTier3.checked = true;
+        elements.enableTier3.dispatch('change');
+        expect(state.tiers[2]).toMatchObject({
+            enabled: true,
+            firstRowDist: tier3Defaults.firstRowDist,
+            firstRowElev: tier3Defaults.firstRowElev,
+            riserHeight: 12
+        });
+
+        state.tiers[2].firstRowDist = tier3Defaults.firstRowDist + 9;
+        state.tiers[2].firstRowElev = tier3Defaults.firstRowElev + 5;
+        elements.enableTier3.checked = false;
+        elements.enableTier3.dispatch('change');
+        elements.enableTier3.checked = true;
+        elements.enableTier3.dispatch('change');
+        expect(state.tiers[2]).toMatchObject({
+            enabled: true,
+            firstRowDist: tier3Defaults.firstRowDist + 9,
+            firstRowElev: tier3Defaults.firstRowElev + 5,
+            riserHeight: 12
+        });
+    });
+
+    test('preserves imported custom tier settings when a disabled upper tier is re-enabled', () => {
+        const elements = {
+            enableTier2: createElement(),
+            tier2Section: createElement()
+        };
+        const state = createState();
+        state.tiers[1].firstRowDist = 84;
+        state.tiers[1].firstRowElev = 52;
+        state.tiers[1].riserHeight = 14;
+
+        vi.stubGlobal('document', createDocumentStub(elements));
+
+        const controls = new EditorControls({
+            state
+        });
+
+        controls.init();
+        controls.syncFromState();
+        controls.applyImportedConfig({ tiers: state.tiers });
+
+        elements.enableTier2.checked = true;
+        elements.enableTier2.dispatch('change');
+
+        expect(state.tiers[1]).toMatchObject({
+            enabled: true,
+            firstRowDist: 84,
+            firstRowElev: 52,
+            riserHeight: 14
         });
     });
 });

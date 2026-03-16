@@ -466,6 +466,7 @@ describe('SeatingBowlApp shell callbacks', () => {
         expect(updateScene3D).toHaveBeenCalledWith(
             expect.objectContaining({
                 template: app.renderRuntime.getSnapshot()?.template,
+                focalPointFt: app.renderRuntime.getSnapshot()?.focalPointFt,
                 focalZ: app.state.setup.focalZ,
                 bowlConfig: expect.objectContaining({
                     width: 160

@@ -79,6 +79,7 @@ describe('RenderRuntime', () => {
         expect(snapshot.scene3DInput).toEqual({
             template: snapshot.template,
             customRunoff: 30,
+            focalPointFt: { x: 18, z: 9 },
             focalZ: 9,
             solvers: snapshot.solvers,
             bowlConfig: snapshot.bowlConfig,

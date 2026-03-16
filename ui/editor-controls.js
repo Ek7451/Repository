@@ -3,6 +3,7 @@ import { buildNextTierDefaultsFromTiers } from '../core/profile-solver.js';
 import {
     buildFocalPointFt,
     buildFocalXControlConfig,
+    createDefaultAppStateData,
     getRunoffDistance,
     resolveSportTemplate
 } from '../state/app-state.js';
@@ -67,6 +68,18 @@ const INTEGER_INPUT_IDS = new Set([
     'maxAisle',
     'seatsBetweenAisles'
 ]);
+const DEFAULT_TIER_STATE_TEMPLATE = createDefaultAppStateData().tiers;
+const TIER_INITIALIZATION_KEYS = [
+    'profileType',
+    'cValue',
+    'numRows',
+    'firstRowDist',
+    'firstRowElev',
+    'treadDepth',
+    'riserHeight',
+    'eyeHeight',
+    'eyeSetback'
+];
 
 function formatSportOptionLabel(name, template) {
     if (!template) return name;
@@ -140,6 +153,24 @@ function syncNumericElementBounds(element, { min, max, step }) {
 
 function hasSectionBodyTarget(target) {
     return !!target && typeof target.closest === 'function' && target.closest('.section-body');
+}
+
+function tierMatchesDefaultState(tierState, defaultTierState) {
+    if (!tierState || typeof tierState !== 'object') return false;
+    if (!defaultTierState || typeof defaultTierState !== 'object') return false;
+
+    return TIER_INITIALIZATION_KEYS.every((key) => tierState[key] === defaultTierState[key]);
+}
+
+function isTierStateInitialized(state, tierNum) {
+    if (!Number.isInteger(tierNum) || tierNum <= 1) return true;
+
+    const tierIndex = tierNum - 1;
+    const tierState = state?.tiers?.[tierIndex];
+    if (!tierState || typeof tierState !== 'object') return false;
+    if (tierState.enabled) return true;
+
+    return !tierMatchesDefaultState(tierState, DEFAULT_TIER_STATE_TEMPLATE[tierIndex]);
 }
 
 export class EditorControls {
@@ -233,9 +264,9 @@ export class EditorControls {
         });
     }
 
-    applyImportedConfig(config) {
-        this._tier2Initialized = Array.isArray(config?.tiers) && config.tiers.length > 1;
-        this._tier3Initialized = Array.isArray(config?.tiers) && config.tiers.length > 2;
+    applyImportedConfig(_config) {
+        this._tier2Initialized = isTierStateInitialized(this.state, 2);
+        this._tier3Initialized = isTierStateInitialized(this.state, 3);
     }
 
     hydrateTierInitialization(config) {

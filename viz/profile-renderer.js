@@ -320,6 +320,7 @@ export class ProfileRenderer {
         const showSightlines = options.showSightlines !== false;
         const showHeads = options.showHeads !== false;
         const showCLabels = options.showCLabels !== false;
+        const rowLabelFontPx = options.rowLabelFontPx ?? 11;
         const structuralDepth = (options.structuralDepth || 0) / 12.0;
 
         // Cache for hover and rerender
@@ -497,7 +498,7 @@ export class ProfileRenderer {
             // Draw C-value labels
             if (showCLabels) {
                 ctx.save();
-                ctx.font = '10px Inter, system-ui, sans-serif';
+                ctx.font = `bold ${rowLabelFontPx}px Inter, system-ui, sans-serif`;
                 ctx.textAlign = 'center';
                 // Keep row labels anchored to the original tread line even when structural depth is displayed.
                 const labelOffsetPx = 12;

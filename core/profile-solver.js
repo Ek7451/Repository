@@ -56,8 +56,8 @@ export function buildNextTierDefaultsFromSolvers(solvers, tierNum) {
 
     const lastRow = prevTier.rows[prevTier.rows.length - 1];
     return {
-        firstRowDist: Number(lastRow.x.toFixed(2)),
-        firstRowElev: Number((lastRow.z + 20).toFixed(2)),
+        firstRowDist: Math.round(lastRow.x),
+        firstRowElev: Math.round(lastRow.z + 15),
         riserHeight: 12
     };
 }

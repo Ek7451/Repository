@@ -37,6 +37,7 @@ function createSnapshot() {
     return {
         template: { shape: 'rectangle', field_width: 160, field_length: 360 },
         customRunoff: 18,
+        focalPointFt: { x: 18, z: 9 },
         focalZ: 9,
         solvers: [{ rows: [{ x: 10, tread_depth: 3 }] }],
         bowlConfig: { width: 160, length: 360, structuralDepth: 18 },
@@ -82,7 +83,7 @@ describe('Scene3DController', () => {
         expect(scene3DFactory).toHaveBeenCalledTimes(1);
         expect(scene3D.init).toHaveBeenCalledTimes(1);
         expect(scene3D.applyTheme).toHaveBeenCalledWith('dark');
-        expect(scene3D.updateField).toHaveBeenCalledWith(snapshot.template, 18, 9);
+        expect(scene3D.updateField).toHaveBeenCalledWith(snapshot.template, 18, 9, 18);
         expect(scene3D.updateBowl).toHaveBeenCalledWith(
             snapshot.solvers,
             snapshot.bowlConfig,
@@ -103,7 +104,7 @@ describe('Scene3DController', () => {
 
         expect(scene3DFactory).toHaveBeenCalledTimes(1);
         expect(scene3D.init).toHaveBeenCalledTimes(1);
-        expect(scene3D.updateField).toHaveBeenCalledWith(snapshot.template, 18, 9);
+        expect(scene3D.updateField).toHaveBeenCalledWith(snapshot.template, 18, 9, 18);
         expect(scene3D.updateBowl).toHaveBeenCalledWith(
             snapshot.solvers,
             snapshot.bowlConfig,
@@ -189,7 +190,7 @@ describe('Scene3DController', () => {
         expect(ensureContainerSize).toHaveBeenCalledTimes(1);
         expect(scene3D.forceResize).toHaveBeenCalledTimes(1);
         expect(scene3D.forceResize.mock.invocationCallOrder[0]).toBeLessThan(scene3D.updateField.mock.invocationCallOrder[0]);
-        expect(scene3D.updateField).toHaveBeenCalledWith(snapshot.template, 18, 9);
+        expect(scene3D.updateField).toHaveBeenCalledWith(snapshot.template, 18, 9, 18);
         expect(scene3D.updateBowl).toHaveBeenCalledWith(
             snapshot.solvers,
             snapshot.bowlConfig,

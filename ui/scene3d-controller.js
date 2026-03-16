@@ -118,7 +118,8 @@ export class Scene3DController {
             this.scene3D.updateField(
                 this._lastSnapshot.template,
                 this._lastSnapshot.customRunoff,
-                this._lastSnapshot.focalZ
+                this._lastSnapshot.focalZ,
+                this._lastSnapshot.focalPointFt?.x
             );
             this.scene3D.updateBowl(
                 this._lastSnapshot.solvers,

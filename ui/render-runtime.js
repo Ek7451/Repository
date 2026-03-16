@@ -130,6 +130,7 @@ export class RenderRuntime {
             scene3DInput: {
                 template,
                 customRunoff,
+                focalPointFt,
                 focalZ: focalPointFt.z,
                 solvers,
                 bowlConfig,

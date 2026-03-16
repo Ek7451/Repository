@@ -6,6 +6,7 @@
 import * as THREE from '../lib/three.module.js';
 import { OrbitControls } from '../lib/OrbitControls.js';
 import { buildGeometryPaths, sampleAisleBand, resolveAisleStationRatios, samplePathPointByRatio } from '../core/aisle-layout.js';
+import { resolvePlanFocalYFt } from '../core/sports-templates.js';
 
 const SCENE_THEME_COLORS = {
     light: {
@@ -289,8 +290,9 @@ export class Scene3D {
      * @param {Object} template - Sport template
      * @param {number} [customRunoff]
      * @param {number} [focalZ] - Focal point elevation (ft) from the left parameter pane.
+     * @param {number} [focalX] - Focal point horizontal offset (ft) from the field-edge anchor.
      */
-    updateField(template, customRunoff, focalZ = 0) {
+    updateField(template, customRunoff, focalZ = 0, focalX = 0) {
         if (!this._initialized || !this.THREE) return;
         const THREE = this.THREE;
 
@@ -343,7 +345,7 @@ export class Scene3D {
 
         // Focal point marker
         const fx = template.focal_x || 0;
-        const fy = template.focal_y || 0;
+        const fy = resolvePlanFocalYFt(template, focalX);
         const markerGeo = new THREE.SphereGeometry(2, 16, 16);
         const markerMat = new THREE.MeshStandardMaterial({
             color: BRAND_COLORS.focal,

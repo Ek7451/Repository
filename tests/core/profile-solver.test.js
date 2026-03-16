@@ -49,8 +49,8 @@ describe('profile solver helper exports', () => {
 
         const lastRow = solvers[0].rows.at(-1);
         expect(buildNextTierDefaultsFromSolvers(solvers, 2)).toEqual({
-            firstRowDist: Number(lastRow.x.toFixed(2)),
-            firstRowElev: Number((lastRow.z + 20).toFixed(2)),
+            firstRowDist: Math.round(lastRow.x),
+            firstRowElev: Math.round(lastRow.z + 15),
             riserHeight: 12
         });
         expect(buildNextTierDefaultsFromSolvers(solvers, 3)).toBeNull();
