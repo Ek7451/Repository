@@ -77,88 +77,12 @@
       }
     },
     {
-      "id": "project_fc94a6c7-fb7a-4731-a2be-1eb2122450d0",
-      "ownerId": "e@jlg.com",
-      "name": "f",
-      "sport": "Football",
-      "createdAt": "2026-03-16T00:08:54.817Z",
-      "updatedAt": "2026-03-16T00:08:54.817Z",
-      "state": {
-        "_version": "phase6-app-state",
-        "sport": "Football",
-        "setup": {
-          "customRunoff": 25,
-          "focalX": 0,
-          "focalZ": 0,
-          "sightlineVisuals": true,
-          "sectionMetrics": false
-        },
-        "bowl": {
-          "type": "Full",
-          "cornerRad": 10,
-          "sideLength": 300,
-          "structuralDepth": 0
-        },
-        "occupancy": {
-          "seatWidth": 20,
-          "minAisle": 48,
-          "maxAisle": 72,
-          "seatsBetweenAisles": 20,
-          "egressFactor": 0.2,
-          "showSeatCubes3D": false
-        },
-        "ui": {
-          "activeViewTab": "profile",
-          "activeResultsTab": "statsTab"
-        },
-        "tiers": [
-          {
-            "enabled": true,
-            "profileType": "Parabolic",
-            "cValue": 4,
-            "numRows": 30,
-            "firstRowDist": 45,
-            "firstRowElev": 6,
-            "treadDepth": 33,
-            "riserHeight": 10,
-            "eyeHeight": 3.75,
-            "eyeSetback": 6
-          },
-          {
-            "enabled": false,
-            "profileType": "Parabolic",
-            "cValue": 4,
-            "numRows": 10,
-            "firstRowDist": 10,
-            "firstRowElev": 0,
-            "treadDepth": 33,
-            "riserHeight": 10,
-            "eyeHeight": 3.75,
-            "eyeSetback": 6
-          },
-          {
-            "enabled": false,
-            "profileType": "Parabolic",
-            "cValue": 4,
-            "numRows": 10,
-            "firstRowDist": 10,
-            "firstRowElev": 0,
-            "treadDepth": 33,
-            "riserHeight": 10,
-            "eyeHeight": 3.75,
-            "eyeSetback": 6
-          }
-        ],
-        "bookmarks": []
-      }
-    },
-    {
       "id": "project_dda5ed88-cd18-45a8-aabd-5b0d217ecf9e",
       "ownerId": "e@jlg.com",
       "name": "Working Through Some Stuff",
       "sport": "Football",
       "createdAt": "2026-03-16T00:46:42.678Z",
-      "updatedAt": "2026-03-16T01:26:49.410Z",
+      "updatedAt": "2026-03-16T01:53:26.940Z",
       "state": {
         "_version": "phase6-app-state",
         "sport": "Football",
@@ -166,14 +90,14 @@
           "customRunoff": 25,
           "focalX": 0,
           "focalZ": 1,
-          "sightlineVisuals": false,
+          "sightlineVisuals": true,
           "sectionMetrics": false
         },
         "bowl": {
           "type": "Full",
           "cornerRad": 10,
           "sideLength": 300,
-          "structuralDepth": 6,
+          "structuralDepth": 12,
           "structuralProfileMode": "stepped"
         },
         "occupancy": {
@@ -203,13 +127,13 @@
           },
           {
             "enabled": true,
-            "profileType": "Parabolic",
+            "profileType": "Linear",
             "cValue": 4,
             "numRows": 10,
             "firstRowDist": 58,
             "firstRowElev": 24,
             "treadDepth": 33,
-            "riserHeight": 12,
+            "riserHeight": 17.5,
             "eyeHeight": 3.75,
             "eyeSetback": 6
           },

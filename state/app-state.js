@@ -143,7 +143,7 @@ function createDefaultStateData() {
             type: 'Full',
             cornerRad: 10,
             sideLength: 300,
-            structuralDepth: 6,
+            structuralDepth: 12,
             structuralProfileMode: 'stepped'
         },
         occupancy: {
