@@ -103,7 +103,7 @@ function createExportContext(overrides = {}) {
         stateJson: {
             sport: 'Football',
             setup: { focalZ: 4 },
-            bowl: { structuralDepth: 18 },
+            bowl: { structuralDepth: 18, structuralProfileMode: 'stepped' },
             tiers: [{ profileType: 'Parabolic' }]
         },
         sportName: 'Football',
@@ -128,6 +128,7 @@ function createExportContext(overrides = {}) {
             radius: 10,
             sideLength: 300,
             structuralDepth: 18,
+            structuralProfileMode: 'stepped',
             clip: { enabled: false }
         },
         egressParams: {
@@ -166,7 +167,6 @@ function createSceneGeometryPort(overrides = {}) {
             seatMeshes: [],
             THREE: {}
         })),
-        buildClosedStructuralProfile: vi.fn(() => null),
         getBowlGeometrySegments: vi.fn(() => []),
         ...overrides
     };

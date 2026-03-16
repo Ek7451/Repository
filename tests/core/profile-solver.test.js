@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
     buildActiveTierSolvers,
     buildNextTierDefaultsFromSolvers,
+    buildStructuralProfileGeometry,
     buildTierMetricsByIndex,
     getSolverTierIndex
 } from '../../core/profile-solver.js';
@@ -105,5 +106,85 @@ describe('profile solver helper exports', () => {
             mirroredSideRuns: 1
         });
         expect(calculateRowLength).toHaveBeenCalled();
+    });
+
+    it('clamps tier 1 stepped structural underside to non-negative elevations', () => {
+        const [solver] = buildActiveTierSolvers([
+            createTier({ firstRowElev: 3, numRows: 3 })
+        ], { x: 0, z: 0 });
+
+        const geometry = buildStructuralProfileGeometry(solver, {
+            structuralDepthFt: 6,
+            structuralProfileMode: 'stepped',
+            tierIndex: 0
+        });
+
+        expect(geometry.undersideProfile.length).toBeGreaterThan(1);
+        expect(geometry.undersideProfile.every((point) => point.z >= 0)).toBe(true);
+        expect(geometry.undersideProfile.every((point) => point.x <= solver.rows.at(-1).x)).toBe(true);
+    });
+
+    it('builds a tier 1 sloped structural underside that ends at the last row rear edge', () => {
+        const [solver] = buildActiveTierSolvers([
+            createTier({ firstRowElev: 3, numRows: 4 })
+        ], { x: 0, z: 0 });
+
+        const geometry = buildStructuralProfileGeometry(solver, {
+            structuralDepthFt: 6,
+            structuralProfileMode: 'sloped',
+            tierIndex: 0
+        });
+
+        expect(geometry.undersideProfile).toHaveLength(2);
+        expect(geometry.undersideProfile[1].x).toBe(solver.rows.at(-1).x);
+        expect(geometry.undersideProfile.every((point) => point.x <= solver.rows.at(-1).x)).toBe(true);
+        expect(geometry.undersideProfile.every((point) => point.z >= 0)).toBe(true);
+    });
+
+    it('uses the structural depth for upper-tier front closure in both modes', () => {
+        const [solver] = buildActiveTierSolvers([
+            createTier({ enabled: false }),
+            createTier({ firstRowDist: 90, firstRowElev: 24, numRows: 3 })
+        ], { x: 0, z: 0 });
+        const startX = solver.rows[0].x - solver.treadDepthFt;
+        const expectedFrontBottomZ = solver.rows[0].z - 1.5;
+
+        for (const structuralProfileMode of ['stepped', 'sloped']) {
+            const geometry = buildStructuralProfileGeometry(solver, {
+                structuralDepthFt: 1.5,
+                structuralProfileMode,
+                tierIndex: 1
+            });
+
+            expect(geometry.topProfile[0]).toEqual({
+                x: startX,
+                z: expectedFrontBottomZ
+            });
+            expect(geometry.undersideProfile[0].z).toBe(expectedFrontBottomZ);
+            expect(
+                geometry.closedProfile.some((point) => point.x === startX && point.z === expectedFrontBottomZ)
+            ).toBe(true);
+        }
+    });
+
+    it('dedupes large-depth structural geometry without extending below zero', () => {
+        const [solver] = buildActiveTierSolvers([
+            createTier({ firstRowElev: 2, numRows: 3 })
+        ], { x: 0, z: 0 });
+
+        const geometry = buildStructuralProfileGeometry(solver, {
+            structuralDepthFt: 50,
+            structuralProfileMode: 'stepped',
+            tierIndex: 0
+        });
+
+        expect(geometry.undersideProfile.every((point) => point.z >= 0)).toBe(true);
+        expect(geometry.closedProfile.every((point) => point.z >= 0)).toBe(true);
+        expect(
+            geometry.closedProfile.every((point, index, points) => {
+                if (index === 0) return true;
+                return point.x !== points[index - 1].x || point.z !== points[index - 1].z;
+            })
+        ).toBe(true);
     });
 });

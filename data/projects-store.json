@@ -151,6 +151,83 @@
         ],
         "bookmarks": []
       }
+    },
+    {
+      "id": "project_dda5ed88-cd18-45a8-aabd-5b0d217ecf9e",
+      "ownerId": "e@jlg.com",
+      "name": "Working Through Some Stuff",
+      "sport": "Football",
+      "createdAt": "2026-03-16T00:46:42.678Z",
+      "updatedAt": "2026-03-16T01:26:49.410Z",
+      "state": {
+        "_version": "phase6-app-state",
+        "sport": "Football",
+        "setup": {
+          "customRunoff": 25,
+          "focalX": 0,
+          "focalZ": 1,
+          "sightlineVisuals": false,
+          "sectionMetrics": false
+        },
+        "bowl": {
+          "type": "Full",
+          "cornerRad": 10,
+          "sideLength": 300,
+          "structuralDepth": 6,
+          "structuralProfileMode": "stepped"
+        },
+        "occupancy": {
+          "seatWidth": 20,
+          "minAisle": 48,
+          "maxAisle": 72,
+          "seatsBetweenAisles": 20,
+          "egressFactor": 0.2,
+          "showSeatCubes3D": false
+        },
+        "ui": {
+          "activeViewTab": "profile",
+          "activeResultsTab": "statsTab"
+        },
+        "tiers": [
+          {
+            "enabled": true,
+            "profileType": "Parabolic",
+            "cValue": 4,
+            "numRows": 12,
+            "firstRowDist": 30,
+            "firstRowElev": 3,
+            "treadDepth": 33,
+            "riserHeight": 10,
+            "eyeHeight": 3.75,
+            "eyeSetback": 6
+          },
+          {
+            "enabled": true,
+            "profileType": "Parabolic",
+            "cValue": 4,
+            "numRows": 10,
+            "firstRowDist": 58,
+            "firstRowElev": 24,
+            "treadDepth": 33,
+            "riserHeight": 12,
+            "eyeHeight": 3.75,
+            "eyeSetback": 6
+          },
+          {
+            "enabled": true,
+            "profileType": "Parabolic",
+            "cValue": 4,
+            "numRows": 10,
+            "firstRowDist": 77,
+            "firstRowElev": 46,
+            "treadDepth": 33,
+            "riserHeight": 12,
+            "eyeHeight": 3.75,
+            "eyeSetback": 6
+          }
+        ],
+        "bookmarks": []
+      }
     }
   ]
 }

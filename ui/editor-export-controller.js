@@ -1,4 +1,8 @@
-import { getSolverTierIndex, ProfileSolver } from '../core/profile-solver.js';
+import {
+    buildStructuralProfileGeometry,
+    getSolverTierIndex,
+    ProfileSolver
+} from '../core/profile-solver.js';
 import { buildPlanDxfExportDescriptor, buildProfileDxfExportDescriptor } from '../export/dxf-exporter.js';
 import {
     buildConfigExportDescriptor,
@@ -59,6 +63,7 @@ export class EditorExportController {
             return buildProfileDxfExportDescriptor({
                 solvers,
                 structuralDepthFt: exportContext.structuralDepthFt,
+                structuralProfileMode: exportContext.bowlConfig?.structuralProfileMode,
                 focalPointFt: exportContext.focalPointFt,
                 sportName
             });
@@ -210,8 +215,12 @@ export class EditorExportController {
             });
 
             let structuralProfile = null;
-            if (structuralDepthFt > 0 && typeof sceneGeometryPort.buildClosedStructuralProfile === 'function') {
-                structuralProfile = sceneGeometryPort.buildClosedStructuralProfile(solver, structuralDepthFt, tierIndex);
+            if (structuralDepthFt > 0) {
+                structuralProfile = buildStructuralProfileGeometry(solver, {
+                    structuralDepthFt,
+                    structuralProfileMode: exportContext.bowlConfig?.structuralProfileMode,
+                    tierIndex
+                })?.closedProfile ?? null;
                 if (Array.isArray(structuralProfile)) {
                     structuralProfile.forEach((point) => {
                         if (point && Number.isFinite(point.x)) {

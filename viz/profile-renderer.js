@@ -3,6 +3,10 @@
  * Renders the stepped seating profile, sightlines, head circles, and focal point.
  */
 
+import {
+    buildStructuralProfileGeometry,
+    getSolverTierIndex
+} from '../core/profile-solver.js';
 import { getCValueQuality, generateHeadCirclePoints, SightlineAnalyzer } from '../core/sightline-calc.js';
 
 const PROFILE_THEME_COLORS = {
@@ -87,18 +91,53 @@ function syncProfileThemeColors(theme = 'light') {
     BRAND_PROFILE_COLORS = PROFILE_THEME_COLORS[theme] || PROFILE_THEME_COLORS.light;
 }
 
-const PROFILE_X_AXIS_LABEL_Y_OFFSET_PX = 72; // keep bottom scale clear of profile overlay toggle
+const PROFILE_X_AXIS_LABEL_Y_OFFSET_PX = 96; // keep bottom scale clear of profile overlay toggle
+const PROFILE_ZERO_LINE_WORLD_Z_OFFSET_FT = 0;
+const TIER_DRAG_PICK_DISTANCE_PX = 18;
+const TIER_DRAG_PICK_PADDING_PX = 10;
+const TIER_DRAG_SNAP_TOLERANCE_PX = 12;
+const TIER_DRAG_GUIDE_POINT_RADIUS_PX = 4;
+
+function getTierBaseZ(solver, tierIndex = 0) {
+    if (!solver?.rows?.length) return 0;
+    return tierIndex === 0 ? 0 : (solver.rows[0].z - solver.rows[0].riser_height);
+}
+
+function getDistanceToSegmentPx(px, py, ax, ay, bx, by) {
+    const dx = bx - ax;
+    const dy = by - ay;
+    if (dx === 0 && dy === 0) {
+        return Math.hypot(px - ax, py - ay);
+    }
+
+    const projection = ((px - ax) * dx + (py - ay) * dy) / ((dx * dx) + (dy * dy));
+    const t = Math.max(0, Math.min(1, projection));
+    const nearestX = ax + dx * t;
+    const nearestY = ay + dy * t;
+    return Math.hypot(px - nearestX, py - nearestY);
+}
 
 export class ProfileRenderer {
     /**
      * @param {HTMLCanvasElement} canvas
      */
     constructor(canvas, options = {}) {
+        const settings = /** @type {{
+            theme?: string,
+            onTierPositionChanged?: ((payload: {
+                tierIndex: number,
+                firstRowDist: number,
+                firstRowElev: number
+            }) => boolean | void)
+        }} */ (options && typeof options === 'object' ? options : {});
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.padding = 60;
         this.hoveredRow = -1;
-        this._theme = normalizeThemeName(options?.theme);
+        this._theme = normalizeThemeName(settings.theme);
+        this._onTierPositionChanged = typeof settings.onTierPositionChanged === 'function'
+            ? settings.onTierPositionChanged
+            : () => {};
 
         // --- Camera State (World Coordinates) ---
         // exact world coordinates of the center of the canvas
@@ -120,8 +159,10 @@ export class ProfileRenderer {
         this._lastFocalZ = 0;
         this._lastOptions = {};
         this._lastAllRows = null;
+        this._lastTierRenderState = [];
         this._lastMx = 0;
         this._lastMy = 0;
+        this._dragState = null;
 
         this._setupInteraction();
         syncProfileThemeColors(this._theme);
@@ -174,14 +215,22 @@ export class ProfileRenderer {
                 return;
             }
 
+            if (this._dragState) {
+                return;
+            }
+
             if (this._lastSolvers) {
                 this._handleHover(mx, my);
+                this._updateInteractionCursor(mx, my);
             }
         });
 
         this.canvas.addEventListener('mouseleave', () => {
             this.hoveredRow = -1;
             this._isPanning = false;
+            if (!this._dragState) {
+                this.canvas.style.cursor = 'default';
+            }
             this._rerender();
         });
 
@@ -242,7 +291,65 @@ export class ProfileRenderer {
         });
 
         this.canvas.addEventListener('mouseup', (e) => {
-            if (e.button === 1) this._isPanning = false;
+            if (e.button === 1) {
+                this._isPanning = false;
+                this._updateInteractionCursor(this._lastMx, this._lastMy);
+            }
+        });
+
+        this.canvas.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0 || this._isPanning) return;
+
+            const rect = this.canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+            const tierTarget = this._findTierDragTarget(mx, my);
+            if (!tierTarget) return;
+
+            this._dragState = {
+                pointerId: e.pointerId,
+                tierIndex: tierTarget.tierIndex,
+                startWorld: toWorld(mx, my),
+                startFirstRowDist: tierTarget.firstRowDist,
+                startFirstRowElev: tierTarget.firstRowElev,
+                lastResolvedPosition: {
+                    firstRowDist: tierTarget.firstRowDist,
+                    firstRowElev: tierTarget.firstRowElev
+                },
+                guides: {
+                    x: null,
+                    z: null
+                }
+            };
+            this.hoveredRow = -1;
+            this.canvas.style.cursor = 'grabbing';
+            this.canvas.setPointerCapture?.(e.pointerId);
+            e.preventDefault();
+            this._rerender();
+        });
+
+        this.canvas.addEventListener('pointermove', (e) => {
+            if (!this._dragState || this._dragState.pointerId !== e.pointerId) return;
+
+            const rect = this.canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+            this._lastMx = mx;
+            this._lastMy = my;
+            this._updateTierDrag(toWorld(mx, my));
+            e.preventDefault();
+        });
+
+        this.canvas.addEventListener('pointerup', (e) => {
+            if (!this._dragState || this._dragState.pointerId !== e.pointerId) return;
+            this.canvas.releasePointerCapture?.(e.pointerId);
+            this._finishTierDrag();
+        });
+
+        this.canvas.addEventListener('pointercancel', (e) => {
+            if (!this._dragState || this._dragState.pointerId !== e.pointerId) return;
+            this.canvas.releasePointerCapture?.(e.pointerId);
+            this._finishTierDrag();
         });
 
         this.canvas.addEventListener('contextmenu', (e) => {
@@ -297,6 +404,310 @@ export class ProfileRenderer {
         }
     }
 
+    _toScreenPoint(x, z) {
+        return {
+            sx: this._offsetX + x * this._pxPerFoot,
+            sy: this._offsetY - z * this._pxPerFoot
+        };
+    }
+
+    _updateInteractionCursor(mx, my) {
+        if (this._dragState || this._isPanning) {
+            this.canvas.style.cursor = 'grabbing';
+            return;
+        }
+
+        const nextCursor = this._findTierDragTarget(mx, my) ? 'grab' : 'default';
+        if (this.canvas.style.cursor !== nextCursor) {
+            this.canvas.style.cursor = nextCursor;
+        }
+    }
+
+    _buildTierRenderState(solver, fallbackTierIndex = 0) {
+        if (!solver?.rows?.length) return null;
+
+        const tierIndex = getSolverTierIndex(solver, fallbackTierIndex);
+        const rows = solver.rows;
+        const baseZ = getTierBaseZ(solver, tierIndex);
+        const segments = solver.getStepGeometry().map(([start, end]) => ([start, end]));
+        const firstRow = rows[0];
+        const lastRow = rows[rows.length - 1];
+        const riserX = firstRow.x - solver.treadDepthFt;
+
+        segments.unshift([
+            { x: riserX, z: baseZ },
+            { x: riserX, z: firstRow.z }
+        ]);
+
+        return {
+            tierIndex,
+            solver,
+            firstRowDist: firstRow.x - solver.treadDepthFt,
+            firstRowElev: firstRow.z,
+            bounds: {
+                minX: riserX,
+                maxX: lastRow.x,
+                minZ: Math.min(baseZ, firstRow.z),
+                maxZ: Math.max(...rows.map((row) => row.z))
+            },
+            segments,
+            referencePoints: rows.flatMap((row) => ([
+                {
+                    tierIndex,
+                    rowNumber: row.row_number,
+                    edge: 'front',
+                    x: row.x - solver.treadDepthFt,
+                    z: row.z
+                },
+                {
+                    tierIndex,
+                    rowNumber: row.row_number,
+                    edge: 'back',
+                    x: row.x,
+                    z: row.z
+                }
+            ]))
+        };
+    }
+
+    _findTierDragTarget(mx, my) {
+        if (!this._lastTierRenderState.length) return null;
+
+        let closestTier = null;
+        let closestDistance = Infinity;
+        let boundsMatch = null;
+
+        for (let index = this._lastTierRenderState.length - 1; index >= 0; index -= 1) {
+            const tier = this._lastTierRenderState[index];
+            const withinBounds = this._isPointInsideTierBounds(tier, mx, my);
+            if (!boundsMatch && withinBounds) {
+                boundsMatch = tier;
+            }
+
+            for (const [start, end] of tier.segments) {
+                const startScreen = this._toScreenPoint(start.x, start.z);
+                const endScreen = this._toScreenPoint(end.x, end.z);
+                const distance = getDistanceToSegmentPx(
+                    mx,
+                    my,
+                    startScreen.sx,
+                    startScreen.sy,
+                    endScreen.sx,
+                    endScreen.sy
+                );
+                if (distance <= TIER_DRAG_PICK_DISTANCE_PX && distance < closestDistance) {
+                    closestDistance = distance;
+                    closestTier = tier;
+                }
+            }
+        }
+
+        const target = closestTier || boundsMatch;
+        if (!target) return null;
+
+        return {
+            tierIndex: target.tierIndex,
+            firstRowDist: target.firstRowDist,
+            firstRowElev: target.firstRowElev
+        };
+    }
+
+    _isPointInsideTierBounds(tier, mx, my) {
+        if (!tier?.bounds) return false;
+
+        const topLeft = this._toScreenPoint(tier.bounds.minX, tier.bounds.maxZ);
+        const bottomRight = this._toScreenPoint(tier.bounds.maxX, tier.bounds.minZ);
+        const minX = Math.min(topLeft.sx, bottomRight.sx) - TIER_DRAG_PICK_PADDING_PX;
+        const maxX = Math.max(topLeft.sx, bottomRight.sx) + TIER_DRAG_PICK_PADDING_PX;
+        const minY = Math.min(topLeft.sy, bottomRight.sy) - TIER_DRAG_PICK_PADDING_PX;
+        const maxY = Math.max(topLeft.sy, bottomRight.sy) + TIER_DRAG_PICK_PADDING_PX;
+        return mx >= minX && mx <= maxX && my >= minY && my <= maxY;
+    }
+
+    _resolveDragTargetPosition(tierIndex, firstRowDist, firstRowElev) {
+        const activeTier = this._lastTierRenderState.find((tier) => tier.tierIndex === tierIndex);
+        if (!activeTier) {
+            return {
+                firstRowDist,
+                firstRowElev,
+                guides: { x: null, z: null }
+            };
+        }
+
+        const referencePoints = this._lastTierRenderState
+            .filter((tier) => tier.tierIndex < tierIndex)
+            .flatMap((tier) => tier.referencePoints);
+        if (!referencePoints.length) {
+            return {
+                firstRowDist,
+                firstRowElev,
+                guides: { x: null, z: null }
+            };
+        }
+
+        const xSnap = this._findAxisSnap({
+            axis: 'x',
+            activePoints: activeTier.referencePoints,
+            referencePoints,
+            currentValue: activeTier.firstRowDist,
+            targetValue: firstRowDist
+        });
+        const zSnap = this._findAxisSnap({
+            axis: 'z',
+            activePoints: activeTier.referencePoints,
+            referencePoints,
+            currentValue: activeTier.firstRowElev,
+            targetValue: firstRowElev
+        });
+
+        const resolvedPosition = {
+            firstRowDist: xSnap?.adjustedValue ?? firstRowDist,
+            firstRowElev: zSnap?.adjustedValue ?? firstRowElev
+        };
+        const xShift = resolvedPosition.firstRowDist - activeTier.firstRowDist;
+        const zShift = resolvedPosition.firstRowElev - activeTier.firstRowElev;
+
+        return {
+            ...resolvedPosition,
+            guides: {
+                x: xSnap
+                    ? {
+                        lineValue: xSnap.referencePoint.x,
+                        activePoint: {
+                            x: xSnap.activePoint.x + xShift,
+                            z: xSnap.activePoint.z + zShift
+                        },
+                        referencePoint: xSnap.referencePoint
+                    }
+                    : null,
+                z: zSnap
+                    ? {
+                        lineValue: zSnap.referencePoint.z,
+                        activePoint: {
+                            x: zSnap.activePoint.x + xShift,
+                            z: zSnap.activePoint.z + zShift
+                        },
+                        referencePoint: zSnap.referencePoint
+                    }
+                    : null
+            }
+        };
+    }
+
+    _findAxisSnap({ axis, activePoints, referencePoints, currentValue, targetValue }) {
+        const activeOffset = targetValue - currentValue;
+        let bestMatch = null;
+
+        for (const activePoint of activePoints || []) {
+            const shiftedValue = activePoint[axis] + activeOffset;
+
+            for (const referencePoint of referencePoints || []) {
+                const delta = referencePoint[axis] - shiftedValue;
+                const distancePx = Math.abs(delta) * this._pxPerFoot;
+                if (distancePx > TIER_DRAG_SNAP_TOLERANCE_PX) continue;
+                if (bestMatch && distancePx >= bestMatch.distancePx) continue;
+
+                bestMatch = {
+                    adjustedValue: targetValue + delta,
+                    activePoint,
+                    referencePoint,
+                    distancePx
+                };
+            }
+        }
+
+        return bestMatch;
+    }
+
+    _updateTierDrag(worldPoint) {
+        if (!this._dragState) return;
+
+        const nextFirstRowDist = this._dragState.startFirstRowDist + (worldPoint.x - this._dragState.startWorld.x);
+        const nextFirstRowElev = this._dragState.startFirstRowElev + (worldPoint.z - this._dragState.startWorld.z);
+        const resolvedPosition = this._resolveDragTargetPosition(
+            this._dragState.tierIndex,
+            nextFirstRowDist,
+            nextFirstRowElev
+        );
+
+        this._dragState.lastResolvedPosition = {
+            firstRowDist: resolvedPosition.firstRowDist,
+            firstRowElev: resolvedPosition.firstRowElev
+        };
+        this._dragState.guides = resolvedPosition.guides;
+        this._onTierPositionChanged({
+            tierIndex: this._dragState.tierIndex,
+            firstRowDist: resolvedPosition.firstRowDist,
+            firstRowElev: resolvedPosition.firstRowElev
+        });
+        this._rerender();
+    }
+
+    _finishTierDrag() {
+        if (!this._dragState) return;
+
+        const { tierIndex, lastResolvedPosition } = this._dragState;
+        this._dragState = null;
+        if (lastResolvedPosition) {
+            this._onTierPositionChanged({
+                tierIndex,
+                ...lastResolvedPosition
+            });
+        }
+        this._updateInteractionCursor(this._lastMx, this._lastMy);
+        this._rerender();
+    }
+
+    _drawDragGuides(ctx, toScreen, viewBounds) {
+        const guides = this._dragState?.guides;
+        if (!guides) return;
+
+        ctx.save();
+        ctx.strokeStyle = BRAND_PROFILE_COLORS.hoverInk;
+        ctx.fillStyle = BRAND_PROFILE_COLORS.hoverInk;
+        ctx.lineWidth = 1.5;
+        ctx.globalAlpha = 0.55;
+        ctx.setLineDash([6, 4]);
+
+        if (guides.x) {
+            const top = toScreen(guides.x.lineValue, viewBounds.maxZ);
+            const bottom = toScreen(guides.x.lineValue, viewBounds.minZ);
+            ctx.beginPath();
+            ctx.moveTo(top.sx, top.sy);
+            ctx.lineTo(bottom.sx, bottom.sy);
+            ctx.stroke();
+            this._drawGuidePoint(ctx, toScreen(guides.x.referencePoint.x, guides.x.referencePoint.z));
+            this._drawGuidePoint(ctx, toScreen(guides.x.activePoint.x, guides.x.activePoint.z), true);
+        }
+
+        if (guides.z) {
+            const left = toScreen(viewBounds.minX, guides.z.lineValue);
+            const right = toScreen(viewBounds.maxX, guides.z.lineValue);
+            ctx.beginPath();
+            ctx.moveTo(left.sx, left.sy);
+            ctx.lineTo(right.sx, right.sy);
+            ctx.stroke();
+            this._drawGuidePoint(ctx, toScreen(guides.z.referencePoint.x, guides.z.referencePoint.z));
+            this._drawGuidePoint(ctx, toScreen(guides.z.activePoint.x, guides.z.activePoint.z), true);
+        }
+
+        ctx.restore();
+    }
+
+    _drawGuidePoint(ctx, point, isActivePoint = false) {
+        ctx.save();
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = isActivePoint ? BRAND_PROFILE_COLORS.hoverInk : BRAND_PROFILE_COLORS.canvasBg;
+        ctx.strokeStyle = BRAND_PROFILE_COLORS.hoverInk;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.arc(point.sx, point.sy, TIER_DRAG_GUIDE_POINT_RADIUS_PX, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+    }
+
     /**
      * Render the section profile (Single Solver wrapper)
      */
@@ -322,6 +733,7 @@ export class ProfileRenderer {
         const showCLabels = options.showCLabels !== false;
         const rowLabelFontPx = options.rowLabelFontPx ?? 11;
         const structuralDepth = (options.structuralDepth || 0) / 12.0;
+        const structuralProfileMode = options.structuralProfileMode === 'sloped' ? 'sloped' : 'stepped';
 
         // Cache for hover and rerender
         this._lastSolvers = solvers;
@@ -331,8 +743,22 @@ export class ProfileRenderer {
 
         // Build flat list of all rows across solvers for hover detection
         this._lastAllRows = [];
-        for (const s of solvers) {
-            if (s.rows) this._lastAllRows.push(...s.rows);
+        this._lastTierRenderState = [];
+        solvers.forEach((solver, index) => {
+            if (solver?.rows) {
+                this._lastAllRows.push(...solver.rows);
+            }
+            const tierState = this._buildTierRenderState(solver, index);
+            if (tierState) {
+                this._lastTierRenderState.push(tierState);
+            }
+        });
+        if (
+            this._dragState &&
+            !this._lastTierRenderState.some((tier) => tier.tierIndex === this._dragState?.tierIndex)
+        ) {
+            this._dragState = null;
+            this.canvas.style.cursor = 'default';
         }
 
         ctx.clearRect(0, 0, w, h);
@@ -341,7 +767,10 @@ export class ProfileRenderer {
 
         // --- Auto-Fit Logic (One-Time Execution using _isFirstRender) ---
         // Bounds are ALWAYS calculated to know the extents of geometry
-        const bounds = this._calcBoundsMulti(solvers, focalX, focalZ, structuralDepth);
+        const bounds = this._calcBoundsMulti(solvers, focalX, focalZ, {
+            structuralDepth,
+            structuralProfileMode
+        });
         this._worldBounds = bounds;
 
         if (this._isFirstRender) {
@@ -401,8 +830,8 @@ export class ProfileRenderer {
         ctx.strokeStyle = BRAND_PROFILE_COLORS.groundLine;
         ctx.lineWidth = 1;
         ctx.setLineDash([4, 4]);
-        const gLeft = toScreen(bounds.minX - 100, 0); // Extend a bit relative to geometry
-        const gRight = toScreen(bounds.maxX + 100, 0);
+        const gLeft = toScreen(bounds.minX - 100, PROFILE_ZERO_LINE_WORLD_Z_OFFSET_FT); // Extend a bit relative to geometry
+        const gRight = toScreen(bounds.maxX + 100, PROFILE_ZERO_LINE_WORLD_Z_OFFSET_FT);
         ctx.beginPath();
         ctx.moveTo(gLeft.sx, gLeft.sy);
         ctx.lineTo(gRight.sx, gRight.sy);
@@ -417,7 +846,7 @@ export class ProfileRenderer {
             const solver = solvers[tierIdx];
             if (!solver.rows || solver.rows.length === 0) continue;
 
-            const colors = this._getTierColors(solver.tierIndex !== undefined ? solver.tierIndex : tierIdx);
+            const colors = this._getTierColors(getSolverTierIndex(solver, tierIdx));
 
             // Analyze sightlines for this solver (visuals only)
             // Note: Stats are calculated in App.js using filtered rows. Visuals show ALL rays.
@@ -447,8 +876,11 @@ export class ProfileRenderer {
                 }
             }
 
-            // Draw stepped profile
-            this._drawProfile(ctx, solver, toScreen, scale, structuralDepth, tierIdx);
+            this._drawProfile(ctx, solver, toScreen, scale, {
+                structuralDepth,
+                structuralProfileMode,
+                tierIdx
+            });
 
             // Draw heads and eye points
             if (showHeads) {
@@ -529,8 +961,12 @@ export class ProfileRenderer {
         // Draw focal point marker
         this._drawFocalPoint(ctx, focalX, focalZ, toScreen, scale);
 
+        if (this._dragState) {
+            this._drawDragGuides(ctx, toScreen, viewBounds);
+        }
+
         // Hover tooltip
-        if (this.hoveredRow >= 0 && this.hoveredRow < this._lastAllRows.length) {
+        if (!this._dragState && this.hoveredRow >= 0 && this.hoveredRow < this._lastAllRows.length) {
             this._drawTooltip(ctx, this._lastAllRows[this.hoveredRow], w, h, this._lastMx, this._lastMy);
         }
 
@@ -540,23 +976,40 @@ export class ProfileRenderer {
         // this._drawLegend(ctx, w, h); // User removed legend from canvas in favor of HTML legend
     }
 
-    _calcBounds(solver, focalX, focalZ, structuralDepth = 0) {
-        return this._calcBoundsMulti([solver], focalX, focalZ, structuralDepth);
+    _calcBounds(solver, focalX, focalZ, options = {}) {
+        return this._calcBoundsMulti([solver], focalX, focalZ, options);
     }
 
-    _calcBoundsMulti(solvers, focalX, focalZ, structuralDepth = 0) {
+    _calcBoundsMulti(solvers, focalX, focalZ, {
+        structuralDepth = 0,
+        structuralProfileMode = 'stepped'
+    } = {}) {
         let minX = focalX;
         let maxX = focalX;
         let minZ = focalZ;
         let maxZ = focalZ;
-        const depthPad = Math.max(0, structuralDepth || 0);
 
-        for (const solver of solvers) {
+        for (let tierIdx = 0; tierIdx < solvers.length; tierIdx += 1) {
+            const solver = solvers[tierIdx];
             for (const row of solver.rows) {
                 minX = Math.min(minX, row.x - solver.treadDepthFt);
                 maxX = Math.max(maxX, row.x);
-                minZ = Math.min(minZ, -depthPad);
+                minZ = Math.min(minZ, row.z - row.riser_height, 0);
                 maxZ = Math.max(maxZ, row.eye_z + 1);
+            }
+
+            if (structuralDepth > 0) {
+                const structuralGeometry = buildStructuralProfileGeometry(solver, {
+                    structuralDepthFt: structuralDepth,
+                    structuralProfileMode,
+                    tierIndex: tierIdx
+                });
+                if (structuralGeometry?.bounds) {
+                    minX = Math.min(minX, structuralGeometry.bounds.minX);
+                    maxX = Math.max(maxX, structuralGeometry.bounds.maxX);
+                    minZ = Math.min(minZ, structuralGeometry.bounds.minZ);
+                    maxZ = Math.max(maxZ, structuralGeometry.bounds.maxZ);
+                }
             }
         }
 
@@ -580,16 +1033,7 @@ export class ProfileRenderer {
     _drawGrid(ctx, w, h, scale, bounds, offsetX, offsetY) {
         ctx.save();
 
-        // Determine grid spacing
-        const targetPx = 70;
-        const candidates = [1, 2, 5, 10, 20, 50, 100, 200];
-        let gridFt = 10;
-        for (const c of candidates) {
-            if (c * scale >= targetPx * 0.5) {
-                gridFt = c;
-                break;
-            }
-        }
+        const gridFt = this._getGridSpacingFt(scale, 70, 0.5);
 
         ctx.strokeStyle = BRAND_PROFILE_COLORS.grid;
         ctx.lineWidth = 1;
@@ -627,9 +1071,14 @@ export class ProfileRenderer {
         return BRAND_PROFILE_COLORS.tier[tierIdx] || BRAND_PROFILE_COLORS.tier[0];
     }
 
-    _drawProfile(ctx, solver, toScreen, scale, structuralDepth = 0, tierIdx = 0) {
+    _drawProfile(ctx, solver, toScreen, scale, {
+        structuralDepth = 0,
+        structuralProfileMode = 'stepped',
+        tierIdx = 0
+    } = {}) {
         const segments = solver.getStepGeometry();
-        const colors = this._getTierColors(solver.tierIndex !== undefined ? solver.tierIndex : tierIdx);
+        const colors = this._getTierColors(getSolverTierIndex(solver, tierIdx));
+        let structuralGeometry = null;
 
         // Draw structural depth fill first (behind the outline)
         // Structural depth creates a proper offset stepped profile:
@@ -637,27 +1086,23 @@ export class ProfileRenderer {
         //   - Each RISER (vertical) is offset RIGHT by depth
         // This forms a closed structural cross-section loop.
         if (structuralDepth > 0 && segments.length > 0) {
-            const d = structuralDepth;
+            structuralGeometry = buildStructuralProfileGeometry(solver, {
+                structuralDepthFt: structuralDepth,
+                structuralProfileMode,
+                tierIndex: tierIdx
+            });
             ctx.save();
             ctx.fillStyle = colors.fill;
             ctx.strokeStyle = colors.fillStroke;
             ctx.lineWidth = 1.5;
             ctx.setLineDash([]);
 
-            // === Build the TOP profile (original step geometry) ===
-            const topProfile = [];
             const firstRow = solver.rows[0];
-            const tIdx = solver.tierIndex !== undefined ? solver.tierIndex : tierIdx;
-
-            // Start from the base of the first riser
-            let baseZ;
-            if (tIdx === 0) {
-                baseZ = 0; // Tier 1 starts from ground
-            } else {
-                baseZ = firstRow.z - firstRow.riser_height;
-            }
-            const startX = firstRow.x - solver.treadDepthFt;
-            topProfile.push({ x: startX, z: baseZ }); // Base of first riser
+            const tIdx = getSolverTierIndex(solver, tierIdx);
+            const startX = structuralGeometry?.topProfile?.[0]?.x ?? (firstRow.x - solver.treadDepthFt);
+            const baseZ = structuralGeometry?.topProfile?.[0]?.z
+                ?? (tIdx === 0 ? 0 : (firstRow.z - firstRow.riser_height));
+            const topProfile = [{ x: startX, z: baseZ }];
             topProfile.push({ x: startX, z: firstRow.z }); // Top of first riser → start of first tread
 
             // Add each segment from getStepGeometry
@@ -671,31 +1116,12 @@ export class ProfileRenderer {
             // The bottom profile stays within the original profile bounds:
             //   - Starts at same Z as original base (just shifted right)
             //   - Ends at same X as original last tread (just shifted down)
-            const bottomProfile = [];
-            const isLastRow = (i) => i === solver.rows.length - 1;
-
-            // Start: offset the base point RIGHT only (same Z as original base)
-            bottomProfile.push({ x: startX + d, z: baseZ });
-
-            for (let i = 0; i < solver.rows.length; i++) {
-                const row = solver.rows[i];
-                const treadStartX = row.x - solver.treadDepthFt;
-                const treadEndX = row.x;
-
-                // Bottom tread for this row: at z-d
-                // Internal risers offset right by +d, but last tread ends at original X
-                bottomProfile.push({ x: treadStartX + d, z: row.z - d });
-                if (i < solver.rows.length - 1) {
-                    // Not the last row: extend tread end to x+d (riser will be at x+d)
-                    bottomProfile.push({ x: treadEndX + d, z: row.z - d });
-                    // Bottom riser to next row
-                    const nextRow = solver.rows[i + 1];
-                    bottomProfile.push({ x: treadEndX + d, z: nextRow.z - d });
-                } else {
-                    // Last row: tread ends at original X (no extension)
-                    bottomProfile.push({ x: treadEndX, z: row.z - d });
-                }
-            }
+            const bottomProfile = [...(structuralGeometry?.undersideProfile ?? [])];
+            const frontBottomPoint = { x: startX, z: bottomProfile[0]?.z ?? baseZ };
+            const fillBottomProfile = [frontBottomPoint, ...bottomProfile];
+            const rearBottomZ = bottomProfile.length > 0
+                ? bottomProfile[bottomProfile.length - 1].z
+                : (topProfile[topProfile.length - 1]?.z ?? baseZ);
 
             // === Draw the closed polygon ===
             ctx.beginPath();
@@ -710,13 +1136,12 @@ export class ProfileRenderer {
 
             // Connect top end → bottom end (straight down, no rightward extension)
             const topEnd = topProfile[topProfile.length - 1];
-            // Go straight down to offset Z at same X
-            s = toScreen(topEnd.x, topEnd.z - d);
+            s = toScreen(topEnd.x, rearBottomZ);
             ctx.lineTo(s.sx, s.sy);
 
             // Draw BOTTOM profile in reverse
-            for (let i = bottomProfile.length - 1; i >= 0; i--) {
-                s = toScreen(bottomProfile[i].x, bottomProfile[i].z);
+            for (let i = fillBottomProfile.length - 1; i >= 0; i--) {
+                s = toScreen(fillBottomProfile[i].x, fillBottomProfile[i].z);
                 ctx.lineTo(s.sx, s.sy);
             }
 
@@ -742,7 +1167,7 @@ export class ProfileRenderer {
             ctx.beginPath();
 
             // Bottom profile from start to end
-            s = toScreen(startX + d, baseZ);
+            s = toScreen(frontBottomPoint.x, frontBottomPoint.z);
             ctx.moveTo(s.sx, s.sy);
             for (const pt of bottomProfile) {
                 s = toScreen(pt.x, pt.z);
@@ -755,9 +1180,9 @@ export class ProfileRenderer {
 
             // Draw connecting line at start (horizontal from top start to bottom start)
             ctx.beginPath();
-            s = toScreen(startX, baseZ);
+            s = toScreen(startX, frontBottomPoint.z);
             ctx.moveTo(s.sx, s.sy);
-            s = toScreen(startX + d, baseZ);
+            s = toScreen(bottomProfile[0]?.x ?? startX, bottomProfile[0]?.z ?? frontBottomPoint.z);
             ctx.lineTo(s.sx, s.sy);
             ctx.stroke();
 
@@ -796,10 +1221,13 @@ export class ProfileRenderer {
             const treadPt = toScreen(riserTopX, firstRow.z);
 
             let bottomZ;
-            const tIdx = solver.tierIndex !== undefined ? solver.tierIndex : tierIdx;
+            const tIdx = getSolverTierIndex(solver, tierIdx);
             if (tIdx === 0) {
                 // Tier 1: Draw ALL the way to ground (z=0) to show base wall
                 bottomZ = 0;
+            } else if (structuralDepth > 0) {
+                bottomZ = structuralGeometry?.topProfile?.[0]?.z
+                    ?? Math.max(0, firstRow.z - structuralDepth);
             } else {
                 // Upper tiers: Draw only standard riser height
                 bottomZ = firstRow.z - firstRow.riser_height;
@@ -852,20 +1280,14 @@ export class ProfileRenderer {
         ctx.font = '10px Inter, system-ui, sans-serif';
         ctx.fillStyle = BRAND_PROFILE_COLORS.gridLabel;
 
-        const candidates = [1, 2, 5, 10, 20, 50, 100, 200];
-        let gridFt = 10;
-        for (const c of candidates) {
-            if (c * scale >= 35) {
-                gridFt = c;
-                break;
-            }
-        }
+        const gridFt = this._getGridSpacingFt(scale, 35);
 
         // X axis labels
         ctx.textAlign = 'center';
         const startX = Math.floor(bounds.minX / gridFt) * gridFt;
         const xAxisLabelY = Math.max(16, h - PROFILE_X_AXIS_LABEL_Y_OFFSET_PX);
         for (let x = startX; x <= bounds.maxX; x += gridFt) {
+            if (x < 0) continue;
             const px = offsetX + x * scale;
             ctx.fillText(`${x}'`, px, xAxisLabelY);
         }
@@ -874,11 +1296,24 @@ export class ProfileRenderer {
         ctx.textAlign = 'right';
         const startZ = Math.floor(bounds.minZ / gridFt) * gridFt;
         for (let z = startZ; z <= bounds.maxZ; z += gridFt) {
+            if (z < 0) continue;
             const py = offsetY - z * scale;
             ctx.fillText(`${z}'`, this.padding - 8, py + 3);
         }
 
         ctx.restore();
+    }
+
+    _getGridSpacingFt(scale, targetPx, thresholdRatio = 1) {
+        const candidates = [1, 2, 5, 10, 20, 50, 100, 200];
+        let gridFt = 10;
+        for (const c of candidates) {
+            if (c * scale >= targetPx * thresholdRatio) {
+                gridFt = c;
+                break;
+            }
+        }
+        return gridFt;
     }
 
     _drawTooltip(ctx, row, w, h, mx, my) {

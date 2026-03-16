@@ -1,4 +1,5 @@
 import { resolvePlanFocalYFt } from '../core/sports-templates.js';
+import { buildStructuralProfileGeometry } from '../core/profile-solver.js';
 
 const DXF_VERSION = 'AC1009';
 
@@ -281,7 +282,12 @@ function addDxfShape(writer, template, runoff, layer) {
     }
 }
 
-export function buildProfileDxf({ solvers, structuralDepthFt = 0, focalPointFt = { x: 0, z: 0 } }) {
+export function buildProfileDxf({
+    solvers,
+    structuralDepthFt = 0,
+    structuralProfileMode = 'stepped',
+    focalPointFt = { x: 0, z: 0 }
+}) {
     const writer = createDxfWriter();
     const fX = (Number(focalPointFt?.x) || 0) * 12;
     const fZ = (Number(focalPointFt?.z) || 0) * 12;
@@ -312,38 +318,47 @@ export function buildProfileDxf({ solvers, structuralDepthFt = 0, focalPointFt =
         }
 
         if (structuralDepthFt > 0) {
-            const d = structuralDepthFt;
-            appendDxfLine(writer, profLayer, startX * 12, baseZ * 12, (startX + d) * 12, baseZ * 12);
-
-            const bottomPts = [{ x: startX + d, z: baseZ }];
-            for (let i = 0; i < solver.rows.length; i++) {
-                const row = solver.rows[i];
-                const treadStartX = row.x - solver.treadDepthFt;
-                const treadEndX = row.x;
-
-                bottomPts.push({ x: treadStartX + d, z: row.z - d });
-                if (i < solver.rows.length - 1) {
-                    bottomPts.push({ x: treadEndX + d, z: row.z - d });
-                    const nextRow = solver.rows[i + 1];
-                    bottomPts.push({ x: treadEndX + d, z: nextRow.z - d });
-                } else {
-                    bottomPts.push({ x: treadEndX, z: row.z - d });
-                }
-            }
-
-            for (let i = 0; i < bottomPts.length - 1; i++) {
+            const structuralGeometry = buildStructuralProfileGeometry(solver, {
+                structuralDepthFt,
+                structuralProfileMode,
+                tierIndex: tierIndex
+            });
+            const undersideProfile = structuralGeometry?.undersideProfile ?? [];
+            const topProfile = structuralGeometry?.topProfile ?? [];
+            const topEnd = topProfile[topProfile.length - 1];
+            const frontBottomPoint = {
+                x: topProfile[0]?.x ?? startX,
+                z: undersideProfile[0]?.z ?? baseZ
+            };
+            if (undersideProfile.length > 0) {
                 appendDxfLine(
                     writer,
                     profLayer,
-                    bottomPts[i].x * 12,
-                    bottomPts[i].z * 12,
-                    bottomPts[i + 1].x * 12,
-                    bottomPts[i + 1].z * 12
+                    frontBottomPoint.x * 12,
+                    frontBottomPoint.z * 12,
+                    undersideProfile[0].x * 12,
+                    undersideProfile[0].z * 12
+                );
+                for (let i = 0; i < undersideProfile.length - 1; i++) {
+                    appendDxfLine(
+                        writer,
+                        profLayer,
+                        undersideProfile[i].x * 12,
+                        undersideProfile[i].z * 12,
+                        undersideProfile[i + 1].x * 12,
+                        undersideProfile[i + 1].z * 12
+                    );
+                }
+                const rearBottomPoint = undersideProfile[undersideProfile.length - 1];
+                appendDxfLine(
+                    writer,
+                    profLayer,
+                    topEnd.x * 12,
+                    topEnd.z * 12,
+                    rearBottomPoint.x * 12,
+                    rearBottomPoint.z * 12
                 );
             }
-
-            const lastRow = solver.rows[solver.rows.length - 1];
-            appendDxfLine(writer, profLayer, lastRow.x * 12, lastRow.z * 12, lastRow.x * 12, (lastRow.z - d) * 12);
         }
 
         solver.rows.forEach((row) => {
@@ -371,6 +386,7 @@ export function buildProfileDxf({ solvers, structuralDepthFt = 0, focalPointFt =
 export function buildProfileDxfExportDescriptor({
     solvers = [],
     structuralDepthFt = 0,
+    structuralProfileMode = 'stepped',
     focalPointFt = { x: 0, z: 0 },
     sportName = ''
 } = {}) {
@@ -385,6 +401,7 @@ export function buildProfileDxfExportDescriptor({
         content: buildProfileDxf({
             solvers: activeSolvers,
             structuralDepthFt,
+            structuralProfileMode,
             focalPointFt
         }),
         type: 'text/plain'

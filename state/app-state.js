@@ -43,7 +43,8 @@ const VALID_RESULTS_TABS = new Set(['statsTab', 'detailsTab']);
  *     type: string,
  *     cornerRad: number,
  *     sideLength: number,
- *     structuralDepth: number
+ *     structuralDepth: number,
+ *     structuralProfileMode: string
  *   },
  *   occupancy: {
  *     seatWidth: number,
@@ -142,7 +143,8 @@ function createDefaultStateData() {
             type: 'Full',
             cornerRad: 10,
             sideLength: 300,
-            structuralDepth: 0
+            structuralDepth: 6,
+            structuralProfileMode: 'stepped'
         },
         occupancy: {
             seatWidth: 20,
@@ -198,6 +200,10 @@ function parseString(value, fallback) {
 function normalizeBowlType(value, fallback) {
     const nextValue = parseString(value, fallback);
     return nextValue === 'Side2' ? 'Side1' : nextValue;
+}
+
+function normalizeStructuralProfileMode(value, fallback = 'stepped') {
+    return value === 'sloped' ? 'sloped' : fallback;
 }
 
 function normalizeViewTab(value, fallback) {
@@ -331,6 +337,10 @@ function normalizeAppState(rawState = {}, fallbackState = createDefaultStateData
             structuralDepth: parseNumber(
                 state.bowl?.structuralDepth,
                 fallback.bowl.structuralDepth
+            ),
+            structuralProfileMode: normalizeStructuralProfileMode(
+                state.bowl?.structuralProfileMode,
+                fallback.bowl.structuralProfileMode
             )
         },
         occupancy: {
@@ -499,7 +509,8 @@ export function buildBowlConfig(state, template) {
         corner: 'Chamfer',
         radius: bowl.cornerRad,
         sideLength: bowl.sideLength,
-        structuralDepth: bowl.structuralDepth || 0
+        structuralDepth: bowl.structuralDepth || 0,
+        structuralProfileMode: normalizeStructuralProfileMode(bowl.structuralProfileMode)
     };
 }
 
@@ -532,6 +543,7 @@ export function buildProfileRenderOptions(state, structuralDepth = 0) {
 
     return {
         structuralDepth: Number(structuralDepth) || 0,
+        structuralProfileMode: normalizeStructuralProfileMode(state?.bowl?.structuralProfileMode),
         showSightlines,
         showCLabels: showSightlines
     };

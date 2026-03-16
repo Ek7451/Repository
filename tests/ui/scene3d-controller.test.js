@@ -63,7 +63,6 @@ describe('Scene3DController', () => {
             updateField: vi.fn(),
             updateBowl: vi.fn(),
             getExportSceneData: vi.fn(() => ({ bowlMeshes: [] })),
-            buildClosedStructuralProfile: vi.fn(),
             getBowlGeometrySegments: vi.fn(),
             dispose: vi.fn()
         };
@@ -94,7 +93,6 @@ describe('Scene3DController', () => {
         );
         expect(controller.getGeometryPort()).toEqual({
             getExportSceneData: expect.any(Function),
-            buildClosedStructuralProfile: expect.any(Function),
             getBowlGeometrySegments: expect.any(Function)
         });
 

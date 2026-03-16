@@ -52,6 +52,7 @@ describe('AppState', () => {
         expect(state).toBe(AppState);
         expect(AppState.bowl.type).toBe('Side1');
         expect(AppState.setup.customRunoff).toBeNull();
+        expect(AppState.bowl.structuralProfileMode).toBe('stepped');
         expect(AppState.bookmarks[0]).toEqual({
             name: 'Corner View',
             position: { x: 1, y: 2, z: 3 },
@@ -114,6 +115,8 @@ describe('AppState', () => {
         expect(first._version).toBe(APP_STATE_VERSION);
         expect(second.tiers[0].enabled).toBe(true);
         expect(first.setup.focalX).toBe(0);
+        expect(first.bowl.structuralDepth).toBe(6);
+        expect(first.bowl.structuralProfileMode).toBe('stepped');
 
         first.tiers[0].numRows = 99;
         expect(second.tiers[0].numRows).toBe(30);
@@ -166,6 +169,7 @@ describe('AppState', () => {
         state.bowl.cornerRad = 24;
         state.bowl.sideLength = 280;
         state.bowl.structuralDepth = 18;
+        state.bowl.structuralProfileMode = 'sloped';
         state.occupancy.seatWidth = 22;
         state.occupancy.minAisle = 44;
         state.occupancy.maxAisle = 66;
@@ -212,7 +216,8 @@ describe('AppState', () => {
             corner: 'Chamfer',
             radius: 24,
             sideLength: 280,
-            structuralDepth: 18
+            structuralDepth: 18,
+            structuralProfileMode: 'sloped'
         });
         expect(bowlConfig).not.toHaveProperty('clip');
         expect(buildFieldVisibility(state)).toEqual({
@@ -274,7 +279,8 @@ describe('AppState', () => {
             corner: 'Chamfer',
             radius: undefined,
             sideLength: undefined,
-            structuralDepth: 0
+            structuralDepth: 0,
+            structuralProfileMode: 'stepped'
         });
         expect(bowlConfig).not.toHaveProperty('clip');
         expect(buildFieldVisibility(partialState)).toEqual({
@@ -289,5 +295,17 @@ describe('AppState', () => {
             showSeatCubes: false,
             seatWidthIn: 0
         });
+    });
+
+    test('round-trips structural profile mode through canonical state serialization', () => {
+        AppState.fromJSON({
+            bowl: {
+                structuralDepth: 24,
+                structuralProfileMode: 'sloped'
+            }
+        });
+
+        expect(AppState.bowl.structuralProfileMode).toBe('sloped');
+        expect(AppState.toJSON().bowl.structuralProfileMode).toBe('sloped');
     });
 });

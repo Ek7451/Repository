@@ -131,8 +131,8 @@ function createState() {
                 profileType: 'Parabolic',
                 cValue: 4,
                 numRows: 10,
-                firstRowDist: 12,
-                firstRowElev: 2,
+                firstRowDist: 10,
+                firstRowElev: 0,
                 treadDepth: 33,
                 riserHeight: 10,
                 eyeHeight: 3.75,
@@ -282,6 +282,8 @@ describe('EditorControls', () => {
             controlId: 'enableTier2'
         });
 
+        state.tiers[2].firstRowDist = 12;
+        state.tiers[2].firstRowElev = 2;
         const tier3ManualEditTarget = {
             id: 't3FirstRowDistInput',
             closest: (selector) => (selector === '.section-body' ? {} : null)
@@ -393,5 +395,62 @@ describe('EditorControls', () => {
             firstRowElev: 52,
             riserHeight: 14
         });
+    });
+
+    test('applies tier canvas positions through the shared AppState and syncs the paired inputs', () => {
+        const elements = {
+            t2FirstRowDistInput: createElement(),
+            t2FirstRowDistSlider: createElement(),
+            t2FirstRowElevInput: createElement(),
+            t2FirstRowElevSlider: createElement()
+        };
+        elements.t2FirstRowDistInput.min = '0';
+        elements.t2FirstRowDistInput.max = '200';
+        elements.t2FirstRowDistInput.step = '1';
+        elements.t2FirstRowDistSlider.min = '0';
+        elements.t2FirstRowDistSlider.max = '200';
+        elements.t2FirstRowDistSlider.step = '5';
+        elements.t2FirstRowElevInput.min = '0';
+        elements.t2FirstRowElevInput.max = '30';
+        elements.t2FirstRowElevInput.step = '0.5';
+        elements.t2FirstRowElevSlider.min = '0';
+        elements.t2FirstRowElevSlider.max = '30';
+        elements.t2FirstRowElevSlider.step = '0.5';
+
+        const state = createState();
+        state.tiers[1].enabled = true;
+        const onChange = vi.fn();
+
+        vi.stubGlobal('document', createDocumentStub(elements));
+
+        const controls = new EditorControls({
+            state,
+            onChange
+        });
+
+        expect(controls.applyTierCanvasPosition({
+            tierIndex: 1,
+            firstRowDist: 83.7,
+            firstRowElev: 31
+        })).toBe(true);
+        expect(state.tiers[1]).toMatchObject({
+            firstRowDist: 84,
+            firstRowElev: 30
+        });
+        expect(elements.t2FirstRowDistInput.value).toBe('84');
+        expect(elements.t2FirstRowDistSlider.value).toBe('84');
+        expect(elements.t2FirstRowElevInput.value).toBe('30');
+        expect(elements.t2FirstRowElevSlider.value).toBe('30');
+        expect(onChange).toHaveBeenCalledWith({
+            reason: 'state',
+            controlId: 'profileCanvasTierDrag'
+        });
+        onChange.mockClear();
+        expect(controls.applyTierCanvasPosition({
+            tierIndex: 1,
+            firstRowDist: 84,
+            firstRowElev: 30
+        })).toBe(false);
+        expect(onChange).not.toHaveBeenCalled();
     });
 });

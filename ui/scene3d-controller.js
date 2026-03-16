@@ -150,9 +150,6 @@ export class Scene3DController {
             getExportSceneData: typeof this.scene3D.getExportSceneData === 'function'
                 ? this.scene3D.getExportSceneData.bind(this.scene3D)
                 : null,
-            buildClosedStructuralProfile: typeof this.scene3D.buildClosedStructuralProfile === 'function'
-                ? this.scene3D.buildClosedStructuralProfile.bind(this.scene3D)
-                : null,
             getBowlGeometrySegments: typeof this.scene3D.getBowlGeometrySegments === 'function'
                 ? this.scene3D.getBowlGeometrySegments.bind(this.scene3D)
                 : null

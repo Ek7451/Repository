@@ -6,6 +6,7 @@
 import * as THREE from '../lib/three.module.js';
 import { OrbitControls } from '../lib/OrbitControls.js';
 import { buildGeometryPaths, sampleAisleBand, resolveAisleStationRatios, samplePathPointByRatio } from '../core/aisle-layout.js';
+import { buildStructuralProfileGeometry } from '../core/profile-solver.js';
 import { resolvePlanFocalYFt } from '../core/sports-templates.js';
 
 const SCENE_THEME_COLORS = {
@@ -958,7 +959,11 @@ export class Scene3D {
         const THREE = this.THREE;
         const positions = [];
         const indices = [];
-        const profile = this._buildClosedStructuralProfile(solver, structuralDepthFt);
+        const profile = buildStructuralProfileGeometry(solver, {
+            structuralDepthFt,
+            structuralProfileMode: bowlConfig?.structuralProfileMode,
+            tierIndex: solver?.tierIndex ?? 0
+        })?.closedProfile;
         if (!profile || profile.length < 4) return null;
 
         const pathCache = new Map();
@@ -1034,78 +1039,6 @@ export class Scene3D {
         geometry.setIndex(indices);
         geometry.computeVertexNormals();
         return geometry;
-    }
-
-    _buildClosedStructuralProfile(solver, structuralDepthFt, tierIdx = 0) {
-        if (!solver || !solver.rows || solver.rows.length === 0) return null;
-
-        const rows = solver.rows;
-        const firstRow = rows[0];
-        const tIdx = solver.tierIndex !== undefined ? solver.tierIndex : tierIdx;
-        const baseZ = (tIdx === 0) ? 0 : (firstRow.z - firstRow.riser_height);
-        const startX = firstRow.x - solver.treadDepthFt;
-
-        const topProfile = [
-            { x: startX, z: baseZ },
-            { x: startX, z: firstRow.z }
-        ];
-
-        for (let i = 0; i < rows.length; i++) {
-            const row = rows[i];
-            topProfile.push({ x: row.x, z: row.z });
-            if (i < rows.length - 1) {
-                topProfile.push({ x: row.x, z: rows[i + 1].z });
-            }
-        }
-
-        const bottomProfile = [{ x: startX + structuralDepthFt, z: baseZ }];
-        for (let i = 0; i < rows.length; i++) {
-            const row = rows[i];
-            const treadStartX = row.x - solver.treadDepthFt;
-            const treadEndX = row.x;
-            bottomProfile.push({ x: treadStartX + structuralDepthFt, z: row.z - structuralDepthFt });
-
-            if (i < rows.length - 1) {
-                const nextRow = rows[i + 1];
-                bottomProfile.push({ x: treadEndX + structuralDepthFt, z: row.z - structuralDepthFt });
-                bottomProfile.push({ x: treadEndX + structuralDepthFt, z: nextRow.z - structuralDepthFt });
-            } else {
-                bottomProfile.push({ x: treadEndX, z: row.z - structuralDepthFt });
-            }
-        }
-
-        const top = this._dedupeProfilePoints(topProfile);
-        const bottom = this._dedupeProfilePoints(bottomProfile);
-        if (top.length < 2 || bottom.length < 2) return null;
-
-        const closed = [...top];
-        const topEnd = top[top.length - 1];
-        closed.push({ x: topEnd.x, z: topEnd.z - structuralDepthFt });
-        for (let i = bottom.length - 1; i >= 0; i--) {
-            closed.push(bottom[i]);
-        }
-        closed.push({ x: top[0].x, z: top[0].z });
-
-        return this._dedupeProfilePoints(closed);
-    }
-
-    buildClosedStructuralProfile(solver, structuralDepthFt, tierIdx = 0) {
-        return this._buildClosedStructuralProfile(solver, structuralDepthFt, tierIdx);
-    }
-
-    _dedupeProfilePoints(points, epsilon = 1e-6) {
-        if (!Array.isArray(points) || points.length === 0) return [];
-        const out = [];
-
-        for (const pt of points) {
-            if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.z)) continue;
-            const last = out[out.length - 1];
-            if (!last || Math.abs(last.x - pt.x) > epsilon || Math.abs(last.z - pt.z) > epsilon) {
-                out.push({ x: pt.x, z: pt.z });
-            }
-        }
-
-        return out;
     }
 
     getExportSceneData() {

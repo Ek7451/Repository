@@ -198,7 +198,7 @@ describe('service DTO boundaries', () => {
                 type: 'Full',
                 cornerRad: 10,
                 sideLength: 300,
-                structuralDepth: 0
+                structuralDepth: 6
             },
             occupancy: {
                 seatWidth: 20,

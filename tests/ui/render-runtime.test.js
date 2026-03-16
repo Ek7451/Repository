@@ -30,6 +30,7 @@ describe('RenderRuntime', () => {
         state.setup.focalX = 18;
         state.setup.focalZ = 9;
         state.bowl.structuralDepth = 18;
+        state.bowl.structuralProfileMode = 'sloped';
         state.occupancy.showSeatCubes3D = true;
         state.occupancy.seatWidth = 22;
         state.tiers[1].enabled = true;
@@ -66,6 +67,7 @@ describe('RenderRuntime', () => {
             focalPointFt: { x: 18, z: 9 },
             options: {
                 structuralDepth: 18,
+                structuralProfileMode: 'sloped',
                 showSightlines: true,
                 showCLabels: true
             }
@@ -100,7 +102,10 @@ describe('RenderRuntime', () => {
             sportName: 'Football',
             template: snapshot.template,
             solvers: snapshot.solvers,
-            bowlConfig: snapshot.bowlConfig,
+            bowlConfig: expect.objectContaining({
+                structuralDepth: 18,
+                structuralProfileMode: 'sloped'
+            }),
             egressParams: snapshot.egressParams,
             focalPointFt: snapshot.focalPointFt,
             runoffDistance: 30,

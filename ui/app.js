@@ -70,10 +70,16 @@ export class SeatingBowlApp {
                 onResize: () => this._scheduleUpdate()
             }) ?? {};
             const activeTheme = this.editorShell?.getTheme?.() ?? 'light';
+            const handleTierPositionChanged = (payload) => (
+                this.editorControls?.applyTierCanvasPosition(payload) ?? false
+            );
 
             // Init 2D renderers
             this.fieldRenderer = new FieldRenderer(fieldCanvas, { theme: activeTheme });
-            this.profileRenderer = new ProfileRenderer(profileCanvas, { theme: activeTheme });
+            this.profileRenderer = new ProfileRenderer(profileCanvas, {
+                theme: activeTheme,
+                onTierPositionChanged: handleTierPositionChanged
+            });
 
             this.editorControls?.init();
             this.scene3DController = new Scene3DController({

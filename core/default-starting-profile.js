@@ -15,7 +15,8 @@ export const DEFAULT_STARTUP_PROFILE = {
     "type": "Full",
     "cornerRad": 8,
     "sideLength": 300,
-    "structuralDepth": 6
+    "structuralDepth": 12,
+    "structuralProfileMode": "stepped"
   },
   "occupancy": {
     "seatWidth": 19,

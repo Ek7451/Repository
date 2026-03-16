@@ -221,6 +221,80 @@ describe('SeatingBowlApp shell callbacks', () => {
         });
     });
 
+    it('wires the profile renderer drag callback through editor controls only', async () => {
+        const fieldCanvas = { id: 'fieldCanvas' };
+        const profileCanvas = { id: 'profileCanvas' };
+        const mockShell = {
+            init: vi.fn(),
+            connectViewCanvases: vi.fn(() => ({
+                fieldCanvas,
+                profileCanvas
+            })),
+            getTheme: vi.fn(() => 'light'),
+            syncFromState: vi.fn(),
+            renderProjectChrome: vi.fn(),
+            renderProjectStatus: vi.fn(),
+            applyUrlViewOverride: vi.fn(),
+            isScene3DActive: vi.fn(() => false)
+        };
+        const profileRendererInstance = {};
+        /** @type {{ onTierPositionChanged: (payload: { tierIndex: number, firstRowDist: number, firstRowElev: number }) => unknown } | null} */
+        let receivedOptions = null;
+
+        vi.spyOn(editorShellModule, 'EditorShell').mockImplementation(() => /** @type {any} */ (mockShell));
+        vi.spyOn(fieldRendererModule, 'FieldRenderer').mockImplementation(() => /** @type {any} */ ({}));
+        vi.spyOn(profileRendererModule, 'ProfileRenderer').mockImplementation((_canvas, options) => {
+            receivedOptions = /** @type {any} */ (options);
+            return /** @type {any} */ (profileRendererInstance);
+        });
+        vi.spyOn(scene3DControllerModule, 'Scene3DController').mockImplementation(() => /** @type {any} */ ({
+            renderBookmarks: vi.fn(),
+            applyTheme: vi.fn(),
+            update: vi.fn(),
+            destroy: vi.fn()
+        }));
+        vi.spyOn(statsPanelModule, 'StatsPanel').mockImplementation(() => /** @type {any} */ ({ update: vi.fn() }));
+        vi.stubGlobal('requestAnimationFrame', (callback) => {
+            callback();
+            return 1;
+        });
+
+        const app = new SeatingBowlApp();
+        const applyTierCanvasPosition = vi.fn(() => true);
+        app.editorControls = /** @type {any} */ ({
+            init: vi.fn(),
+            syncFromState: vi.fn(),
+            destroy: vi.fn(),
+            applyTierCanvasPosition
+        });
+        vi.spyOn(app, 'update').mockImplementation(() => {});
+
+        await app.init();
+
+        expect(profileRendererModule.ProfileRenderer).toHaveBeenCalledWith(
+            profileCanvas,
+            expect.objectContaining({
+                theme: 'light',
+                onTierPositionChanged: expect.any(Function)
+            })
+        );
+        if (!receivedOptions) {
+            throw new Error('ProfileRenderer options were not captured');
+        }
+
+        receivedOptions.onTierPositionChanged({
+            tierIndex: 1,
+            firstRowDist: 88,
+            firstRowElev: 24
+        });
+
+        expect(applyTierCanvasPosition).toHaveBeenCalledWith({
+            tierIndex: 1,
+            firstRowDist: 88,
+            firstRowElev: 24
+        });
+    });
+
     it('builds save requests from the single live AppState', () => {
         const chromeUpdates = [];
         const app = new SeatingBowlApp({
@@ -369,7 +443,6 @@ describe('SeatingBowlApp shell callbacks', () => {
         app.scene3DController = /** @type {any} */ ({
             getGeometryPort: vi.fn(() => ({
                 getExportSceneData: vi.fn(() => exportSceneData),
-                buildClosedStructuralProfile: vi.fn(),
                 getBowlGeometrySegments: vi.fn()
             }))
         });

@@ -73,6 +73,49 @@ describe('buildProfileDxf', () => {
         expect(dxf).not.toContain('NaN');
         expect(dxf).not.toContain('Infinity');
     });
+
+    test('uses the shared structural profile geometry for sloped exports', () => {
+        const dxf = buildProfileDxf({
+            solvers: [{
+                tierIndex: 1,
+                treadDepthFt: 2,
+                rows: [
+                    {
+                        x: 10,
+                        z: 6,
+                        tread_depth: 2,
+                        riser_height: 1,
+                        eye_x: 9.5,
+                        eye_z: 9.5,
+                        c_value: 3.25
+                    },
+                    {
+                        x: 12,
+                        z: 7,
+                        tread_depth: 2,
+                        riser_height: 1,
+                        eye_x: 11.5,
+                        eye_z: 10.5,
+                        c_value: 3.5
+                    }
+                ],
+                getStepGeometry() {
+                    return [
+                        [{ x: 8, z: 6 }, { x: 10, z: 6 }],
+                        [{ x: 10, z: 6 }, { x: 10, z: 7 }],
+                        [{ x: 10, z: 7 }, { x: 12, z: 7 }]
+                    ];
+                }
+            }],
+            structuralDepthFt: 1.5,
+            structuralProfileMode: 'sloped',
+            focalPointFt: { x: 0, z: 0 }
+        });
+
+        expect(dxf).toContain('Tier_1_Profile');
+        expect(dxf).not.toContain('NaN');
+        expect(dxf).not.toContain('Infinity');
+    });
 });
 
 describe('buildProfileDxfExportDescriptor', () => {
@@ -80,6 +123,7 @@ describe('buildProfileDxfExportDescriptor', () => {
         const descriptor = buildProfileDxfExportDescriptor({
             solvers: [createSolver()],
             structuralDepthFt: 0,
+            structuralProfileMode: 'stepped',
             focalPointFt: { x: 0, z: 0 },
             sportName: 'Football'
         });

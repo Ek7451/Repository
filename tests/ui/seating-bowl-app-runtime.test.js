@@ -153,6 +153,7 @@ describe('SeatingBowlApp runtime seams', () => {
         app.state.setup.focalZ = 9;
         app.state.setup.customRunoff = 30;
         app.state.bowl.structuralDepth = 18;
+        app.state.bowl.structuralProfileMode = 'sloped';
         app.state.occupancy.showSeatCubes3D = true;
         app.state.occupancy.seatWidth = 22;
 
@@ -185,6 +186,7 @@ describe('SeatingBowlApp runtime seams', () => {
             9,
             {
                 structuralDepth: 18,
+                structuralProfileMode: 'sloped',
                 showSightlines: true,
                 showCLabels: true
             }

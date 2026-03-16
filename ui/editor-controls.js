@@ -47,6 +47,7 @@ const NUMERIC_INPUT_STATE_PATHS = {
 const SELECT_STATE_PATHS = {
     sportSelect: ['sport'],
     bowlType: ['bowl', 'type'],
+    structuralProfileMode: ['bowl', 'structuralProfileMode'],
     profileType: ['tiers', 0, 'profileType'],
     t2ProfileType: ['tiers', 1, 'profileType'],
     t3ProfileType: ['tiers', 2, 'profileType']
@@ -79,6 +80,20 @@ const TIER_INITIALIZATION_KEYS = [
     'riserHeight',
     'eyeHeight',
     'eyeSetback'
+];
+const TIER_POSITION_CONTROL_IDS = [
+    {
+        distance: 'firstRowDist',
+        elevation: 'firstRowElev'
+    },
+    {
+        distance: 't2FirstRowDist',
+        elevation: 't2FirstRowElev'
+    },
+    {
+        distance: 't3FirstRowDist',
+        elevation: 't3FirstRowElev'
+    }
 ];
 
 function formatSportOptionLabel(name, template) {
@@ -273,6 +288,49 @@ export class EditorControls {
         this.applyImportedConfig(config);
     }
 
+    /**
+     * @param {{
+     *   tierIndex?: number,
+     *   firstRowDist?: number,
+     *   firstRowElev?: number
+     * }} [payload]
+     */
+    applyTierCanvasPosition({ tierIndex, firstRowDist, firstRowElev } = {}) {
+        const nextTierIndex = Number(tierIndex);
+        if (!Number.isInteger(nextTierIndex) || nextTierIndex < 0 || nextTierIndex > 2) {
+            return false;
+        }
+
+        const tierState = this.state?.tiers?.[nextTierIndex];
+        if (!tierState || typeof tierState !== 'object' || !tierState.enabled) {
+            return false;
+        }
+
+        const controlIds = TIER_POSITION_CONTROL_IDS[nextTierIndex];
+        if (!controlIds) return false;
+
+        const nextDistance = this._normalizeCanvasTierValue(controlIds.distance, firstRowDist);
+        const nextElevation = this._normalizeCanvasTierValue(controlIds.elevation, firstRowElev);
+        if (nextDistance === null || nextElevation === null) {
+            return false;
+        }
+
+        if (
+            tierState.firstRowDist === nextDistance &&
+            tierState.firstRowElev === nextElevation
+        ) {
+            return false;
+        }
+
+        tierState.firstRowDist = nextDistance;
+        tierState.firstRowElev = nextElevation;
+        this._markTierInitialized(nextTierIndex + 1);
+        this._setInputValue(controlIds.distance, nextDistance);
+        this._setInputValue(controlIds.elevation, nextElevation);
+        this._emitChange('state', 'profileCanvasTierDrag');
+        return true;
+    }
+
     _populateSports() {
         const select = getSelectElement('sportSelect');
         if (!select) return;
@@ -344,7 +402,7 @@ export class EditorControls {
             this._addListener(sectionEl, 'change', markInitialized);
         });
 
-        ['profileType', 't2ProfileType', 't3ProfileType'].forEach((id) => {
+        ['structuralProfileMode', 'profileType', 't2ProfileType', 't3ProfileType'].forEach((id) => {
             this._bindSelectControl(id);
         });
 
@@ -457,8 +515,7 @@ export class EditorControls {
                 }
             }
 
-            if (tierNum === 2) this._tier2Initialized = true;
-            if (tierNum === 3) this._tier3Initialized = true;
+            this._markTierInitialized(tierNum);
         }
 
         this.syncFromState();
@@ -474,6 +531,53 @@ export class EditorControls {
     _syncFocalXControlBounds(controlConfig) {
         syncNumericElementBounds(getInputElement('focalXSlider'), controlConfig);
         syncNumericElementBounds(getInputElement('focalXInput'), controlConfig);
+    }
+
+    _normalizeCanvasTierValue(baseId, rawValue) {
+        const nextValue = normalizeNumericControlValue(baseId, rawValue);
+        if (nextValue === null) return null;
+
+        const slider = getInputElement(`${baseId}Slider`);
+        const input = getInputElement(`${baseId}Input`);
+        const bounds = {
+            min: this._resolveNumericBound('min', slider, input, nextValue),
+            max: this._resolveNumericBound('max', slider, input, nextValue)
+        };
+        const clampedValue = clampValueToBounds(nextValue, bounds);
+        const step = this._resolveNumericStep(slider, input);
+        if (!(step > 0) || INTEGER_INPUT_IDS.has(baseId)) {
+            return clampedValue;
+        }
+
+        const min = Number.isFinite(bounds.min) ? bounds.min : 0;
+        const roundedValue = Math.round((clampedValue - min) / step) * step + min;
+        return Number(roundedValue.toFixed(this._countStepDecimals(step)));
+    }
+
+    _resolveNumericBound(boundName, slider, input, fallbackValue) {
+        const bounds = [slider?.[boundName], input?.[boundName]]
+            .map((value) => Number(value))
+            .filter(Number.isFinite);
+        if (!bounds.length) return fallbackValue;
+        return boundName === 'min' ? Math.max(...bounds) : Math.min(...bounds);
+    }
+
+    _resolveNumericStep(slider, input) {
+        const steps = [input?.step, slider?.step]
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value) && value > 0);
+        return steps.length ? steps[0] : 0;
+    }
+
+    _countStepDecimals(step) {
+        const stepText = String(step);
+        const decimalIndex = stepText.indexOf('.');
+        return decimalIndex >= 0 ? stepText.length - decimalIndex - 1 : 0;
+    }
+
+    _markTierInitialized(tierNum) {
+        if (tierNum === 2) this._tier2Initialized = true;
+        if (tierNum === 3) this._tier3Initialized = true;
     }
 
     _addListener(target, eventName, handler) {
