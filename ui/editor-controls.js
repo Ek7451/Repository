@@ -3,6 +3,7 @@ import { buildNextTierDefaultsFromTiers } from '../core/profile-solver.js';
 import {
     buildFocalPointFt,
     buildFocalXControlConfig,
+    buildTierRowCountControlConfigs,
     createDefaultAppStateData,
     getRunoffDistance,
     resolveSportTemplate
@@ -94,6 +95,11 @@ const TIER_POSITION_CONTROL_IDS = [
         distance: 't3FirstRowDist',
         elevation: 't3FirstRowElev'
     }
+];
+const TIER_ROW_COUNT_CONTROL_IDS = [
+    'numRows',
+    't2NumRows',
+    't3NumRows'
 ];
 
 function formatSportOptionLabel(name, template) {
@@ -224,6 +230,7 @@ export class EditorControls {
 
     syncFromState() {
         const focalXControl = buildFocalXControlConfig(this.state);
+        const tierRowCountControls = buildTierRowCountControlConfigs(this.state);
 
         const sportSelect = getSelectElement('sportSelect');
         if (sportSelect) {
@@ -241,6 +248,7 @@ export class EditorControls {
         }
 
         this._syncFocalXControlBounds(focalXControl);
+        this._syncTierRowCountControlBounds(tierRowCountControls);
 
         Object.entries(NUMERIC_INPUT_STATE_PATHS).forEach(([baseId, path]) => {
             const value = baseId === 'focalX'
@@ -328,6 +336,38 @@ export class EditorControls {
         this._setInputValue(controlIds.distance, nextDistance);
         this._setInputValue(controlIds.elevation, nextElevation);
         this._emitChange('state', 'profileCanvasTierDrag');
+        return true;
+    }
+
+    /**
+     * @param {{
+     *   tierIndex?: number,
+     *   numRows?: number
+     * }} [payload]
+     */
+    applyTierCanvasRowCount({ tierIndex, numRows } = {}) {
+        const nextTierIndex = Number(tierIndex);
+        if (!Number.isInteger(nextTierIndex) || nextTierIndex < 0 || nextTierIndex > 2) {
+            return false;
+        }
+
+        const tierState = this.state?.tiers?.[nextTierIndex];
+        if (!tierState || typeof tierState !== 'object' || !tierState.enabled) {
+            return false;
+        }
+
+        const controlId = TIER_ROW_COUNT_CONTROL_IDS[nextTierIndex];
+        if (!controlId) return false;
+
+        const nextNumRows = this._normalizeCanvasTierValue(controlId, numRows);
+        if (nextNumRows === null || tierState.numRows === nextNumRows) {
+            return false;
+        }
+
+        tierState.numRows = nextNumRows;
+        this._markTierInitialized(nextTierIndex + 1);
+        this._setInputValue(controlId, nextNumRows);
+        this._emitChange('state', 'profileCanvasTierRowCountDrag');
         return true;
     }
 
@@ -531,6 +571,15 @@ export class EditorControls {
     _syncFocalXControlBounds(controlConfig) {
         syncNumericElementBounds(getInputElement('focalXSlider'), controlConfig);
         syncNumericElementBounds(getInputElement('focalXInput'), controlConfig);
+    }
+
+    _syncTierRowCountControlBounds(controlConfigs = []) {
+        TIER_ROW_COUNT_CONTROL_IDS.forEach((baseId, tierIndex) => {
+            const controlConfig = controlConfigs[tierIndex];
+            if (!controlConfig) return;
+            syncNumericElementBounds(getInputElement(`${baseId}Slider`), controlConfig);
+            syncNumericElementBounds(getInputElement(`${baseId}Input`), controlConfig);
+        });
     }
 
     _normalizeCanvasTierValue(baseId, rawValue) {

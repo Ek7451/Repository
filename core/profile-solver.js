@@ -224,6 +224,50 @@ export function buildNextTierDefaultsFromTiers(tiers, focalPointFt, tierNum) {
     );
 }
 
+export function buildTierRowCountHandleCandidates(solver, controlConfig) {
+    if (!solver?.rows?.length || !controlConfig || typeof controlConfig !== 'object') {
+        return [];
+    }
+
+    const minRows = Math.max(1, Math.round(Number(controlConfig.min) || 0));
+    const maxRows = Math.max(minRows, Math.round(Number(controlConfig.max) || minRows));
+    const step = Math.max(1, Math.round(Number(controlConfig.step) || 1));
+    const tierIndex = getSolverTierIndex(solver, 0);
+    const solveMethod = typeof solver.solveMethod === 'string' && solver.solveMethod.trim()
+        ? solver.solveMethod
+        : 'Parabolic';
+    const candidates = [];
+
+    for (let numRows = minRows; numRows <= maxRows; numRows += step) {
+        const nextSolver = new ProfileSolver({
+            targetCValue: solver.targetCValue,
+            firstRowDistance: solver.firstRowDistance,
+            firstRowElevation: solver.firstRowElevation,
+            treadDepth: solver.treadDepth,
+            defaultRiser: solver.defaultRiser,
+            numRows,
+            eyeHeight: solver.eyeHeight,
+            eyeSetback: solver.eyeSetback,
+            focalX: solver.focalX,
+            focalZ: solver.focalZ
+        });
+        nextSolver.solve(solveMethod);
+        nextSolver.tierIndex = tierIndex;
+
+        const lastRow = nextSolver.rows[nextSolver.rows.length - 1];
+        if (!lastRow) continue;
+
+        candidates.push({
+            tierIndex,
+            numRows,
+            x: lastRow.x,
+            z: lastRow.z
+        });
+    }
+
+    return candidates;
+}
+
 export function buildTierMetricsByIndex({
     solvers,
     bowlConfig,
@@ -307,6 +351,7 @@ export class ProfileSolver {
         this.rows = [];
         this.tierIndex = 0;
         this.tierBreakRow = 0;
+        this.solveMethod = 'Parabolic';
     }
 
     /**
@@ -315,6 +360,7 @@ export class ProfileSolver {
      * @returns {RowData[]}
      */
     solve(method = "Parabolic") {
+        this.solveMethod = method === "Linear" ? "Linear" : "Parabolic";
         if (method === "Linear") {
             return this._solveLinear();
         }

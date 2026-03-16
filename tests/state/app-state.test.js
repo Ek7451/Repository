@@ -8,8 +8,10 @@ import {
     buildFieldVisibility,
     buildFocalXControlConfig,
     buildFocalPointFt,
+    buildProfileRenderOptions,
     buildPrimaryTierParameters,
     buildSceneSeatPreviewOptions,
+    buildTierRowCountControlConfigs,
     createDefaultAppStateData,
     getCustomRunoff,
     getRunoffDistance
@@ -115,7 +117,7 @@ describe('AppState', () => {
         expect(first._version).toBe(APP_STATE_VERSION);
         expect(second.tiers[0].enabled).toBe(true);
         expect(first.setup.focalX).toBe(0);
-        expect(first.bowl.structuralDepth).toBe(6);
+        expect(first.bowl.structuralDepth).toBe(DEFAULT_STARTUP_PROFILE.bowl.structuralDepth);
         expect(first.bowl.structuralProfileMode).toBe('stepped');
 
         first.tiers[0].numRows = 99;
@@ -231,6 +233,22 @@ describe('AppState', () => {
         expect(buildSceneSeatPreviewOptions(state)).toEqual({
             showSeatCubes: true,
             seatWidthIn: 22
+        });
+        expect(buildTierRowCountControlConfigs(state)).toEqual([
+            { min: 5, max: 80, step: 1 },
+            { min: 3, max: 60, step: 1 },
+            { min: 3, max: 60, step: 1 }
+        ]);
+        expect(buildProfileRenderOptions(state, 18)).toEqual({
+            structuralDepth: 18,
+            structuralProfileMode: 'sloped',
+            showSightlines: false,
+            showCLabels: false,
+            tierRowCountControls: [
+                { min: 5, max: 80, step: 1 },
+                { min: 3, max: 60, step: 1 },
+                { min: 3, max: 60, step: 1 }
+            ]
         });
     });
 

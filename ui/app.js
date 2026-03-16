@@ -73,12 +73,16 @@ export class SeatingBowlApp {
             const handleTierPositionChanged = (payload) => (
                 this.editorControls?.applyTierCanvasPosition(payload) ?? false
             );
+            const handleTierRowCountChanged = (payload) => (
+                this.editorControls?.applyTierCanvasRowCount(payload) ?? false
+            );
 
             // Init 2D renderers
             this.fieldRenderer = new FieldRenderer(fieldCanvas, { theme: activeTheme });
             this.profileRenderer = new ProfileRenderer(profileCanvas, {
                 theme: activeTheme,
-                onTierPositionChanged: handleTierPositionChanged
+                onTierPositionChanged: handleTierPositionChanged,
+                onTierRowCountChanged: handleTierRowCountChanged
             });
 
             this.editorControls?.init();

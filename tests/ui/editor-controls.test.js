@@ -154,6 +154,12 @@ describe('EditorControls', () => {
             customRunoffSlider: createElement(),
             focalXInput: createElement(),
             focalXSlider: createElement(),
+            numRowsInput: createElement(),
+            numRowsSlider: createElement(),
+            t2NumRowsInput: createElement(),
+            t2NumRowsSlider: createElement(),
+            t3NumRowsInput: createElement(),
+            t3NumRowsSlider: createElement(),
             bowlType: createElement(),
             enableTier1: createElement(),
             enableTier2: createElement(),
@@ -187,6 +193,12 @@ describe('EditorControls', () => {
         expect(elements.focalXInput.max).toBe('100');
         expect(elements.focalXInput.step).toBe('0.1');
         expect(elements.focalXSlider.min).toBe('-111.5');
+        expect(elements.numRowsInput.min).toBe('5');
+        expect(elements.numRowsInput.max).toBe('80');
+        expect(elements.numRowsInput.step).toBe('1');
+        expect(elements.t2NumRowsInput.min).toBe('3');
+        expect(elements.t2NumRowsInput.max).toBe('60');
+        expect(elements.t3NumRowsSlider.max).toBe('60');
         expect(
             elements.sportSelect.children.find((option) => option.value === 'Football')?.textContent
         ).toContain('Football');
@@ -450,6 +462,49 @@ describe('EditorControls', () => {
             tierIndex: 1,
             firstRowDist: 84,
             firstRowElev: 30
+        })).toBe(false);
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    test('applies tier canvas row counts through the shared AppState and syncs the paired inputs', () => {
+        const elements = {
+            t2NumRowsInput: createElement(),
+            t2NumRowsSlider: createElement()
+        };
+        elements.t2NumRowsInput.min = '3';
+        elements.t2NumRowsInput.max = '60';
+        elements.t2NumRowsInput.step = '1';
+        elements.t2NumRowsSlider.min = '3';
+        elements.t2NumRowsSlider.max = '60';
+        elements.t2NumRowsSlider.step = '1';
+
+        const state = createState();
+        state.tiers[1].enabled = true;
+        const onChange = vi.fn();
+
+        vi.stubGlobal('document', createDocumentStub(elements));
+
+        const controls = new EditorControls({
+            state,
+            onChange
+        });
+
+        expect(controls.applyTierCanvasRowCount({
+            tierIndex: 1,
+            numRows: 61.7
+        })).toBe(true);
+        expect(state.tiers[1].numRows).toBe(60);
+        expect(elements.t2NumRowsInput.value).toBe('60');
+        expect(elements.t2NumRowsSlider.value).toBe('60');
+        expect(onChange).toHaveBeenCalledWith({
+            reason: 'state',
+            controlId: 'profileCanvasTierRowCountDrag'
+        });
+
+        onChange.mockClear();
+        expect(controls.applyTierCanvasRowCount({
+            tierIndex: 1,
+            numRows: 60
         })).toBe(false);
         expect(onChange).not.toHaveBeenCalled();
     });

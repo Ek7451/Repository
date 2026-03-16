@@ -7,12 +7,16 @@ import { ProfileRenderer } from '../../viz/profile-renderer.js';
 function createCanvasStub(context = {}) {
     return /** @type {HTMLCanvasElement} */ (/** @type {unknown} */ ({
         style: {},
+        width: 800,
+        height: 600,
         getContext: vi.fn(() => context),
         addEventListener: vi.fn(),
         getBoundingClientRect: vi.fn(() => ({
             left: 0,
             top: 0
-        }))
+        })),
+        setPointerCapture: vi.fn(),
+        releasePointerCapture: vi.fn()
     }));
 }
 
@@ -165,5 +169,89 @@ describe('ProfileRenderer drag snapping helpers', () => {
             { type: 'moveTo', pathIndex: 4, x: riserTopX, y: expectedBottomZ },
             { type: 'lineTo', pathIndex: 4, x: riserTopX, y: firstRow.z }
         ]);
+    });
+
+    it('finds the row-count handle at the last-row back corner when row-count candidates exist', () => {
+        const renderer = new ProfileRenderer(createCanvasStub(), {});
+        const [solver] = buildActiveTierSolvers([
+            createTier({ numRows: 4 })
+        ], { x: 0, z: 0 });
+
+        renderer._pxPerFoot = 10;
+        renderer._offsetX = 0;
+        renderer._offsetY = 0;
+        renderer._lastTierRenderState = [
+            renderer._buildTierRenderState(solver, 0, { min: 3, max: 6, step: 1 })
+        ].filter(Boolean);
+
+        const handlePoint = renderer._lastTierRenderState[0].rowCountHandlePoint;
+        const target = renderer._findTierRowCountHandleTarget(
+            handlePoint.x * renderer._pxPerFoot,
+            -handlePoint.z * renderer._pxPerFoot
+        );
+
+        expect(target).toMatchObject({
+            tierIndex: 0,
+            numRows: 4
+        });
+        expect(target?.candidates.map((candidate) => candidate.numRows)).toEqual([3, 4, 5, 6]);
+    });
+
+    it('resolves row-count drags to the nearest candidate and emits only changed row counts', () => {
+        const onTierRowCountChanged = vi.fn();
+        const renderer = new ProfileRenderer(createCanvasStub(), {
+            onTierRowCountChanged
+        });
+        const [solver] = buildActiveTierSolvers([
+            createTier({ numRows: 4 })
+        ], { x: 0, z: 0 });
+        const tierState = renderer._buildTierRenderState(solver, 0, { min: 3, max: 6, step: 1 });
+        if (!tierState) {
+            throw new Error('Expected tier render state');
+        }
+
+        renderer._pxPerFoot = 10;
+        renderer._offsetX = 0;
+        renderer._offsetY = 0;
+        renderer._rerender = vi.fn();
+        renderer._dragState = {
+            mode: 'rowCount',
+            pointerId: 1,
+            tierIndex: tierState.tierIndex,
+            currentNumRows: tierState.rowCountHandlePoint.numRows,
+            activeHandlePoint: tierState.rowCountHandlePoint,
+            candidates: tierState.rowCountCandidates
+        };
+
+        const nearestCandidate = tierState.rowCountCandidates.at(-1);
+        if (!nearestCandidate) {
+            throw new Error('Expected row-count candidate');
+        }
+
+        renderer._updateTierDrag({
+            worldPoint: { x: 0, z: 0 },
+            mx: nearestCandidate.x * renderer._pxPerFoot,
+            my: -nearestCandidate.z * renderer._pxPerFoot
+        });
+
+        expect(onTierRowCountChanged).toHaveBeenCalledWith({
+            tierIndex: tierState.tierIndex,
+            numRows: nearestCandidate.numRows
+        });
+        expect(renderer._dragState.currentNumRows).toBe(nearestCandidate.numRows);
+        expect(renderer._dragState.activeHandlePoint).toEqual({
+            x: nearestCandidate.x,
+            z: nearestCandidate.z,
+            numRows: nearestCandidate.numRows
+        });
+
+        onTierRowCountChanged.mockClear();
+        renderer._updateTierDrag({
+            worldPoint: { x: 0, z: 0 },
+            mx: nearestCandidate.x * renderer._pxPerFoot,
+            my: -nearestCandidate.z * renderer._pxPerFoot
+        });
+
+        expect(onTierRowCountChanged).not.toHaveBeenCalled();
     });
 });

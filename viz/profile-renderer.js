@@ -4,6 +4,7 @@
  */
 
 import {
+    buildTierRowCountHandleCandidates,
     buildStructuralProfileGeometry,
     getSolverTierIndex
 } from '../core/profile-solver.js';
@@ -97,6 +98,8 @@ const TIER_DRAG_PICK_DISTANCE_PX = 18;
 const TIER_DRAG_PICK_PADDING_PX = 10;
 const TIER_DRAG_SNAP_TOLERANCE_PX = 12;
 const TIER_DRAG_GUIDE_POINT_RADIUS_PX = 4;
+const TIER_ROW_COUNT_HANDLE_RADIUS_PX = 6;
+const TIER_ROW_COUNT_HANDLE_PICK_DISTANCE_PX = 12;
 
 function getTierBaseZ(solver, tierIndex = 0) {
     if (!solver?.rows?.length) return 0;
@@ -128,6 +131,10 @@ export class ProfileRenderer {
                 tierIndex: number,
                 firstRowDist: number,
                 firstRowElev: number
+            }) => boolean | void),
+            onTierRowCountChanged?: ((payload: {
+                tierIndex: number,
+                numRows: number
             }) => boolean | void)
         }} */ (options && typeof options === 'object' ? options : {});
         this.canvas = canvas;
@@ -137,6 +144,9 @@ export class ProfileRenderer {
         this._theme = normalizeThemeName(settings.theme);
         this._onTierPositionChanged = typeof settings.onTierPositionChanged === 'function'
             ? settings.onTierPositionChanged
+            : () => {};
+        this._onTierRowCountChanged = typeof settings.onTierRowCountChanged === 'function'
+            ? settings.onTierRowCountChanged
             : () => {};
 
         // --- Camera State (World Coordinates) ---
@@ -163,6 +173,8 @@ export class ProfileRenderer {
         this._lastMx = 0;
         this._lastMy = 0;
         this._dragState = null;
+        this._hoveredTierIndex = null;
+        this._hoveredTierHandleIndex = null;
 
         this._setupInteraction();
         syncProfileThemeColors(this._theme);
@@ -221,6 +233,7 @@ export class ProfileRenderer {
 
             if (this._lastSolvers) {
                 this._handleHover(mx, my);
+                this._updateInteractionTargets(mx, my);
                 this._updateInteractionCursor(mx, my);
             }
         });
@@ -228,6 +241,8 @@ export class ProfileRenderer {
         this.canvas.addEventListener('mouseleave', () => {
             this.hoveredRow = -1;
             this._isPanning = false;
+            this._hoveredTierIndex = null;
+            this._hoveredTierHandleIndex = null;
             if (!this._dragState) {
                 this.canvas.style.cursor = 'default';
             }
@@ -303,10 +318,31 @@ export class ProfileRenderer {
             const rect = this.canvas.getBoundingClientRect();
             const mx = e.clientX - rect.left;
             const my = e.clientY - rect.top;
+            const rowCountHandleTarget = this._findTierRowCountHandleTarget(mx, my);
+            if (rowCountHandleTarget) {
+                this._dragState = {
+                    mode: 'rowCount',
+                    pointerId: e.pointerId,
+                    tierIndex: rowCountHandleTarget.tierIndex,
+                    currentNumRows: rowCountHandleTarget.numRows,
+                    activeHandlePoint: rowCountHandleTarget.handlePoint,
+                    candidates: rowCountHandleTarget.candidates
+                };
+                this.hoveredRow = -1;
+                this._hoveredTierIndex = rowCountHandleTarget.tierIndex;
+                this._hoveredTierHandleIndex = rowCountHandleTarget.tierIndex;
+                this.canvas.style.cursor = 'row-resize';
+                this.canvas.setPointerCapture?.(e.pointerId);
+                e.preventDefault();
+                this._rerender();
+                return;
+            }
+
             const tierTarget = this._findTierDragTarget(mx, my);
             if (!tierTarget) return;
 
             this._dragState = {
+                mode: 'position',
                 pointerId: e.pointerId,
                 tierIndex: tierTarget.tierIndex,
                 startWorld: toWorld(mx, my),
@@ -336,7 +372,11 @@ export class ProfileRenderer {
             const my = e.clientY - rect.top;
             this._lastMx = mx;
             this._lastMy = my;
-            this._updateTierDrag(toWorld(mx, my));
+            this._updateTierDrag({
+                worldPoint: toWorld(mx, my),
+                mx,
+                my
+            });
             e.preventDefault();
         });
 
@@ -411,19 +451,44 @@ export class ProfileRenderer {
         };
     }
 
+    _updateInteractionTargets(mx, my) {
+        const handleTarget = this._findTierRowCountHandleTarget(mx, my);
+        const tierTarget = handleTarget ? null : this._findTierDragTarget(mx, my);
+        const nextHoveredTierIndex = handleTarget?.tierIndex ?? tierTarget?.tierIndex ?? null;
+        const nextHoveredTierHandleIndex = handleTarget?.tierIndex ?? null;
+
+        if (
+            nextHoveredTierIndex === this._hoveredTierIndex &&
+            nextHoveredTierHandleIndex === this._hoveredTierHandleIndex
+        ) {
+            return;
+        }
+
+        this._hoveredTierIndex = nextHoveredTierIndex;
+        this._hoveredTierHandleIndex = nextHoveredTierHandleIndex;
+        this._rerender();
+    }
+
     _updateInteractionCursor(mx, my) {
+        if (this._dragState?.mode === 'rowCount') {
+            this.canvas.style.cursor = 'row-resize';
+            return;
+        }
+
         if (this._dragState || this._isPanning) {
             this.canvas.style.cursor = 'grabbing';
             return;
         }
 
-        const nextCursor = this._findTierDragTarget(mx, my) ? 'grab' : 'default';
+        const nextCursor = this._findTierRowCountHandleTarget(mx, my)
+            ? 'row-resize'
+            : (this._findTierDragTarget(mx, my) ? 'grab' : 'default');
         if (this.canvas.style.cursor !== nextCursor) {
             this.canvas.style.cursor = nextCursor;
         }
     }
 
-    _buildTierRenderState(solver, fallbackTierIndex = 0) {
+    _buildTierRenderState(solver, fallbackTierIndex = 0, rowCountControlConfig = null) {
         if (!solver?.rows?.length) return null;
 
         const tierIndex = getSolverTierIndex(solver, fallbackTierIndex);
@@ -433,6 +498,11 @@ export class ProfileRenderer {
         const firstRow = rows[0];
         const lastRow = rows[rows.length - 1];
         const riserX = firstRow.x - solver.treadDepthFt;
+        const rowCountHandlePoint = {
+            x: lastRow.x,
+            z: lastRow.z,
+            numRows: rows.length
+        };
 
         segments.unshift([
             { x: riserX, z: baseZ },
@@ -451,6 +521,9 @@ export class ProfileRenderer {
                 maxZ: Math.max(...rows.map((row) => row.z))
             },
             segments,
+            rowCountControlConfig,
+            rowCountCandidates: buildTierRowCountHandleCandidates(solver, rowCountControlConfig),
+            rowCountHandlePoint,
             referencePoints: rows.flatMap((row) => ([
                 {
                     tierIndex,
@@ -468,6 +541,52 @@ export class ProfileRenderer {
                 }
             ]))
         };
+    }
+
+    _findTierRowCountHandleTarget(mx, my) {
+        if (!this._lastTierRenderState.length) return null;
+
+        let closestTarget = null;
+        let closestDistance = Infinity;
+
+        for (let index = this._lastTierRenderState.length - 1; index >= 0; index -= 1) {
+            const tier = this._lastTierRenderState[index];
+            if (!Array.isArray(tier?.rowCountCandidates) || tier.rowCountCandidates.length === 0) continue;
+
+            const handlePoint = tier.rowCountHandlePoint;
+            if (!handlePoint) continue;
+
+            const screenPoint = this._toScreenPoint(handlePoint.x, handlePoint.z);
+            const distance = Math.hypot(screenPoint.sx - mx, screenPoint.sy - my);
+            if (distance > TIER_ROW_COUNT_HANDLE_PICK_DISTANCE_PX || distance >= closestDistance) continue;
+
+            closestDistance = distance;
+            closestTarget = {
+                tierIndex: tier.tierIndex,
+                numRows: handlePoint.numRows,
+                handlePoint,
+                candidates: tier.rowCountCandidates
+            };
+        }
+
+        return closestTarget;
+    }
+
+    _resolveNearestRowCountCandidate(candidates, mx, my) {
+        if (!Array.isArray(candidates) || candidates.length === 0) return null;
+
+        let closestCandidate = null;
+        let closestDistance = Infinity;
+
+        for (const candidate of candidates) {
+            const screenPoint = this._toScreenPoint(candidate.x, candidate.z);
+            const distance = Math.hypot(screenPoint.sx - mx, screenPoint.sy - my);
+            if (distance >= closestDistance) continue;
+            closestDistance = distance;
+            closestCandidate = candidate;
+        }
+
+        return closestCandidate;
     }
 
     _findTierDragTarget(mx, my) {
@@ -619,8 +738,29 @@ export class ProfileRenderer {
         return bestMatch;
     }
 
-    _updateTierDrag(worldPoint) {
+    _updateTierDrag({ worldPoint, mx, my }) {
         if (!this._dragState) return;
+
+        if (this._dragState.mode === 'rowCount') {
+            const nextCandidate = this._resolveNearestRowCountCandidate(this._dragState.candidates, mx, my);
+            if (!nextCandidate) return;
+
+            this._dragState.activeHandlePoint = {
+                x: nextCandidate.x,
+                z: nextCandidate.z,
+                numRows: nextCandidate.numRows
+            };
+
+            if (this._dragState.currentNumRows !== nextCandidate.numRows) {
+                this._dragState.currentNumRows = nextCandidate.numRows;
+                this._onTierRowCountChanged({
+                    tierIndex: this._dragState.tierIndex,
+                    numRows: nextCandidate.numRows
+                });
+            }
+            this._rerender();
+            return;
+        }
 
         const nextFirstRowDist = this._dragState.startFirstRowDist + (worldPoint.x - this._dragState.startWorld.x);
         const nextFirstRowElev = this._dragState.startFirstRowElev + (worldPoint.z - this._dragState.startWorld.z);
@@ -646,6 +786,14 @@ export class ProfileRenderer {
     _finishTierDrag() {
         if (!this._dragState) return;
 
+        if (this._dragState.mode === 'rowCount') {
+            this._dragState = null;
+            this._updateInteractionTargets(this._lastMx, this._lastMy);
+            this._updateInteractionCursor(this._lastMx, this._lastMy);
+            this._rerender();
+            return;
+        }
+
         const { tierIndex, lastResolvedPosition } = this._dragState;
         this._dragState = null;
         if (lastResolvedPosition) {
@@ -659,6 +807,8 @@ export class ProfileRenderer {
     }
 
     _drawDragGuides(ctx, toScreen, viewBounds) {
+        if (this._dragState?.mode !== 'position') return;
+
         const guides = this._dragState?.guides;
         if (!guides) return;
 
@@ -708,6 +858,60 @@ export class ProfileRenderer {
         ctx.restore();
     }
 
+    _drawTierRowCountHandles(ctx, toScreen) {
+        this._lastTierRenderState.forEach((tier) => {
+            if (!Array.isArray(tier?.rowCountCandidates) || tier.rowCountCandidates.length === 0) return;
+
+            const isActive = this._dragState?.mode === 'rowCount' && this._dragState.tierIndex === tier.tierIndex;
+            const isHovered = this._hoveredTierIndex === tier.tierIndex;
+            if (!isActive && !isHovered) return;
+
+            const handlePoint = isActive
+                ? this._dragState?.activeHandlePoint
+                : tier.rowCountHandlePoint;
+            if (!handlePoint) return;
+
+            this._drawTierRowCountHandle(
+                ctx,
+                toScreen(handlePoint.x, handlePoint.z),
+                tier.tierIndex,
+                {
+                    isActive,
+                    isHandleHovered: this._hoveredTierHandleIndex === tier.tierIndex
+                }
+            );
+        });
+    }
+
+    _drawTierRowCountHandle(ctx, point, tierIndex, {
+        isActive = false,
+        isHandleHovered = false
+    } = {}) {
+        const colors = this._getTierColors(tierIndex);
+        const radius = isActive ? TIER_ROW_COUNT_HANDLE_RADIUS_PX + 1 : TIER_ROW_COUNT_HANDLE_RADIUS_PX;
+
+        ctx.save();
+        ctx.globalAlpha = isActive || isHandleHovered ? 1 : 0.78;
+        ctx.fillStyle = isActive ? colors.stroke : BRAND_PROFILE_COLORS.canvasBg;
+        ctx.strokeStyle = colors.stroke;
+        ctx.lineWidth = isActive ? 2.5 : 2;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.arc(point.sx, point.sy, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        if (isHandleHovered || isActive) {
+            ctx.strokeStyle = BRAND_PROFILE_COLORS.hoverInk;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(point.sx, point.sy, radius + 3, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
     /**
      * Render the section profile (Single Solver wrapper)
      */
@@ -734,6 +938,9 @@ export class ProfileRenderer {
         const rowLabelFontPx = options.rowLabelFontPx ?? 11;
         const structuralDepth = (options.structuralDepth || 0) / 12.0;
         const structuralProfileMode = options.structuralProfileMode === 'sloped' ? 'sloped' : 'stepped';
+        const tierRowCountControls = Array.isArray(options.tierRowCountControls)
+            ? options.tierRowCountControls
+            : [];
 
         // Cache for hover and rerender
         this._lastSolvers = solvers;
@@ -748,7 +955,12 @@ export class ProfileRenderer {
             if (solver?.rows) {
                 this._lastAllRows.push(...solver.rows);
             }
-            const tierState = this._buildTierRenderState(solver, index);
+            const tierControlIndex = getSolverTierIndex(solver, index);
+            const tierState = this._buildTierRenderState(
+                solver,
+                index,
+                tierRowCountControls[tierControlIndex] || null
+            );
             if (tierState) {
                 this._lastTierRenderState.push(tierState);
             }
@@ -759,6 +971,13 @@ export class ProfileRenderer {
         ) {
             this._dragState = null;
             this.canvas.style.cursor = 'default';
+        }
+        if (
+            this._hoveredTierIndex !== null &&
+            !this._lastTierRenderState.some((tier) => tier.tierIndex === this._hoveredTierIndex)
+        ) {
+            this._hoveredTierIndex = null;
+            this._hoveredTierHandleIndex = null;
         }
 
         ctx.clearRect(0, 0, w, h);
@@ -960,6 +1179,7 @@ export class ProfileRenderer {
 
         // Draw focal point marker
         this._drawFocalPoint(ctx, focalX, focalZ, toScreen, scale);
+        this._drawTierRowCountHandles(ctx, toScreen);
 
         if (this._dragState) {
             this._drawDragGuides(ctx, toScreen, viewBounds);

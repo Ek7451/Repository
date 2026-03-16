@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
     buildActiveTierSolvers,
     buildNextTierDefaultsFromSolvers,
+    buildTierRowCountHandleCandidates,
     buildStructuralProfileGeometry,
     buildTierMetricsByIndex,
     getSolverTierIndex
@@ -41,6 +42,40 @@ describe('profile solver helper exports', () => {
         expect(solvers).toHaveLength(2);
         expect(solvers.map((solver) => solver.tierIndex)).toEqual([0, 2]);
         expect(solvers.map((solver) => solver.rows.length)).toEqual([3, 2]);
+        expect(solvers.map((solver) => solver.solveMethod)).toEqual(['Parabolic', 'Linear']);
+    });
+
+    it('builds ordered row-count handle candidates from the solver end row', () => {
+        const [solver] = buildActiveTierSolvers([
+            createTier({ numRows: 4 })
+        ], { x: 0, z: 0 });
+
+        const candidates = buildTierRowCountHandleCandidates(solver, {
+            min: 3,
+            max: 6,
+            step: 1
+        });
+
+        expect(candidates.map((candidate) => candidate.numRows)).toEqual([3, 4, 5, 6]);
+        expect(candidates.every((candidate) => candidate.tierIndex === 0)).toBe(true);
+
+        const expectedThreeRowSolver = buildActiveTierSolvers([
+            createTier({ numRows: 3 })
+        ], { x: 0, z: 0 })[0];
+        const expectedSixRowSolver = buildActiveTierSolvers([
+            createTier({ numRows: 6 })
+        ], { x: 0, z: 0 })[0];
+
+        expect(candidates[0]).toMatchObject({
+            numRows: 3,
+            x: expectedThreeRowSolver.rows.at(-1).x,
+            z: expectedThreeRowSolver.rows.at(-1).z
+        });
+        expect(candidates.at(-1)).toMatchObject({
+            numRows: 6,
+            x: expectedSixRowSolver.rows.at(-1).x,
+            z: expectedSixRowSolver.rows.at(-1).z
+        });
     });
 
     it('derives next-tier defaults from the solved rows of the previous tier', () => {

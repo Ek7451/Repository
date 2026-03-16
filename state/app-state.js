@@ -537,6 +537,27 @@ export function buildSceneSeatPreviewOptions(state) {
     };
 }
 
+export function buildTierRowCountControlConfig(state, tierIndex) {
+    const tiers = Array.isArray(state?.tiers) && state.tiers.length
+        ? state.tiers
+        : createDefaultStateData().tiers;
+    const nextTierIndex = Number(tierIndex);
+    if (!Number.isInteger(nextTierIndex) || nextTierIndex < 0 || nextTierIndex >= tiers.length) {
+        return null;
+    }
+
+    return nextTierIndex === 0
+        ? { min: 5, max: 80, step: 1 }
+        : { min: 3, max: 60, step: 1 };
+}
+
+export function buildTierRowCountControlConfigs(state) {
+    const tiers = Array.isArray(state?.tiers) && state.tiers.length
+        ? state.tiers
+        : createDefaultStateData().tiers;
+    return tiers.map((_tier, tierIndex) => buildTierRowCountControlConfig(state, tierIndex));
+}
+
 export function buildProfileRenderOptions(state, structuralDepth = 0) {
     const setup = getStateSetup(state);
     const showSightlines = !!setup.sightlineVisuals;
@@ -545,7 +566,8 @@ export function buildProfileRenderOptions(state, structuralDepth = 0) {
         structuralDepth: Number(structuralDepth) || 0,
         structuralProfileMode: normalizeStructuralProfileMode(state?.bowl?.structuralProfileMode),
         showSightlines,
-        showCLabels: showSightlines
+        showCLabels: showSightlines,
+        tierRowCountControls: buildTierRowCountControlConfigs(state)
     };
 }
 
