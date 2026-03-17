@@ -213,8 +213,8 @@ body.jlg-shell {
 }
 
 .jlg-shell .left-sidebar.collapsed {
-    width: 50px !important;
-    min-width: 50px !important;
+    width: 55px !important;
+    min-width: 55px !important;
 }
 
 .jlg-shell .left-sidebar.collapsed .sidebar-content {
@@ -222,16 +222,17 @@ body.jlg-shell {
 }
 
 .jlg-shell .left-sidebar.collapsed .sidebar-header {
-    flex-direction: column;
-    gap: 8px;
-    padding: 10px 0 12px;
-    justify-content: center;
-    min-height: 96px;
+    flex-direction: row;
+    gap: 0px;
+    padding: 0 0 0 10px;
+    justify-content: flex-end;
+    min-height: 50px;
 }
 
 .jlg-shell .left-sidebar.collapsed .brand-lockup {
     display: flex;
-    justify-content: center;
+    justify-content: flex-end;
+    flex: 0 0 auto;
 }
 
 .jlg-shell .left-sidebar.collapsed .brand-copy {
@@ -244,7 +245,8 @@ body.jlg-shell {
 }
 
 .jlg-shell .left-sidebar.collapsed #toggleControlsBtn {
-    margin-left: 0 !important;
+    margin-left: -2px !important;
+    width: 20px;
 }
 
 .jlg-shell .left-sidebar.collapsed #toggleControlsBtn svg {
@@ -323,7 +325,7 @@ body.jlg-shell {
 .jlg-shell .left-sidebar .sidebar-header {
     position: relative;
     background: #ffffff;
-    min-height: 72px;
+    min-height: 50px;
     padding: 0 16px 0 18px;
 }
 
@@ -366,7 +368,7 @@ body.jlg-shell {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 14px 18px 16px;
+    padding: 10px 18px 10px;
     border-bottom: 1px solid #e4e4e7;
     background: linear-gradient(180deg, #ffffff 0%, #ffffff 100%);
 }
@@ -1080,11 +1082,12 @@ body.jlg-shell {
 
 .jlg-shell .view-tabs {
     position: relative;
-    min-height: 84px;
+    min-height: 50px;
     height: auto;
-    padding: 12px 16px 14px;
+    padding: 12px 16px 23px;
     display: grid;
-    grid-template-columns: minmax(360px, 1.45fr) auto minmax(260px, 1fr);
+    grid-template-columns: minmax(360px, 1fr) auto;
+    grid-template-rows: auto auto;
     gap: 12px 18px;
     align-items: start;
     background: #ffffff;
@@ -1099,8 +1102,10 @@ body.jlg-shell {
 }
 
 .jlg-shell .view-tabs-left {
+    grid-column: 1;
+    grid-row: 1;
     justify-self: start;
-    align-items: flex-start;
+    align-items: center;
 }
 
 .editor-route-toolbar {
@@ -1112,14 +1117,22 @@ body.jlg-shell {
 }
 
 .jlg-shell .view-tabs-center {
-    justify-self: center;
-    align-self: center;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: stretch;
+    align-self: start;
     align-items: center;
+    justify-content: flex-start;
     gap: 8px;
     flex-wrap: wrap;
+    width: 100%;
+    padding-top: 10px;
+    border-top: 1px solid #e4e4e7;
 }
 
 .jlg-shell .view-tabs-right {
+    grid-column: 2;
+    grid-row: 1;
     justify-self: end;
     align-self: center;
     align-items: center;
@@ -1200,9 +1213,10 @@ body.jlg-shell {
 .jlg-shell .project-option-trigger:focus-visible,
 .jlg-shell .project-menu-item:focus-visible,
 .jlg-shell .project-option-item:focus-visible,
+.jlg-shell .project-option-manager-main:focus-visible,
 .jlg-shell .project-option-manager-close-btn:focus-visible,
 .jlg-shell .project-option-manager-create-btn:focus-visible,
-.jlg-shell .project-option-manager-btn:focus-visible,
+.jlg-shell .project-option-manager-icon-btn:focus-visible,
 .jlg-shell .project-option-manager-name-input:focus-visible,
 .jlg-shell .project-picker-close-btn:focus-visible,
 .jlg-shell .project-picker-create-btn:focus-visible,
@@ -1312,9 +1326,9 @@ body.jlg-shell {
 .jlg-shell .project-option-dot {
     width: 8px;
     height: 8px;
-    border-radius: 999px;
+    border-radius: 8px;
     background: var(--option-color, #7aae1a);
-    box-shadow: 0 0 0 3px rgba(122, 174, 26, 0.16);
+    border: 1px solid rgba(15, 17, 19, 0.08);
     flex-shrink: 0;
 }
 
@@ -1326,15 +1340,7 @@ body.jlg-shell {
 }
 
 .jlg-shell .project-option-pill {
-    display: inline-flex;
-    align-items: center;
-    padding: 3px 8px;
-    border-radius: 999px;
-    background: rgba(122, 174, 26, 0.12);
-    color: #4b6c13;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
+    display: none;
 }
 
 .jlg-shell .project-option-plus {
@@ -1439,12 +1445,10 @@ body.jlg-shell {
     justify-content: flex-start;
 }
 
-.jlg-shell .project-option-item.active {
-    background: #f3f5eb;
-}
+
 
 .jlg-shell .editor-toolbar-meta {
-    display: flex;
+    display: none;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px 10px;
@@ -1498,7 +1502,7 @@ body.jlg-shell {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    height: 40px;
+    height: 30px;
     padding: 0 16px;
     border: 1px solid #d4d4d8;
     border-radius: 999px;
@@ -1507,21 +1511,21 @@ body.jlg-shell {
     font-family: 'Manrope', system-ui, sans-serif;
     font-weight: 600;
     transition: all 0.15s ease;
-    box-shadow: 0 1px 4px rgba(15, 17, 19, 0.06);
+    box-shadow: 0 4px 4px rgba(15, 17, 19, 0.05);
 }
 
 .jlg-shell .view-tab-btn:hover {
     background: #f8fafc;
     border-color: #cbd5e1;
     color: #0f172a;
-    box-shadow: 0 2px 8px rgba(15, 17, 19, 0.1);
+    box-shadow: 0 4px 4px rgba(15, 17, 19, 0.05);
 }
 
 .jlg-shell .view-tab-btn.active {
     background: #0b0c0d;
     border-color: #0b0c0d;
     color: #ffffff;
-    box-shadow: 0 4px 12px rgba(15, 17, 19, 0.16);
+    box-shadow: 0 4px 4px rgba(15, 17, 19, 0.05);
 }
 
 .jlg-shell .view-tabs-note {
@@ -1603,15 +1607,15 @@ body.jlg-shell {
 .jlg-shell .project-picker-backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(15, 17, 19, 0.42);
-    backdrop-filter: blur(2px);
+    background: rgba(15, 17, 19, 0.5);
+    backdrop-filter: blur(6px);
 }
 
 .jlg-shell .project-option-manager-backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(15, 17, 19, 0.48);
-    backdrop-filter: blur(4px);
+    background: rgba(15, 17, 19, 0.5);
+    backdrop-filter: blur(6px);
 }
 
 .jlg-shell .project-picker-dialog,
@@ -1631,6 +1635,8 @@ body.jlg-shell {
 
 .jlg-shell .project-option-manager-dialog {
     width: min(760px, calc(100vw - 64px));
+    max-height: min(80vh, 700px);
+    border-radius: 24px;
 }
 
 .jlg-shell .project-picker-header,
@@ -1653,12 +1659,12 @@ body.jlg-shell {
 }
 
 .jlg-shell .project-option-manager-header {
-    align-items: flex-start;
-    gap: 20px;
+    gap: 16px;
+    padding: 20px 24px 18px;
 }
 
 .jlg-shell .project-option-manager-header h2 {
-    margin: 0 0 4px;
+    margin: 0;
     color: #16181b;
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 28px;
@@ -1666,11 +1672,16 @@ body.jlg-shell {
     letter-spacing: 0.01em;
 }
 
-.jlg-shell .project-option-manager-header p {
-    margin: 0;
-    color: #6f7680;
-    font-size: 14px;
-    line-height: 1.45;
+body.project-picker-open .jlg-shell .left-sidebar,
+body.project-picker-open .jlg-shell .main-area,
+body.project-picker-open .jlg-shell .right-sidebar,
+body.project-option-manager-open .jlg-shell .left-sidebar,
+body.project-option-manager-open .jlg-shell .main-area,
+body.project-option-manager-open .jlg-shell .right-sidebar {
+    filter: blur(6px);
+    opacity: 0.92;
+    pointer-events: none;
+    user-select: none;
 }
 
 .jlg-shell .project-picker-close-btn,
@@ -1697,7 +1708,8 @@ body.jlg-shell {
     color: #1d2329;
 }
 
-.jlg-shell .project-picker-toolbar {
+.jlg-shell .project-picker-toolbar,
+.jlg-shell .project-option-manager-toolbar {
     display: flex;
     align-items: center;
     gap: 16px;
@@ -1713,8 +1725,8 @@ body.jlg-shell {
     width: 100%;
     height: 44px;
     border: 1px solid #d4d8cd;
-    border-radius: 14px;
-    background: #fbfbf7;
+    border-radius: 24px;
+    background: #ffffff;
     color: #121417;
     padding: 0 14px;
     font-family: inherit;
@@ -1732,9 +1744,9 @@ body.jlg-shell {
     appearance: none;
     height: 44px;
     padding: 0 18px;
-    border: 1px solid #ef5b73;
-    border-radius: 14px;
-    background: #ef5b73;
+    border: 1px solid #324050;
+    border-radius: 24px;
+    background: #151d27;
     color: #ffffff;
     font-size: 14px;
     font-weight: 700;
@@ -1743,8 +1755,8 @@ body.jlg-shell {
 }
 
 .jlg-shell .project-picker-create-btn:hover {
-    background: #e14963;
-    border-color: #e14963;
+    background: #151d27;
+    border-color: #324050;
     transform: translateY(-1px);
 }
 
@@ -1754,52 +1766,94 @@ body.jlg-shell {
     transform: none;
 }
 
-.jlg-shell .project-option-manager-list {
-    display: grid;
-    gap: 12px;
+.jlg-shell .project-option-manager-table {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
     min-height: 0;
-    max-height: min(56vh, 520px);
-    padding: 24px;
+    padding: 0 18px 20px;
+}
+
+.jlg-shell .project-option-manager-list {
+    display: block;
+    min-height: 0;
+    max-height: 100%;
+    padding: 0;
     overflow: auto;
+    border-top: 1px solid #eceee7;
 }
 
 .jlg-shell .project-option-manager-row {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    justify-content: space-between;
-    gap: 18px;
-    padding: 16px 18px;
-    border: 1px solid #e0e2d8;
-    border-radius: 22px;
-    background: #fafbf7;
+    gap: 16px;
+    min-height: 70px;
+    padding: 0 8px;
+    border-bottom: 1px solid #eceee7;
+    background: transparent;
 }
 
 .jlg-shell .project-option-manager-row.active {
-    border-color: rgba(122, 174, 26, 0.34);
-    background: rgba(122, 174, 26, 0.08);
+    background: transparent;
+    box-shadow: none;
 }
 
 .jlg-shell .project-option-manager-main {
+    appearance: none;
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 12px;
+    min-width: 0;
+    flex: 1 1 auto;
+    padding: 12px 0;
+    border: none;
+    background: transparent;
+    color: #1b2026;
+    text-align: left;
+    cursor: pointer;
+    transition: color 0.15s ease;
+}
+
+.jlg-shell .project-option-manager-main:hover .project-option-manager-name {
+    color: #7aae1a;
+}
+
+.jlg-shell .project-option-manager-main:disabled {
+    cursor: default;
+    opacity: 1;
+}
+
+.jlg-shell .project-option-manager-main-editing {
+    cursor: default;
+}
+
+.jlg-shell .project-option-manager-copy {
+    display: flex;
+    align-items: center;
     min-width: 0;
     flex: 1 1 auto;
 }
 
-.jlg-shell .project-option-manager-copy {
-    display: grid;
-    gap: 6px;
+.jlg-shell .project-option-manager-name {
     min-width: 0;
-    flex: 1 1 auto;
+    overflow: hidden;
+    color: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: color 0.15s ease;
 }
 
 .jlg-shell .project-option-manager-name-input {
     width: 100%;
     min-width: 0;
-    padding: 10px 12px;
-    border: 1px solid #cfd2c6;
-    border-radius: 14px;
+    height: 44px;
+    padding: 0 14px;
+    border: 1px solid #d4d8cd;
+    border-radius: 24px;
     background: #ffffff;
     color: #121417;
     font: inherit;
@@ -1813,78 +1867,88 @@ body.jlg-shell {
     box-shadow: 0 0 0 3px rgba(122, 174, 26, 0.14);
 }
 
-.jlg-shell .project-option-manager-meta {
-    color: #6f7680;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.01em;
-}
-
 .jlg-shell .project-option-manager-actions {
     display: flex;
     align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
+    gap: 6px;
     justify-content: flex-end;
 }
 
-.jlg-shell .project-option-manager-btn,
+.jlg-shell .project-option-manager-icon-btn,
 .jlg-shell .project-option-manager-create-btn {
     appearance: none;
-    border-radius: 999px;
-    border: 1px solid #cbd5e1;
-    background: #ffffff;
-    color: #0f172a;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #20262d;
     cursor: pointer;
     font: inherit;
-    font-weight: 700;
     transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
-.jlg-shell .project-option-manager-btn {
+.jlg-shell .project-option-manager-icon-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 10px 14px;
-    font-size: 13px;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 12px;
+    color: #6f7680;
+}
+
+.jlg-shell .project-option-manager-icon-btn svg {
+    width: 18px;
+    height: 18px;
+    display: block;
 }
 
 .jlg-shell .project-option-manager-create-btn {
-    padding: 12px 18px;
+    min-height: 44px;
+    padding: 0 18px;
+    border-color: #324050;
+    border-radius: 24px;
+    background: #151d27;
+    color: #ffffff;
     font-size: 14px;
+    font-weight: 700;
 }
 
-.jlg-shell .project-option-manager-btn:hover,
+.jlg-shell .project-option-manager-icon-btn:hover,
 .jlg-shell .project-option-manager-create-btn:hover {
-    background: #0b0c0d;
-    border-color: #0b0c0d;
-    color: #ffffff;
     transform: translateY(-1px);
 }
 
-.jlg-shell .project-option-manager-btn-danger {
-    color: #b42318;
-    border-color: rgba(209, 67, 61, 0.24);
+.jlg-shell .project-option-manager-icon-btn:hover {
+    background: #f3f5eb;
+    color: #1d2329;
 }
 
-.jlg-shell .project-option-manager-btn-danger:hover {
-    background: #b42318;
-    border-color: #b42318;
+.jlg-shell .project-option-manager-create-btn:hover {
+    background: #151d27;
+    border-color: #324050;
     color: #ffffff;
 }
 
-.jlg-shell .project-option-manager-btn:disabled,
+.jlg-shell .project-option-manager-icon-btn-danger {
+    color: #b42318;
+}
+
+.jlg-shell .project-option-manager-icon-btn-danger:hover {
+    background: rgba(209, 67, 61, 0.1);
+    color: #b42318;
+}
+
+.jlg-shell .project-option-manager-icon-btn:disabled,
 .jlg-shell .project-option-manager-create-btn:disabled {
     cursor: default;
-    opacity: 0.55;
+    opacity: 0.45;
     transform: none;
 }
 
-.jlg-shell .project-option-manager-footer {
-    display: flex;
-    justify-content: flex-end;
-    padding: 16px 24px 24px;
-    border-top: 1px solid #eceee7;
+.jlg-shell .project-option-manager-empty {
+    padding: 18px 8px;
+    color: #6f7680;
+    font-size: 14px;
 }
 
 .jlg-shell .project-picker-error {
@@ -2408,8 +2472,8 @@ body.jlg-shell {
 }
 
 .jlg-shell .right-sidebar.collapsed {
-    width: 50px !important;
-    min-width: 50px !important;
+    width: 55px !important;
+    min-width: 55px !important;
 }
 
 .jlg-shell .right-sidebar.collapsed #rightSidebarResizer {
@@ -3291,21 +3355,22 @@ html[data-theme="dark"] .jlg-shell .project-picker-row-menu {
 
 html[data-theme="dark"] .jlg-shell .project-menu-item,
 html[data-theme="dark"] .jlg-shell .project-option-item,
-html[data-theme="dark"] .jlg-shell .project-option-manager-btn,
+html[data-theme="dark"] .jlg-shell .project-option-manager-main,
+html[data-theme="dark"] .jlg-shell .project-option-manager-icon-btn,
 html[data-theme="dark"] .jlg-shell .project-picker-row-menu-item {
     color: #e8edf2;
 }
 
 html[data-theme="dark"] .jlg-shell .project-menu-item:hover,
 html[data-theme="dark"] .jlg-shell .project-option-item:hover,
-html[data-theme="dark"] .jlg-shell .project-option-manager-btn:hover,
+html[data-theme="dark"] .jlg-shell .project-option-manager-main:hover,
+html[data-theme="dark"] .jlg-shell .project-option-manager-icon-btn:hover,
 html[data-theme="dark"] .jlg-shell .project-picker-row-menu-item:hover {
     background: #1a2330;
 }
 
 html[data-theme="dark"] .jlg-shell .project-menu-divider,
 html[data-theme="dark"] .jlg-shell .project-option-manager-header,
-html[data-theme="dark"] .jlg-shell .project-option-manager-footer,
 html[data-theme="dark"] .jlg-shell .project-picker-header,
 html[data-theme="dark"] .jlg-shell .project-picker-list,
 html[data-theme="dark"] .jlg-shell .project-picker-row {
@@ -3313,13 +3378,12 @@ html[data-theme="dark"] .jlg-shell .project-picker-row {
 }
 
 html[data-theme="dark"] .jlg-shell .editor-project-meta,
-html[data-theme="dark"] .jlg-shell .project-option-manager-header p,
-html[data-theme="dark"] .jlg-shell .project-option-manager-meta,
 html[data-theme="dark"] .jlg-shell .project-picker-table-head,
 html[data-theme="dark"] .jlg-shell .project-picker-row-sport,
 html[data-theme="dark"] .jlg-shell .project-picker-row-updated,
 html[data-theme="dark"] .jlg-shell .project-picker-row-status,
-html[data-theme="dark"] .jlg-shell .project-picker-empty {
+html[data-theme="dark"] .jlg-shell .project-picker-empty,
+html[data-theme="dark"] .jlg-shell .project-option-manager-empty {
     color: #a7b2c1;
 }
 
@@ -3329,14 +3393,8 @@ html[data-theme="dark"] .jlg-shell .project-picker-row-name {
     color: #edf2f7;
 }
 
-html[data-theme="dark"] .jlg-shell .project-option-item.active {
-    background: #1a2330;
-}
 
-html[data-theme="dark"] .jlg-shell .project-option-pill {
-    background: rgba(143, 207, 51, 0.18);
-    color: #d9efb1;
-}
+
 
 html[data-theme="dark"] .jlg-shell .project-status-message {
     border-color: #324050;
@@ -3369,39 +3427,53 @@ html[data-theme="dark"] .jlg-shell .project-picker-search-field input {
 }
 
 html[data-theme="dark"] .jlg-shell .project-option-manager-row {
-    background: #151d27;
-    border-color: #2b3542;
+    background: transparent;
+    border-bottom-color: #2b3542;
 }
 
 html[data-theme="dark"] .jlg-shell .project-option-manager-row.active {
-    background: rgba(143, 207, 51, 0.1);
-    border-color: rgba(143, 207, 51, 0.28);
+    background: transparent;
+    box-shadow: none;
 }
 
 html[data-theme="dark"] .jlg-shell .project-option-manager-name-input,
-html[data-theme="dark"] .jlg-shell .project-option-manager-btn,
+html[data-theme="dark"] .jlg-shell .project-option-manager-create-btn {
+    border-color: #324050;
+}
+
+html[data-theme="dark"] .jlg-shell .project-option-manager-name-input {
+    background: #151d27;
+    color: #e8edf2;
+}
+
 html[data-theme="dark"] .jlg-shell .project-option-manager-create-btn {
     background: #151d27;
     border-color: #324050;
     color: #e8edf2;
 }
 
-html[data-theme="dark"] .jlg-shell .project-option-manager-btn:hover,
+html[data-theme="dark"] .jlg-shell .project-option-manager-icon-btn:hover,
 html[data-theme="dark"] .jlg-shell .project-option-manager-create-btn:hover {
-    background: #8fcf33;
-    border-color: #8fcf33;
-    color: #0f1418;
+    color: #edf2f7;
 }
 
-html[data-theme="dark"] .jlg-shell .project-option-manager-btn-danger {
-    color: #f2aaa7;
-    border-color: rgba(209, 67, 61, 0.34);
+html[data-theme="dark"] .jlg-shell .project-option-manager-icon-btn:hover {
+    background: #1a2330;
 }
 
-html[data-theme="dark"] .jlg-shell .project-option-manager-btn-danger:hover {
-    background: #d1433d;
-    border-color: #d1433d;
+html[data-theme="dark"] .jlg-shell .project-option-manager-create-btn:hover {
+    background: #151d27;
+    border-color: #324050;
     color: #ffffff;
+}
+
+html[data-theme="dark"] .jlg-shell .project-option-manager-icon-btn-danger {
+    color: #f2aaa7;
+}
+
+html[data-theme="dark"] .jlg-shell .project-option-manager-icon-btn-danger:hover {
+    background: rgba(209, 67, 61, 0.18);
+    color: #f7c3bf;
 }
 
 html[data-theme="dark"] .jlg-shell .control-section,
@@ -3546,6 +3618,7 @@ html[data-theme="dark"] .tier-metrics-warning svg {
 @media (max-width: 980px) {
     .jlg-shell .view-tabs {
         grid-template-columns: 1fr;
+        grid-template-rows: auto auto auto;
     }
 
     .jlg-shell .view-tabs-left,
@@ -3557,14 +3630,20 @@ html[data-theme="dark"] .tier-metrics-warning svg {
     }
 
     .jlg-shell .view-tabs-left {
+        grid-column: 1;
+        grid-row: 1;
         justify-content: flex-start;
     }
 
     .jlg-shell .view-tabs-center {
+        grid-column: 1;
+        grid-row: 3;
         justify-content: flex-start;
     }
 
     .jlg-shell .view-tabs-right {
+        grid-column: 1;
+        grid-row: 2;
         justify-content: flex-end;
     }
 
@@ -3616,23 +3695,35 @@ html[data-theme="dark"] .tier-metrics-warning svg {
         width: min(100%, calc(100vw - 32px));
     }
 
-    .jlg-shell .project-picker-toolbar {
+    .jlg-shell .project-picker-toolbar,
+    .jlg-shell .project-option-manager-toolbar {
         flex-direction: column;
         align-items: stretch;
     }
 
     .jlg-shell .project-option-manager-row {
-        flex-direction: column;
-        align-items: stretch;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+        min-height: 0;
+        padding: 12px 8px;
     }
 
     .jlg-shell .project-option-manager-actions {
-        justify-content: stretch;
+        justify-content: flex-start;
     }
 
-    .jlg-shell .project-option-manager-btn {
-        flex: 1 1 auto;
+    .jlg-shell .project-option-manager-main {
+        width: 100%;
+    }
+
+    .jlg-shell .project-option-manager-create-btn {
+        width: 100%;
         justify-content: center;
+    }
+
+    .jlg-shell .project-option-manager-icon-btn {
+        width: 32px;
+        height: 32px;
     }
 
     .jlg-shell .project-picker-table-head,

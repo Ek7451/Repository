@@ -516,15 +516,6 @@
                         </svg>
                         <span class="theme-toggle-label">Toggle dark mode</span>
                     </button>
-                    <button id="editorSignOutBtn" class="sidebar-signout-btn" type="button" title="Sign out" aria-label="Sign out">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
-                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M10 17v2a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-6a2 2 0 0 0-2 2v2"></path>
-                            <path d="M15 12H4"></path>
-                            <path d="m8 8-4 4 4 4"></path>
-                        </svg>
-                        <span class="sr-only">Sign Out</span>
-                    </button>
                 </div>
             </div>
             <input type="file" id="configFileInput" accept=".json" hidden>
@@ -621,6 +612,10 @@
                                                 </button>
                                             </div>
                                         </div>
+                                        <div class="project-menu-divider" role="presentation"></div>
+                                        <button class="project-menu-item" type="button" data-project-menu-action="sign-out">
+                                            <span>Sign out</span>
+                                        </button>
                                     </div>
                                 </div>
                                 <div id="projectNameField" class="project-name-field" data-editing="false">
@@ -677,70 +672,15 @@
                     <button class="view-tab-btn" data-tab="scene3d">3D</button>
                 </div>
                 <div class="view-tabs-right" aria-label="Project actions">
-                    <div class="view-tabs-note" role="note" aria-label="Beta disclaimer">
-                        <strong>Beta</strong> Results are preliminary and may not be accurate.
-                    </div>
                     <a id="feedbackBtn"
                        class="view-tabs-feedback-btn"
                        href="mailto:eklinger@jlgarchitects.com?subject=Seating%20Bowl%20Study%20Beta%20Feedback"
                        title="Opens your default email app. If nothing opens, email eklinger@jlgarchitects.com."
                        aria-label="Send beta feedback by email to eklinger@jlgarchitects.com">Feedback</a>
+                    <div class="view-tabs-note" role="note" aria-label="Beta disclaimer">
+                        <strong>Beta</strong> Results may be inaccurate.
+                    </div>
                 </div>
-            </div>
-
-            <div id="projectPickerModal" class="project-picker-modal" hidden>
-                <div class="project-picker-backdrop" data-project-picker-close></div>
-                <section class="project-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="projectPickerTitle">
-                    <div class="project-picker-header">
-                        <h2 id="projectPickerTitle">Open project</h2>
-                        <button id="projectPickerCloseBtn" class="project-picker-close-btn" type="button" aria-label="Close open project dialog">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
-                                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <line x1="18" y1="6" x2="6" y2="18"></line>
-                                <line x1="6" y1="6" x2="18" y2="18"></line>
-                            </svg>
-                        </button>
-                    </div>
-                    <div class="project-picker-toolbar">
-                        <label class="project-picker-search-field" for="projectPickerSearchInput">
-                            <span class="sr-only">Search projects</span>
-                            <input id="projectPickerSearchInput" type="search" placeholder="Search projects">
-                        </label>
-                        <button id="projectPickerCreateBtn" class="project-picker-create-btn" type="button">New project</button>
-                    </div>
-                    <p id="projectPickerError" class="project-picker-error" hidden></p>
-                    <div class="project-picker-table">
-                        <div class="project-picker-table-head" aria-hidden="true">
-                            <span>Name</span>
-                            <span>Last updated</span>
-                            <span></span>
-                        </div>
-                        <div id="projectPickerList" class="project-picker-list" role="list"></div>
-                    </div>
-                </section>
-            </div>
-
-            <div id="projectOptionManagerModal" class="project-option-manager-modal" hidden>
-                <div class="project-option-manager-backdrop" data-project-option-manager-close></div>
-                <section class="project-option-manager-dialog" role="dialog" aria-modal="true" aria-labelledby="projectOptionManagerTitle">
-                    <div class="project-option-manager-header">
-                        <div>
-                            <h2 id="projectOptionManagerTitle">Manage Options</h2>
-                            <p>Create, rename, duplicate, delete, and switch between saved option snapshots.</p>
-                        </div>
-                        <button id="projectOptionManagerCloseBtn" class="project-option-manager-close-btn" type="button" aria-label="Close manage options dialog">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
-                                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <line x1="18" y1="6" x2="6" y2="18"></line>
-                                <line x1="6" y1="6" x2="18" y2="18"></line>
-                            </svg>
-                        </button>
-                    </div>
-                    <div id="projectOptionManagerList" class="project-option-manager-list" role="list"></div>
-                    <div class="project-option-manager-footer">
-                        <button id="projectOptionManagerCreateBtn" class="project-option-manager-create-btn" type="button">+ Option</button>
-                    </div>
-                </section>
             </div>
 
             <div class="view-container">
@@ -885,6 +825,64 @@
                 </div>
             </div>
         </aside>
+
+        <div id="projectPickerModal" class="project-picker-modal" hidden>
+            <div class="project-picker-backdrop" data-project-picker-close></div>
+            <section class="project-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="projectPickerTitle">
+                <div class="project-picker-header">
+                    <h2 id="projectPickerTitle">Open project</h2>
+                    <button id="projectPickerCloseBtn" class="project-picker-close-btn" type="button" aria-label="Close open project dialog">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+                <div class="project-picker-toolbar">
+                    <label class="project-picker-search-field" for="projectPickerSearchInput">
+                        <span class="sr-only">Search projects</span>
+                        <input id="projectPickerSearchInput" type="search" placeholder="Search projects">
+                    </label>
+                    <button id="projectPickerCreateBtn" class="project-picker-create-btn" type="button">New project</button>
+                </div>
+                <p id="projectPickerError" class="project-picker-error" hidden></p>
+                <div class="project-picker-table">
+                    <div class="project-picker-table-head" aria-hidden="true">
+                        <span>Name</span>
+                        <span>Last updated</span>
+                        <span></span>
+                    </div>
+                    <div id="projectPickerList" class="project-picker-list" role="list"></div>
+                </div>
+            </section>
+        </div>
+
+        <div id="projectOptionManagerModal" class="project-option-manager-modal" hidden>
+            <div class="project-option-manager-backdrop" data-project-option-manager-close></div>
+            <section class="project-option-manager-dialog" role="dialog" aria-modal="true" aria-labelledby="projectOptionManagerTitle">
+                <div class="project-option-manager-header">
+                    <h2 id="projectOptionManagerTitle">Manage design options</h2>
+                    <button id="projectOptionManagerCloseBtn" class="project-option-manager-close-btn" type="button" aria-label="Close manage options dialog">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+                <div class="project-option-manager-toolbar">
+                    <label class="project-picker-search-field" for="projectOptionManagerSearchInput">
+                        <span class="sr-only">Search options</span>
+                        <input id="projectOptionManagerSearchInput" type="search" placeholder="Search options">
+                    </label>
+                    <button id="projectOptionManagerCreateBtn" class="project-option-manager-create-btn" type="button">Create empty option</button>
+                </div>
+                <div class="project-option-manager-table">
+                    <div id="projectOptionManagerList" class="project-option-manager-list" role="list"></div>
+                </div>
+            </section>
+        </div>
     </div>
 
     <script type="module" src="../../app.js?v=1"></script>

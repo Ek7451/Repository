@@ -100,6 +100,39 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+function renderProjectOptionManagerActionIcon(action) {
+    if (action === 'edit') {
+        return `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 20h9"></path>
+                <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+            </svg>
+        `;
+    }
+
+    if (action === 'duplicate') {
+        return `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+                <path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path>
+            </svg>
+        `;
+    }
+
+    return `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 6h18"></path>
+            <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"></path>
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+            <path d="M10 11v6"></path>
+            <path d="M14 11v6"></path>
+        </svg>
+    `;
+}
+
 function formatProjectListUpdatedAt(value) {
     if (typeof value !== 'string' || !value) return 'Not yet saved';
 
@@ -201,6 +234,8 @@ export class EditorShell {
         this._projectMenuBusyAction = '';
         this._projectOptionMenuOpen = false;
         this._projectOptionManagerOpen = false;
+        this._projectOptionManagerSearch = '';
+        this._projectOptionEditingId = '';
         this._projectNameEditing = false;
         this._projectNameDraft = '';
         this._projectOptionNameDrafts = {};
@@ -260,8 +295,11 @@ export class EditorShell {
         clearTimeout(this._feedbackBtnCopyFallbackTimer);
         clearTimeout(this._feedbackBtnResetTimer);
         this._disconnectViewCanvasObserver();
+        this._projectOptionManagerOpen = false;
+        this._projectPicker.isOpen = false;
         document.body?.classList?.remove('project-picker-open');
         document.body?.classList?.remove('project-option-manager-open');
+        this._syncModalBackgroundLock();
         this._initialized = false;
     }
 
@@ -385,6 +423,9 @@ export class EditorShell {
         this._projectOptionNameDrafts = Object.fromEntries(
             this._optionChrome.items.map((item) => [item.id, item.label])
         );
+        this._projectOptionEditingId = this._optionChrome.items.some((item) => item.id === this._projectOptionEditingId)
+            ? this._projectOptionEditingId
+            : '';
         this._renderOptionChrome();
         this._renderOptionManager();
     }
@@ -635,16 +676,6 @@ export class EditorShell {
             this._cleanup.push(() => saveBtn.removeEventListener('click', handleSaveClick));
         }
 
-        const signOutBtn = getButtonElement('editorSignOutBtn');
-        if (signOutBtn) {
-            const handleSignOutClick = async () => {
-                if (!this._projectActions?.signOut) return;
-                await this._runToolbarProjectAction('signout', () => this._projectActions.signOut());
-            };
-            signOutBtn.addEventListener('click', handleSignOutClick);
-            this._cleanup.push(() => signOutBtn.removeEventListener('click', handleSignOutClick));
-        }
-
         const projectMenuTrigger = getButtonElement('projectMenuTrigger');
         if (projectMenuTrigger) {
             const handleProjectMenuClick = (event) => {
@@ -800,6 +831,16 @@ export class EditorShell {
             this._cleanup.push(() => projectOptionManagerCreateBtn.removeEventListener('click', handleProjectOptionManagerCreate));
         }
 
+        const projectOptionManagerSearchInput = getInputElement('projectOptionManagerSearchInput');
+        if (projectOptionManagerSearchInput) {
+            const handleProjectOptionManagerSearch = () => {
+                this._projectOptionManagerSearch = projectOptionManagerSearchInput.value;
+                this._renderOptionManager();
+            };
+            projectOptionManagerSearchInput.addEventListener('input', handleProjectOptionManagerSearch);
+            this._cleanup.push(() => projectOptionManagerSearchInput.removeEventListener('input', handleProjectOptionManagerSearch));
+        }
+
         const projectOptionManagerList = getHtmlElement('projectOptionManagerList');
         if (projectOptionManagerList) {
             const handleProjectOptionManagerClick = (event) => {
@@ -813,6 +854,21 @@ export class EditorShell {
                 void this._handleProjectOptionManagerAction(
                     actionButton.getAttribute('data-project-option-manager-action'),
                     actionButton.getAttribute('data-project-option-id')
+                );
+                return;
+            };
+
+            const handleProjectOptionManagerRowClick = (event) => {
+                const target = getTargetElement(event.target);
+                if (!target) return;
+
+                const rowButton = target.closest('[data-project-option-manager-row-action]');
+                if (!rowButton) return;
+
+                event.stopPropagation();
+                void this._handleProjectOptionManagerAction(
+                    rowButton.getAttribute('data-project-option-manager-row-action'),
+                    rowButton.getAttribute('data-project-option-id')
                 );
             };
             const handleProjectOptionManagerInput = (event) => {
@@ -850,17 +906,19 @@ export class EditorShell {
 
                 if (event.key === 'Escape') {
                     event.preventDefault();
+                    event.stopPropagation();
                     target.dataset.skipCommitOnBlur = 'true';
-                    this._projectOptionNameDrafts[optionId] = this._optionChrome.items.find((item) => item.id === optionId)?.label ?? '';
-                    this._renderOptionManager();
                     target.blur();
+                    this._cancelProjectOptionNameEdit(optionId);
                 }
             };
             projectOptionManagerList.addEventListener('click', handleProjectOptionManagerClick);
+            projectOptionManagerList.addEventListener('click', handleProjectOptionManagerRowClick);
             projectOptionManagerList.addEventListener('input', handleProjectOptionManagerInput);
             projectOptionManagerList.addEventListener('focusout', handleProjectOptionManagerFocusOut);
             projectOptionManagerList.addEventListener('keydown', handleProjectOptionManagerKeyDown);
             this._cleanup.push(() => projectOptionManagerList.removeEventListener('click', handleProjectOptionManagerClick));
+            this._cleanup.push(() => projectOptionManagerList.removeEventListener('click', handleProjectOptionManagerRowClick));
             this._cleanup.push(() => projectOptionManagerList.removeEventListener('input', handleProjectOptionManagerInput));
             this._cleanup.push(() => projectOptionManagerList.removeEventListener('focusout', handleProjectOptionManagerFocusOut));
             this._cleanup.push(() => projectOptionManagerList.removeEventListener('keydown', handleProjectOptionManagerKeyDown));
@@ -1093,18 +1151,56 @@ export class EditorShell {
         }
     }
 
+    _syncModalBackgroundLock() {
+        const shouldLockBackground = this._projectOptionManagerOpen || this._projectPicker.isOpen;
+        [
+            /** @type {HTMLElement | null} */ (document.querySelector('.left-sidebar')),
+            /** @type {HTMLElement | null} */ (document.querySelector('.main-area')),
+            /** @type {HTMLElement | null} */ (document.querySelector('.right-sidebar'))
+        ].forEach((element) => {
+            if (!element) return;
+            if (shouldLockBackground) {
+                element.setAttribute('inert', '');
+                return;
+            }
+            element.removeAttribute('inert');
+        });
+    }
+
+    _resetProjectOptionNameDraft(optionId) {
+        if (!optionId) return;
+        this._projectOptionNameDrafts[optionId] = this._optionChrome.items.find((item) => item.id === optionId)?.label ?? '';
+    }
+
+    _resetProjectOptionNameDrafts() {
+        this._projectOptionNameDrafts = Object.fromEntries(
+            this._optionChrome.items.map((item) => [item.id, item.label])
+        );
+    }
+
     _openProjectOptionManager() {
         this._projectOptionManagerOpen = true;
+        this._projectOptionManagerSearch = '';
+        this._projectOptionEditingId = '';
+        this._resetProjectOptionNameDrafts();
         this._renderOptionManager();
     }
 
     _closeProjectOptionManager() {
         this._projectOptionManagerOpen = false;
+        this._projectOptionManagerSearch = '';
+        this._projectOptionEditingId = '';
+        this._resetProjectOptionNameDrafts();
         this._renderOptionManager();
     }
 
     async _handleProjectOptionManagerAction(action, optionId) {
         if (!optionId || this._projectSaveBusy) return;
+
+        if (action === 'edit') {
+            this._startProjectOptionNameEdit(optionId);
+            return;
+        }
 
         if (action === 'select' && this._projectActions?.selectOption) {
             await this._runProjectOptionAction(() => this._projectActions.selectOption(optionId));
@@ -1127,6 +1223,30 @@ export class EditorShell {
         }
     }
 
+    _startProjectOptionNameEdit(optionId) {
+        if (!optionId || !this._projectActions?.renameOption || this._projectSaveBusy) return;
+
+        this._projectOptionEditingId = optionId;
+        this._resetProjectOptionNameDraft(optionId);
+        this._renderOptionManager();
+
+        requestAnimationFrame(() => {
+            const optionNameInput = getInputElement(`projectOptionNameInput-${optionId}`);
+            optionNameInput?.focus();
+            optionNameInput?.select();
+        });
+    }
+
+    _cancelProjectOptionNameEdit(optionId = this._projectOptionEditingId) {
+        if (!optionId) return;
+
+        this._resetProjectOptionNameDraft(optionId);
+        if (this._projectOptionEditingId === optionId) {
+            this._projectOptionEditingId = '';
+        }
+        this._renderOptionManager();
+    }
+
     async _commitOptionNameEdit(optionId) {
         if (!optionId || !this._projectActions?.renameOption || this._projectSaveBusy) return;
 
@@ -1135,12 +1255,19 @@ export class EditorShell {
 
         const nextName = (this._projectOptionNameDrafts[optionId] ?? option.label).trim();
         if (!nextName || nextName === option.label.trim()) {
-            this._projectOptionNameDrafts[optionId] = option.label;
+            this._projectOptionEditingId = '';
+            this._resetProjectOptionNameDraft(optionId);
             this._renderOptionManager();
             return;
         }
 
-        await this._runProjectOptionAction(() => this._projectActions.renameOption(optionId, nextName));
+        try {
+            await this._runProjectOptionAction(() => this._projectActions.renameOption(optionId, nextName));
+        } finally {
+            this._projectOptionEditingId = '';
+            this._resetProjectOptionNameDraft(optionId);
+            this._renderOptionManager();
+        }
     }
 
     _renderOptionChrome() {
@@ -1212,6 +1339,7 @@ export class EditorShell {
             projectOptionManagerModal.hidden = !this._projectOptionManagerOpen;
         }
         document.body?.classList?.toggle('project-option-manager-open', this._projectOptionManagerOpen);
+        this._syncModalBackgroundLock();
 
         const projectOptionManagerCloseBtn = getButtonElement('projectOptionManagerCloseBtn');
         if (projectOptionManagerCloseBtn) {
@@ -1221,57 +1349,95 @@ export class EditorShell {
         const projectOptionManagerCreateBtn = getButtonElement('projectOptionManagerCreateBtn');
         if (projectOptionManagerCreateBtn) {
             projectOptionManagerCreateBtn.disabled = this._projectSaveBusy || !this._optionChrome.canCreate || !this._projectActions?.createOption;
-            projectOptionManagerCreateBtn.textContent = '+ Option';
+            projectOptionManagerCreateBtn.textContent = 'Create empty option';
+        }
+
+        const projectOptionManagerSearchInput = getInputElement('projectOptionManagerSearchInput');
+        if (projectOptionManagerSearchInput) {
+            projectOptionManagerSearchInput.disabled = this._projectSaveBusy;
+            if (document.activeElement !== projectOptionManagerSearchInput) {
+                projectOptionManagerSearchInput.value = this._projectOptionManagerSearch;
+            }
         }
 
         const projectOptionManagerList = getHtmlElement('projectOptionManagerList');
         if (!projectOptionManagerList) return;
 
-        projectOptionManagerList.innerHTML = this._optionChrome.items.map((item) => `
-            <div class="project-option-manager-row ${item.isActive ? 'active' : ''}">
-                <div class="project-option-manager-main">
-                    <span class="project-option-dot" style="--option-color:${escapeHtml(item.color)}" aria-hidden="true"></span>
-                    <div class="project-option-manager-copy">
-                        <label class="sr-only" for="projectOptionNameInput-${escapeHtml(item.id)}">${escapeHtml(item.label)} option name</label>
-                        <input
-                            id="projectOptionNameInput-${escapeHtml(item.id)}"
-                            class="project-option-manager-name-input"
-                            type="text"
-                            maxlength="80"
-                            value="${escapeHtml(this._projectOptionNameDrafts[item.id] ?? item.label)}"
-                            data-project-option-name-id="${escapeHtml(item.id)}"
-                            ${this._projectSaveBusy || !this._projectActions?.renameOption ? 'disabled' : ''}
-                        >
-                        <span class="project-option-manager-meta">${item.isActive ? 'Active option' : 'Saved option'}</span>
+        const searchValue = this._projectOptionManagerSearch.trim().toLowerCase();
+        const visibleItems = this._optionChrome.items.filter((item) => {
+            if (!searchValue) return true;
+            return item.label.toLowerCase().includes(searchValue);
+        });
+
+        if (!visibleItems.length) {
+            projectOptionManagerList.innerHTML = '<div class="project-option-manager-empty">No options match your search.</div>';
+            return;
+        }
+
+        projectOptionManagerList.innerHTML = visibleItems.map((item) => `
+            <div class="project-option-manager-row ${item.isActive ? 'active' : ''}" role="listitem">
+                ${this._projectOptionEditingId === item.id ? `
+                    <div class="project-option-manager-main project-option-manager-main-editing">
+                        <span class="project-option-dot" style="--option-color:${escapeHtml(item.color)}" aria-hidden="true"></span>
+                        <div class="project-option-manager-copy">
+                            <label class="sr-only" for="projectOptionNameInput-${escapeHtml(item.id)}">${escapeHtml(item.label)} option name</label>
+                            <input
+                                id="projectOptionNameInput-${escapeHtml(item.id)}"
+                                class="project-option-manager-name-input"
+                                type="text"
+                                maxlength="80"
+                                value="${escapeHtml(this._projectOptionNameDrafts[item.id] ?? item.label)}"
+                                data-project-option-name-id="${escapeHtml(item.id)}"
+                                ${this._projectSaveBusy || !this._projectActions?.renameOption ? 'disabled' : ''}
+                            >
+                        </div>
                     </div>
-                </div>
-                <div class="project-option-manager-actions">
+                ` : `
                     <button
-                        class="project-option-manager-btn"
+                        class="project-option-manager-main"
                         type="button"
-                        data-project-option-manager-action="select"
+                        data-project-option-manager-row-action="select"
                         data-project-option-id="${escapeHtml(item.id)}"
+                        aria-label="Open ${escapeHtml(item.label)}"
                         ${this._projectSaveBusy || item.isActive || !this._projectActions?.selectOption ? 'disabled' : ''}
                     >
-                        ${item.isActive ? 'Active' : 'Open'}
+                        <span class="project-option-dot" style="--option-color:${escapeHtml(item.color)}" aria-hidden="true"></span>
+                        <span class="project-option-manager-name">${escapeHtml(item.label)}</span>
+                    </button>
+                `}
+                <div class="project-option-manager-actions">
+                    <button
+                        class="project-option-manager-icon-btn"
+                        type="button"
+                        data-project-option-manager-action="edit"
+                        data-project-option-id="${escapeHtml(item.id)}"
+                        aria-label="Rename ${escapeHtml(item.label)}"
+                        title="Rename ${escapeHtml(item.label)}"
+                        ${this._projectSaveBusy || !this._projectActions?.renameOption ? 'disabled' : ''}
+                    >
+                        ${renderProjectOptionManagerActionIcon('edit')}
                     </button>
                     <button
-                        class="project-option-manager-btn"
+                        class="project-option-manager-icon-btn"
                         type="button"
                         data-project-option-manager-action="duplicate"
                         data-project-option-id="${escapeHtml(item.id)}"
+                        aria-label="Duplicate ${escapeHtml(item.label)}"
+                        title="Duplicate ${escapeHtml(item.label)}"
                         ${this._projectSaveBusy || !this._projectActions?.duplicateOption ? 'disabled' : ''}
                     >
-                        Duplicate
+                        ${renderProjectOptionManagerActionIcon('duplicate')}
                     </button>
                     <button
-                        class="project-option-manager-btn project-option-manager-btn-danger"
+                        class="project-option-manager-icon-btn project-option-manager-icon-btn-danger"
                         type="button"
                         data-project-option-manager-action="delete"
                         data-project-option-id="${escapeHtml(item.id)}"
+                        aria-label="Delete ${escapeHtml(item.label)}"
+                        title="Delete ${escapeHtml(item.label)}"
                         ${this._projectSaveBusy || !item.canDelete || !this._projectActions?.deleteOption ? 'disabled' : ''}
                     >
-                        Delete
+                        ${renderProjectOptionManagerActionIcon('delete')}
                     </button>
                 </div>
             </div>
@@ -1324,7 +1490,11 @@ export class EditorShell {
         const importButton = /** @type {HTMLButtonElement | null} */ (
             projectMenuPanel.querySelector('[data-project-menu-action="import-config"]')
         );
+        const signOutButton = /** @type {HTMLButtonElement | null} */ (
+            projectMenuPanel.querySelector('[data-project-menu-action="sign-out"]')
+        );
         if (importButton) importButton.disabled = isBusy;
+        if (signOutButton) signOutButton.disabled = isBusy || !this._projectActions?.signOut;
 
         projectMenuPanel.querySelectorAll('[data-toolbar-export-kind]').forEach((button) => {
             const exportButton = /** @type {HTMLButtonElement} */ (button);
@@ -1332,11 +1502,6 @@ export class EditorShell {
             const requiresScene3D = kind === 'obj' || kind === 'rhino';
             exportButton.disabled = isBusy || (requiresScene3D && !this.isScene3DActive());
         });
-
-        const signOutBtn = getButtonElement('editorSignOutBtn');
-        if (signOutBtn) {
-            signOutBtn.disabled = isBusy || !this._projectActions?.signOut;
-        }
     }
 
     _toggleProjectMenu() {
@@ -1379,6 +1544,12 @@ export class EditorShell {
         if (action === 'create-project' && this._projectActions?.createProject) {
             this._closeProjectMenu();
             await this._runToolbarProjectAction('create', () => this._projectActions.createProject());
+            return;
+        }
+
+        if (action === 'sign-out' && this._projectActions?.signOut) {
+            this._closeProjectMenu();
+            await this._runToolbarProjectAction('signout', () => this._projectActions.signOut());
             return;
         }
 
@@ -1469,6 +1640,7 @@ export class EditorShell {
             projectPickerModal.hidden = !this._projectPicker.isOpen;
         }
         document.body?.classList?.toggle('project-picker-open', this._projectPicker.isOpen);
+        this._syncModalBackgroundLock();
 
         const projectPickerCloseBtn = getButtonElement('projectPickerCloseBtn');
         if (projectPickerCloseBtn) {

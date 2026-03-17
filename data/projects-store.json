@@ -233,21 +233,21 @@
     {
       "id": "project_9b3ab3fd-e87f-4a04-a568-6d0321a9a891",
       "ownerId": "e@jlg.com",
-      "name": "Untitled Project",
-      "sport": "Ice Hockey",
+      "name": "Elliott's Option 1",
+      "sport": "Football",
       "createdAt": "2026-03-17T00:46:06.059Z",
-      "updatedAt": "2026-03-17T00:54:48.561Z",
+      "updatedAt": "2026-03-17T01:58:31.828Z",
       "state": {
         "_projectVersion": "dashboard-cutover-v1",
-        "sport": "Ice Hockey",
-        "activeOptionId": "option-2",
+        "sport": "Football",
+        "activeOptionId": "option-1",
         "options": [
           {
             "id": "option-1",
-            "name": "Option 1",
+            "name": "Soccer",
             "color": "#7aae1a",
             "createdAt": "2026-03-17T00:46:06.061Z",
-            "updatedAt": "2026-03-17T00:54:48.562Z",
+            "updatedAt": "2026-03-17T01:58:28.144Z",
             "state": {
               "_version": "phase6-app-state",
               "sport": "Football",
@@ -320,10 +320,10 @@
           },
           {
             "id": "option-2",
-            "name": "Option 2",
+            "name": "Two Tier",
             "color": "#37996e",
             "createdAt": "2026-03-17T00:46:30.839Z",
-            "updatedAt": "2026-03-17T00:54:45.220Z",
+            "updatedAt": "2026-03-17T01:58:29.898Z",
             "state": {
               "_version": "phase6-app-state",
               "sport": "Ice Hockey",
@@ -350,7 +350,7 @@
                 "showSeatCubes3D": false
               },
               "ui": {
-                "activeViewTab": "scene3d",
+                "activeViewTab": "profile",
                 "activeResultsTab": "statsTab"
               },
               "tiers": [
@@ -358,11 +358,178 @@
                   "enabled": true,
                   "profileType": "Parabolic",
                   "cValue": 3.5,
-                  "numRows": 37,
-                  "firstRowDist": 10,
-                  "firstRowElev": 3,
+                  "numRows": 22,
+                  "firstRowDist": 52,
+                  "firstRowElev": 7,
                   "treadDepth": 33,
                   "riserHeight": 12,
+                  "eyeHeight": 3.75,
+                  "eyeSetback": 6
+                },
+                {
+                  "enabled": true,
+                  "profileType": "Parabolic",
+                  "cValue": 4,
+                  "numRows": 10,
+                  "firstRowDist": 93,
+                  "firstRowElev": 41.5,
+                  "treadDepth": 33,
+                  "riserHeight": 12,
+                  "eyeHeight": 3.75,
+                  "eyeSetback": 6
+                },
+                {
+                  "enabled": false,
+                  "profileType": "Parabolic",
+                  "cValue": 4,
+                  "numRows": 10,
+                  "firstRowDist": 10,
+                  "firstRowElev": 0,
+                  "treadDepth": 33,
+                  "riserHeight": 10,
+                  "eyeHeight": 3.75,
+                  "eyeSetback": 6
+                }
+              ],
+              "bookmarks": []
+            }
+          },
+          {
+            "id": "option-3",
+            "name": "Three Tier",
+            "color": "#de850a",
+            "createdAt": "2026-03-17T01:54:02.156Z",
+            "updatedAt": "2026-03-17T01:58:31.826Z",
+            "state": {
+              "_version": "phase6-app-state",
+              "sport": "Football",
+              "setup": {
+                "customRunoff": 25,
+                "focalX": 0,
+                "focalZ": 0,
+                "sightlineVisuals": true,
+                "sectionMetrics": false
+              },
+              "bowl": {
+                "type": "Full",
+                "cornerRad": 10,
+                "sideLength": 300,
+                "structuralDepth": 12,
+                "structuralProfileMode": "stepped"
+              },
+              "occupancy": {
+                "seatWidth": 20,
+                "minAisle": 48,
+                "maxAisle": 72,
+                "seatsBetweenAisles": 20,
+                "egressFactor": 0.2,
+                "showSeatCubes3D": false
+              },
+              "ui": {
+                "activeViewTab": "profile",
+                "activeResultsTab": "statsTab"
+              },
+              "tiers": [
+                {
+                  "enabled": true,
+                  "profileType": "Parabolic",
+                  "cValue": 4,
+                  "numRows": 13,
+                  "firstRowDist": 20,
+                  "firstRowElev": 5,
+                  "treadDepth": 33,
+                  "riserHeight": 10,
+                  "eyeHeight": 3.75,
+                  "eyeSetback": 6
+                },
+                {
+                  "enabled": true,
+                  "profileType": "Parabolic",
+                  "cValue": 4,
+                  "numRows": 18,
+                  "firstRowDist": 61,
+                  "firstRowElev": 35.5,
+                  "treadDepth": 33,
+                  "riserHeight": 12,
+                  "eyeHeight": 3.75,
+                  "eyeSetback": 6
+                },
+                {
+                  "enabled": true,
+                  "profileType": "Parabolic",
+                  "cValue": 4,
+                  "numRows": 10,
+                  "firstRowDist": 80,
+                  "firstRowElev": 81.5,
+                  "treadDepth": 33,
+                  "riserHeight": 12,
+                  "eyeHeight": 3.75,
+                  "eyeSetback": 6
+                }
+              ],
+              "bookmarks": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "project_4b28a239-e976-46d3-9b7a-08b0aab1b6b6",
+      "ownerId": "e@jlg.com",
+      "name": "Untitled Project",
+      "sport": "Football",
+      "createdAt": "2026-03-17T01:29:06.390Z",
+      "updatedAt": "2026-03-17T01:29:06.390Z",
+      "state": {
+        "_projectVersion": "dashboard-cutover-v1",
+        "sport": "Football",
+        "activeOptionId": "option-1",
+        "options": [
+          {
+            "id": "option-1",
+            "name": "Option 1",
+            "color": "#7aae1a",
+            "createdAt": "2026-03-17T01:29:06.388Z",
+            "updatedAt": "2026-03-17T01:29:06.388Z",
+            "state": {
+              "_version": "phase6-app-state",
+              "sport": "Football",
+              "setup": {
+                "customRunoff": 25,
+                "focalX": 0,
+                "focalZ": 0,
+                "sightlineVisuals": true,
+                "sectionMetrics": false
+              },
+              "bowl": {
+                "type": "Full",
+                "cornerRad": 10,
+                "sideLength": 300,
+                "structuralDepth": 12,
+                "structuralProfileMode": "stepped"
+              },
+              "occupancy": {
+                "seatWidth": 20,
+                "minAisle": 48,
+                "maxAisle": 72,
+                "seatsBetweenAisles": 20,
+                "egressFactor": 0.2,
+                "showSeatCubes3D": false
+              },
+              "ui": {
+                "activeViewTab": "profile",
+                "activeResultsTab": "statsTab"
+              },
+              "tiers": [
+                {
+                  "enabled": true,
+                  "profileType": "Parabolic",
+                  "cValue": 4,
+                  "numRows": 30,
+                  "firstRowDist": 45,
+                  "firstRowElev": 6,
+                  "treadDepth": 33,
+                  "riserHeight": 10,
                   "eyeHeight": 3.75,
                   "eyeSetback": 6
                 },
