@@ -327,10 +327,10 @@ describe('EditorControls', () => {
         });
     });
 
-    test('preserves an in-progress decimal while keeping paired controls synced', () => {
+    test('preserves fractional input strings while keeping paired controls synced', () => {
         const elements = {
-            focalZInput: createElement({ value: '0' }),
-            focalZSlider: createElement({ value: '0' })
+            focalZInput: createElement({ value: '0', step: '0.5' }),
+            focalZSlider: createElement({ value: '0', step: '0.5' })
         };
         const state = createState();
         const onChange = vi.fn();
@@ -356,18 +356,18 @@ describe('EditorControls', () => {
         });
 
         onChange.mockClear();
-        elements.focalZInput.value = '0.5';
+        elements.focalZInput.value = '0.05';
         elements.focalZInput.dispatch('input');
-        expect(state.setup.focalZ).toBe(0.5);
-        expect(elements.focalZInput.value).toBe('0.5');
-        expect(elements.focalZSlider.value).toBe('0.5');
+        expect(state.setup.focalZ).toBe(0.05);
+        expect(elements.focalZInput.value).toBe('0.05');
+        expect(elements.focalZSlider.value).toBe('0.05');
         expect(onChange).toHaveBeenCalledWith({
             reason: 'state',
             controlId: 'focalZInput'
         });
     });
 
-    test('configures fractional controls for decimal text entry and restores canonical values on blur', () => {
+    test('keeps fractional controls as native number inputs and restores canonical values on blur', () => {
         const elements = {
             focalZInput: createElement({ value: '0', step: '0.5' }),
             focalZSlider: createElement({ value: '0', step: '0.5' }),
@@ -382,11 +382,11 @@ describe('EditorControls', () => {
 
         controls.init();
 
-        expect(elements.focalZInput.type).toBe('text');
-        expect(elements.focalZInput.inputMode).toBe('decimal');
-        expect(elements.focalZInput.autocomplete).toBe('off');
-        expect(elements.focalZInput.spellcheck).toBe(false);
-        expect(elements.focalZInput.classList.contains('numeric-text-input')).toBe(true);
+        expect(elements.focalZInput.type).toBe('number');
+        expect(elements.focalZInput.inputMode).toBe('');
+        expect(elements.focalZInput.autocomplete).toBe('');
+        expect(elements.focalZInput.spellcheck).toBe(true);
+        expect(elements.focalZInput.classList.contains('numeric-text-input')).toBe(false);
         expect(elements.numRowsInput.type).toBe('number');
         expect(elements.numRowsInput.classList.contains('numeric-text-input')).toBe(false);
 

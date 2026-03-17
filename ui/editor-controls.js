@@ -161,29 +161,13 @@ function normalizeNumericControlValue(baseId, rawValue) {
     return numericValue;
 }
 
-function isInProgressDecimalValue(rawValue) {
-    if (typeof rawValue !== 'string') return false;
-    return /^[-+]?(\d+)?\.$/.test(rawValue.trim());
-}
-
 function isFractionalStepValue(rawStep) {
     const step = Number(rawStep);
     return Number.isFinite(step) && step > 0 && !Number.isInteger(step);
 }
 
-function shouldUseDecimalTextEntry(input, slider) {
+function shouldPreserveFractionalInputString(input, slider) {
     return isFractionalStepValue(input?.step) || isFractionalStepValue(slider?.step);
-}
-
-function configureDecimalTextEntry(input, slider) {
-    if (!input || !shouldUseDecimalTextEntry(input, slider)) return false;
-
-    input.type = 'text';
-    input.inputMode = 'decimal';
-    input.autocomplete = 'off';
-    input.spellcheck = false;
-    input.classList?.add('numeric-text-input');
-    return true;
 }
 
 function clampValueToBounds(value, { min = value, max = value } = {}) {
@@ -505,7 +489,7 @@ export class EditorControls {
 
         const slider = getInputElement(`${baseId}Slider`);
         const input = getInputElement(`${baseId}Input`);
-        const usesDecimalTextEntry = configureDecimalTextEntry(input, slider);
+        const preservesFractionalInputString = shouldPreserveFractionalInputString(input, slider);
         const getClampedValue = (rawValue) => {
             const nextValue = normalizeNumericControlValue(baseId, rawValue);
             if (nextValue === null) return null;
@@ -531,34 +515,31 @@ export class EditorControls {
 
         if (input) {
             this._addListener(input, 'input', () => {
-                const rawValue = input.value;
-                const nextValue = getClampedValue(rawValue);
+                const nextValue = getClampedValue(input.value);
                 if (nextValue === null) return;
                 setValueAtPath(this.state, path, nextValue);
-                if (!isInProgressDecimalValue(rawValue)) {
+                if (!preservesFractionalInputString) {
                     input.value = String(nextValue);
                 }
                 if (slider) slider.value = String(nextValue);
                 this._emitChange('state', `${baseId}Input`);
             });
 
-            if (usesDecimalTextEntry) {
-                this._addListener(input, 'blur', () => {
-                    const nextValue = getClampedValue(input.value);
-                    if (nextValue === null) {
-                        const currentValue = baseId === 'focalX'
-                            ? buildFocalXControlConfig(this.state).value
-                            : getValueAtPath(this.state, path);
-                        input.value = currentValue === undefined || currentValue === null
-                            ? ''
-                            : String(currentValue);
-                        return;
-                    }
+            this._addListener(input, 'blur', () => {
+                const nextValue = getClampedValue(input.value);
+                if (nextValue === null) {
+                    const currentValue = baseId === 'focalX'
+                        ? buildFocalXControlConfig(this.state).value
+                        : getValueAtPath(this.state, path);
+                    input.value = currentValue === undefined || currentValue === null
+                        ? ''
+                        : String(currentValue);
+                    return;
+                }
 
-                    input.value = String(nextValue);
-                    if (slider) slider.value = String(nextValue);
-                });
-            }
+                input.value = String(nextValue);
+                if (slider) slider.value = String(nextValue);
+            });
         }
     }
 

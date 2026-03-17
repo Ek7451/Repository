@@ -538,8 +538,7 @@ body.jlg-shell {
     width: 100%;
 }
 
-.jlg-shell .left-sidebar .control-row:has(input[type="range"]) > input[type="number"],
-.jlg-shell .left-sidebar .control-row:has(input[type="range"]) > input.numeric-text-input {
+.jlg-shell .left-sidebar .control-row:has(input[type="range"]) > input[type="number"] {
     grid-column: 3;
     margin-left: 0;
 }
@@ -758,7 +757,6 @@ body.jlg-shell {
    ========================================================================== */
 
 .jlg-shell .control-row input[type="number"],
-.jlg-shell .control-row input.numeric-text-input,
 .jlg-shell .control-row .toggle-input-slot {
     background: #ffffff;
     border: 1px solid #d4d4d8;
@@ -766,8 +764,7 @@ body.jlg-shell {
     color: #18181b;
 }
 
-.jlg-shell .control-row input[type="number"],
-.jlg-shell .control-row input.numeric-text-input {
+.jlg-shell .control-row input[type="number"] {
     width: 62px;
     flex-basis: 62px;
     padding: 5px 7px;
@@ -775,7 +772,6 @@ body.jlg-shell {
 }
 
 .jlg-shell .control-row input[type="number"]:focus,
-.jlg-shell .control-row input.numeric-text-input:focus,
 .jlg-shell select:focus {
     border-color: #7aae1a;
     box-shadow: 0 0 0 3px rgba(122, 174, 26, 0.14);
@@ -3455,7 +3451,6 @@ html[data-theme="dark"] .jlg-shell .view-tabs-feedback-btn:hover {
 
 html[data-theme="dark"] .jlg-shell .project-name-input,
 html[data-theme="dark"] .jlg-shell .control-row input[type="number"],
-html[data-theme="dark"] .jlg-shell .control-row input.numeric-text-input,
 html[data-theme="dark"] .jlg-shell .control-row .toggle-input-slot,
 html[data-theme="dark"] .jlg-shell select {
     background: #151d27 !important;
