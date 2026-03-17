@@ -36,8 +36,9 @@
 </head>
 <body class="jlg-shell" data-page="configurator">
     <div id="editorShell" class="app-container">
-        <!-- ========== LEFT SIDEBAR ========== -->
+        <!-- ========== LEFT SIDEBAR (CONTROLS) ========== -->
         <aside class="sidebar left-sidebar">
+            <!-- Left Sidebar: Brand Header -->
             <div class="sidebar-header">
                 <div class="brand-lockup">
                     <img class="brand-logo" src="../../assets/jlg-logo.jpg" alt="JLG Architects logo">
@@ -46,12 +47,14 @@
                         <div class="subtitle">Venue Feasibility + Sightline Tool</div>
                     </div>
                 </div>
-                <button id="toggleControlsBtn" class="icon-btn" title="Toggle Controls Panel" style="margin-left:auto;">
+                <button id="toggleControlsBtn" class="icon-btn sidebar-header-action" title="Toggle Controls Panel">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="15 18 9 12 15 6"></polyline>
                     </svg>
                 </button>
             </div>
+
+            <!-- Left Sidebar: Signed-In Employee -->
             <section class="employee-strip" aria-label="Signed-in employee">
                 <div class="employee-avatar" aria-hidden="true">
                     <img id="employeeAvatarImage" class="employee-avatar-image" alt="" hidden>
@@ -63,8 +66,8 @@
                 </div>
             </section>
 
+            <!-- Left Sidebar: Control Sections -->
             <div class="sidebar-content">
-                <!-- ---- FIELD SETUP ---- -->
                 <div class="control-section collapsible" id="fieldSetupSection">
                     <div class="section-header">Field Setup</div>
                     <div class="section-body">
@@ -77,12 +80,10 @@
                             <input type="range" id="customRunoffSlider" min="0" max="50" step="1" value="0">
                             <input type="number" id="customRunoffInput" placeholder="Auto" step="1" min="0">
                             <span class="unit">ft</span>
-                            <!-- Icon added for alignment with other rows -->
                             <span class="info-icon"
                                 data-tooltip="Field runoff distance (defaults to sport standard if Auto)">ⓘ</span>
                         </div>
 
-                        <!-- Moved from Focal Point Section (Focal Z) -->
                         <div class="control-row">
                             <label>Focal Z</label>
                             <input type="range" id="focalZSlider" min="-10" max="20" step="0.5" value="0">
@@ -103,7 +104,6 @@
                     </div>
                 </div>
 
-                <!-- ---- OCCUPANCY & EGRESS ---- -->
                 <div class="control-section collapsible collapsed" id="occupancySection">
                     <div class="section-header">Occupancy & Egress</div>
                     <div class="section-body">
@@ -146,19 +146,18 @@
                             <input type="number" id="egressFactorInput" min="0.1" max="1.0" step="0.01" value="0.2">
                             <span class="unit"></span>
                             <span class="info-icon"
-                                data-tooltip="<div style='margin-bottom:4px;'><strong>Egress width req'd per person</strong></div><div style='margin-bottom:2px;'>Base values:</div><ul style='padding-left:16px;margin-top:0;margin-bottom:8px;'><li>0.3 (Non-sprinklered)</li><li>0.2 (Sprinklered)</li><li>0.15 (Outdoor Smoke-Protected)</li></ul><div style='margin-bottom:2px;'><strong>IBC 1030.6.2 Smoke-Protected scale:</strong></div><ul style='padding-left:16px;margin:0;'><li>2k Seats: 0.300</li><li>5k Seats: 0.200</li><li>10k Seats: 0.130</li><li>15k Seats: 0.096</li><li>20k Seats: 0.076</li><li>25k+ Seats: 0.060</li></ul>">ⓘ</span>
+                                data-tooltip-template="egressFactorTooltipTemplate">ⓘ</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- Bowl Config -->
                 <div class="control-section collapsible collapsed" id="bowlConfigSection">
                     <div class="section-header">Bowl Configuration</div>
                     <div class="section-body">
                         <div class="control-group">
                             <div class="control-row">
                                 <label>Type</label>
-                                <select id="bowlType" style="flex:1">
+                                <select id="bowlType">
                                     <option value="Full">Full Bowl</option>
                                     <option value="Sides">Sides Only</option>
                                     <option value="Side1">Side 1 Only</option>
@@ -174,14 +173,13 @@
                                     data-tooltip="Corner chamfer dimension measured from the intersection of the two adjacent sides of the bowl.">ⓘ</span>
 
                             </div>
-                            <div class="control-row" id="sideLengthRow" style="display:none">
+                            <div class="control-row" id="sideLengthRow" hidden>
                                 <label>Sides Length</label>
                                 <input type="range" id="bowlSideLengthSlider" min="50" max="600" step="1" value="300">
                                 <input type="number" id="bowlSideLengthInput" min="50" max="600" step="1" value="300">
                                 <span class="unit">ft</span>
                             </div>
 
-                            <!-- Structural Depth -->
                             <div class="control-row">
                                 <label>Structural Depth</label>
                                 <input type="range" id="structuralDepthSlider" min="0" max="72" step="1" value="12">
@@ -192,7 +190,7 @@
                             </div>
                             <div class="control-row">
                                 <label>Structural Profile</label>
-                                <select id="structuralProfileMode" style="flex:1">
+                                <select id="structuralProfileMode">
                                     <option value="stepped" selected>Stepped</option>
                                     <option value="sloped">Sloped</option>
                                 </select>
@@ -203,7 +201,6 @@
                     </div>
                 </div>
 
-                <!-- ---- TIER 1 ---- -->
                 <div class="control-section collapsible collapsed tier-section-1" id="tier1Section">
                     <div class="section-header">
                         <span>Tier 1</span>
@@ -214,7 +211,7 @@
                     <div class="section-body">
                         <div class="control-row">
                             <label>Profile Type</label>
-                            <select id="profileType" style="flex:1">
+                            <select id="profileType">
                                 <option value="Parabolic" selected>Parabolic</option>
                                 <option value="Linear">Linear</option>
                             </select>
@@ -222,7 +219,6 @@
                                 data-tooltip="Parabolic: variable risers, exact C-value per row. Linear: constant riser height/slope.">ⓘ</span>
                         </div>
 
-                        <!-- C-Value -->
                         <div class="control-row">
                             <label>Target C-Value</label>
                             <input type="range" id="cValueSlider" min="0.5" max="8" step="0.25" value="3.0">
@@ -232,7 +228,6 @@
                                 data-tooltip="Sightline clearance over head in front. Excellent: ≥4.75&quot;, Good: 3.5–4.75&quot;, Acceptable: 2.4–3.5&quot;, Poor: <2.4&quot;">ⓘ</span>
                         </div>
 
-                        <!-- Num Rows -->
                         <div class="control-row">
                             <label>Number of Rows</label>
                             <input type="range" id="numRowsSlider" min="3" max="80" step="1" value="30">
@@ -242,7 +237,6 @@
                                 data-tooltip="15–20: lower bowl, 20–30: full tier, 40+: consider tier breaks">ⓘ</span>
                         </div>
 
-                        <!-- First Row Distance -->
                         <div class="control-row">
                             <label>Dist From Field</label>
                             <input type="range" id="firstRowDistSlider" min="0" max="200" step="5" value="50">
@@ -252,7 +246,6 @@
                                 data-tooltip="Distance from focal point. 30–50 ft premium, 50–80 ft standard, 100+ ft upper">ⓘ</span>
                         </div>
 
-                        <!-- First Row Elevation -->
                         <div class="control-row">
                             <label>First Row Elev</label>
                             <input type="range" id="firstRowElevSlider" min="0" max="30" step="0.5" value="3">
@@ -262,7 +255,6 @@
                                 data-tooltip="Height above focal point. 1–3 ft field level, 4–8 ft raised, 20+ ft upper tier">ⓘ</span>
                         </div>
 
-                        <!-- Tread Depth -->
                         <div class="control-row">
                             <label>Tread Depth</label>
                             <input type="range" id="treadDepthSlider" min="24" max="42" step="1" value="33">
@@ -272,7 +264,6 @@
                                 data-tooltip="Row depth front-to-back. 28–30&quot; min bench, 33–36&quot; standard, 38–42&quot; premium">ⓘ</span>
                         </div>
 
-                        <!-- Riser Height -->
                         <div class="control-row">
                             <label>Starting Riser</label>
                             <input type="range" id="riserHeightSlider" min="4" max="22" step="0.5" value="8">
@@ -282,7 +273,6 @@
                                 data-tooltip="Baseline riser height. 6–8&quot; lower bowl, 10–14&quot; upper tiers. Code max ~8.25&quot; for gangways">ⓘ</span>
                         </div>
 
-                        <!-- Eye Height -->
                         <div class="control-row">
                             <label>Eye Height</label>
                             <input type="range" id="eyeHeightSlider" min="3" max="5" step="0.1" value="3.75">
@@ -292,7 +282,6 @@
                                 data-tooltip="Seated eye height. 3.75 ft (45&quot;) average adult, 3.5 ft conservative, 4.0 ft taller">ⓘ</span>
                         </div>
 
-                        <!-- Eye Setback -->
                         <div class="control-row">
                             <label>Eye Setback</label>
                             <input type="range" id="eyeSetbackSlider" min="0" max="12" step="1" value="6">
@@ -304,20 +293,17 @@
                     </div>
                 </div>
 
-                <!-- ---- TIER 2 ---- -->
                 <div class="control-section collapsible collapsed tier-section-2" id="tier2Section">
                     <div class="section-header">
                         <span>Tier 2</span>
-                        <!-- Toggle inside header, stopPropagation logic needed in JS -->
                         <label class="header-toggle">
                             <input type="checkbox" id="enableTier2">
                         </label>
                     </div>
-                    <!-- (Removed display:none - visibility now handled by CSS classes) -->
                     <div class="section-body" id="tier2Controls">
                         <div class="control-row">
                             <label>Profile Type</label>
-                            <select id="t2ProfileType" style="flex:1">
+                            <select id="t2ProfileType">
                                 <option value="Parabolic" selected>Parabolic</option>
                                 <option value="Linear">Linear</option>
                             </select>
@@ -392,9 +378,7 @@
                         </div>
                     </div>
                 </div>
-                <!-- (Removed premature close of sidebar-content) -->
 
-                <!-- ---- TIER 3 ---- -->
                 <div class="control-section collapsible collapsed tier-section-3" id="tier3Section">
                     <div class="section-header">
                         <span>Tier 3</span>
@@ -402,11 +386,10 @@
                             <input type="checkbox" id="enableTier3">
                         </label>
                     </div>
-                    <!-- (Removed display:none - visibility now handled by CSS classes) -->
                     <div class="section-body" id="tier3Controls">
                         <div class="control-row">
                             <label>Profile Type</label>
-                            <select id="t3ProfileType" style="flex:1">
+                            <select id="t3ProfileType">
                                 <option value="Parabolic" selected>Parabolic</option>
                                 <option value="Linear">Linear</option>
                             </select>
@@ -481,10 +464,10 @@
                         </div>
                     </div>
                 </div>
-                <!-- (Removed extra closing div) -->
 
-            </div><!-- end sidebar-content -->
+            </div>
 
+            <!-- Left Sidebar: Utility Tray -->
             <div class="sidebar-utility-panel">
                 <div class="sidebar-utility-strip">
                     <button id="saveProjectBtn" class="sidebar-save-btn" type="button" title="Save project" aria-label="Save project" disabled>
@@ -525,6 +508,7 @@
 
         <!-- ========== MAIN AREA ========== -->
         <main class="main-area">
+            <!-- Main Area: Header -->
             <div class="view-tabs">
                 <div class="view-tabs-left" aria-label="Project toolbar">
                     <div class="editor-route-toolbar">
@@ -683,6 +667,7 @@
                 </div>
             </div>
 
+            <!-- Main Area: View Panels -->
             <div class="view-container">
                 <!-- Profile Panel -->
                 <div id="profilePanel" class="view-panel active">
@@ -732,7 +717,7 @@
                     <div class="scene3d-bottom-dock">
                         <div class="view-overlay-controls view-overlay-controls-3d" aria-label="3D view toggles">
                             <div class="toggle-row sightline-toggle-row">
-                                <label class="header-toggle overlay-icon-toggle" style="margin: 0;" title="3D Seat Cubes" aria-label="Toggle 3D seat cubes">
+                                <label class="header-toggle overlay-icon-toggle" title="3D Seat Cubes" aria-label="Toggle 3D seat cubes">
                                     <input type="checkbox" id="showSeatCubes3D">
                                     <svg class="toggle-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                         <path d="M12 2 4 6.5 12 11l8-4.5L12 2z"></path>
@@ -747,7 +732,7 @@
                             <div class="cam-bookmarks-header">
                                 <button id="toggleBookmarksBtn" class="icon-btn" title="Toggle Saved Views">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2" style="transition: transform 0.2s;">
+                                        stroke-width="2">
                                         <polyline points="6 9 12 15 18 9"></polyline>
                                     </svg>
                                 </button>
@@ -767,8 +752,8 @@
 
         <!-- ========== RIGHT SIDEBAR (RESULTS) ========== -->
         <aside class="sidebar right-sidebar">
-            <div class="resize-handle" id="rightSidebarResizer" style="left:0; right:auto; cursor:col-resize;"></div>
-            <div class="sidebar-header" style="display:flex; justify-content:space-between; align-items:center;">
+            <div class="resize-handle" id="rightSidebarResizer"></div>
+            <div class="sidebar-header">
                 <h1><span>Results & Metrics</span></h1>
                 <button id="toggleResultsBtn" class="icon-btn" title="Toggle Results Panel">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -776,8 +761,7 @@
                     </svg>
                 </button>
             </div>
-            <div class="sidebar-content" id="resultsContainer"
-                style="display: flex; flex-direction: row; height: 100%; padding: 0;">
+            <div class="sidebar-content results-layout" id="resultsContainer">
                 <div class="results-tabs-nav">
                     <button class="results-tab-btn active" data-target="statsTab" title="Metrics">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -799,24 +783,22 @@
                         </svg>
                     </button>
                 </div>
-                <div class="results-tabs-content"
-                    style="flex: 1; overflow-y: auto; padding: 0 var(--gap-sm) var(--gap-md) 6px;">
+                <div class="results-tabs-content results-scroll-panel">
                     <div id="statsTab" class="results-tab-panel active">
-                        <div class="control-section stats-panel" id="resultsSection"
-                            style="border: none; padding-top: 0;">
+                        <div class="control-section stats-panel results-panel-shell" id="resultsSection">
                             <div id="statsContent">
                                 <div class="stat-row">
-                                    <span class="stat-label" style="color:var(--text-muted)">Adjust parameters to see
+                                    <span class="stat-label stat-label--empty">Adjust parameters to see
                                         results</span>
                                 </div>
                             </div>
                         </div>
                     </div>
                     <div id="detailsTab" class="results-tab-panel">
-                        <div class="control-section stats-panel" style="border: none; padding-top: 0;">
+                        <div class="control-section stats-panel results-panel-shell">
                             <div id="detailsContent">
                                 <div class="stat-row">
-                                    <span class="stat-label" style="color:var(--text-muted)">Tier details will appear
+                                    <span class="stat-label stat-label--empty">Tier details will appear
                                         here</span>
                                 </div>
                             </div>
@@ -826,6 +808,7 @@
             </div>
         </aside>
 
+        <!-- ========== SHELL MODALS ========== -->
         <div id="projectPickerModal" class="project-picker-modal" hidden>
             <div class="project-picker-backdrop" data-project-picker-close></div>
             <section class="project-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="projectPickerTitle">
@@ -885,6 +868,29 @@
         </div>
     </div>
 
+    <!-- ========== SHARED TEMPLATES ========== -->
+    <template id="egressFactorTooltipTemplate">
+        <div class="tooltip-rich">
+            <div class="tooltip-rich-title">Egress width req'd per person</div>
+            <div class="tooltip-rich-section-title">Base values</div>
+            <ul class="tooltip-rich-list">
+                <li>0.3 (Non-sprinklered)</li>
+                <li>0.2 (Sprinklered)</li>
+                <li>0.15 (Outdoor Smoke-Protected)</li>
+            </ul>
+            <div class="tooltip-rich-section-title">IBC 1030.6.2 Smoke-Protected scale</div>
+            <ul class="tooltip-rich-list tooltip-rich-list--tight">
+                <li>2k Seats: 0.300</li>
+                <li>5k Seats: 0.200</li>
+                <li>10k Seats: 0.130</li>
+                <li>15k Seats: 0.096</li>
+                <li>20k Seats: 0.076</li>
+                <li>25k+ Seats: 0.060</li>
+            </ul>
+        </div>
+    </template>
+
+    <!-- ========== APP BOOTSTRAP ========== -->
     <script type="module" src="../../app.js?v=1"></script>
 </body>
 </html>

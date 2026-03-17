@@ -23,6 +23,22 @@ const TIER_METRIC_ICONS = {
     load: '<svg class="tier-metric-icon icon-load" viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" /></svg>'
 };
 
+function escapeStyleValue(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;');
+}
+
+function serializeStyleVars(styleVars = {}) {
+    const declarations = Object.entries(styleVars)
+        .filter(([, value]) => value !== undefined && value !== null && value !== '')
+        .map(([name, value]) => `--${name}:${escapeStyleValue(value)}`);
+
+    return declarations.length > 0 ? ` style="${declarations.join(';')}"` : '';
+}
+
 function normalizeQualityDistribution(summary = {}) {
     const distributionByLabel = new Map(
         Array.isArray(summary.qualityDistribution)
@@ -101,7 +117,7 @@ function buildPieChartMarkup(summary = {}) {
 
     const legendHtml = chartData.map((segment) => `
         <div class="legend-item">
-            <div class="legend-color" style="background:${segment.color}"></div>
+            <div class="legend-color"${serializeStyleVars({ 'legend-color': segment.color })}></div>
             <div class="legend-text">
                 <span class="legend-label">${segment.label}</span>
                 <span class="legend-range">${segment.rangeLabel}</span>
@@ -137,8 +153,11 @@ function buildOccupancyBreakdownMarkup(tiers = [], totalOccupancy = 0) {
             const pct = (capacity / totalOccupancy) * 100;
             const color = tier?.occupancy?.color || 'var(--accent-blue)';
             const label = tier?.occupancy?.label || 'Tier';
-            occSegments += `<div style="width:${pct}%; background:${color}; height:100%;"></div>`;
-            occLegends += `<div class="occ-legend-item"><span style="color:${color}; font-size: 14px; margin-right: 4px;">&#9679;</span>${label}: <strong>${capacity.toLocaleString()}</strong></div>`;
+            occSegments += `<div class="occupancy-bar-segment"${serializeStyleVars({
+                'segment-width': `${pct}%`,
+                'segment-color': color
+            })}></div>`;
+            occLegends += `<div class="occ-legend-item"><span class="occ-legend-dot"${serializeStyleVars({ 'legend-color': color })} aria-hidden="true">&#9679;</span>${label}: <strong>${capacity.toLocaleString()}</strong></div>`;
         });
     }
 
@@ -227,36 +246,36 @@ function buildEgressMarkup(tiers = []) {
         `;
 
         const limitForcedHtml = egress.blocksAddedForEgress > 0
-            ? `<br/><span style="color:var(--accent-orange); display:inline-block; max-width:100%; word-wrap:break-word; padding-top:2px;">&#8627; <strong>Max Width Limit Forced:</strong> Clamped to Max Aisle Width (${egress.maximumWidth}"). Automatically added ${egress.blocksAddedForEgress} section(s) to maintain code compliance!</span>`
+            ? `<br /><span class="tier-metrics-limit-note">&#8627; <strong>Max Width Limit Forced:</strong> Clamped to Max Aisle Width (${egress.maximumWidth}"). Automatically added ${egress.blocksAddedForEgress} section(s) to maintain code compliance!</span>`
             : '';
 
         originalEgressHtml += `
-            <div class="collapsible collapsed results-details" style="margin-top: 6px; margin-bottom: 12px;">
-                <div class="section-header" style="font-size: 10px; padding: 6px 8px; font-weight: 500;">
+            <div class="collapsible collapsed results-details results-details--supporting">
+                <div class="section-header results-details-header--supporting">
                     Original Egress Calc (${egress.tierLabel}${egress.originalHeaderSuffix})
                 </div>
-                <div class="section-body" style="padding: 8px;">
+                <div class="section-body results-details-body--compact">
                     <div class="egress-tier-row compact">
                         <div class="egress-row-top">
                             <div class="tier-label-group">
                                 <span class="tier-label">${egress.tierLabel}</span>
-                                <span class="tier-pct" style="color:var(--accent-green)">${egress.totalSeatingPercentage}% Seating</span>
+                                <span class="tier-pct tier-pct--seating">${egress.totalSeatingPercentage}% Seating</span>
                                 <span class="tier-pct-sep">/</span>
-                                <span class="tier-pct" style="color:var(--accent-red)">${egress.totalAislePercentage}% Egress</span>
+                                <span class="tier-pct tier-pct--egress">${egress.totalAislePercentage}% Egress</span>
                             </div>
                         </div>
                         <div class="egress-bar-compact">
-                            <div class="bar-segment-seat" style="width:${egress.totalSeatingPercentage}%"></div>
-                            <div class="bar-segment-aisle" style="width:${egress.totalAislePercentage}%"></div>
+                            <div class="bar-segment-seat"${serializeStyleVars({ 'segment-width': `${egress.totalSeatingPercentage}%` })}></div>
+                            <div class="bar-segment-aisle"${serializeStyleVars({ 'segment-width': `${egress.totalAislePercentage}%` })}></div>
                         </div>
                         <div class="egress-row-details">
                             <strong>${egress.displayAisles} Aisles${egress.countsTag}</strong> (Width: ${egress.aisleWidth}") &bull; ${egress.displaySeatLen.toLocaleString()}' Linear Seating vs ${egress.displayAisleLen.toLocaleString()}' Linear Aisles${egress.linearQuantitiesTag}
-                            <div style="font-size: 0.85em; color: var(--text-secondary); margin-top: 4px; line-height: 1.4;">
+                            <div class="egress-row-notes">
                                 &#8627; Total Linear Seating${egress.countsTag}: ${egress.displayTotalLen.toLocaleString()}' (averaging ${egress.displaySeatsPerRow} seats/row)<br/>
                                 &#8627; Sections${egress.countsTag}: ${egress.displaySections} (avg ${egress.seatsPerBlock} seats/row, ${egress.occupantsPerSection} seats/section)<br/>
                                 &#8627; Max Load/Aisle (per aisle): ${egress.occupantsPerAisleLine} occ (50/50 section split)<br/>
                                 &#8627; Aisle Egress Capacity Check (per aisle): ${egress.occupantsPerAisleLine} occ &times; ${egress.egressFactor}"/occ = ${egress.capacityWidth}" required<br/>
-                                &#8627; Aisle Sizing: Max of Min Allowed (${egress.minimumWidth}") vs Required (${egress.capacityWidth}") &rarr; <strong style="color:var(--text-primary)">Governing Width = ${egress.governingWidth}"</strong>${limitForcedHtml}
+                                &#8627; Aisle Sizing: Max of Min Allowed (${egress.minimumWidth}") vs Required (${egress.capacityWidth}") &rarr; <strong class="egress-row-details-highlight">Governing Width = ${egress.governingWidth}"</strong>${limitForcedHtml}
                             </div>
                         </div>
                     </div>
@@ -267,11 +286,11 @@ function buildEgressMarkup(tiers = []) {
 
     return `
         ${cardsHtml}
-        <div class="collapsible collapsed results-details" style="margin-top: 12px; margin-bottom: 8px;">
-            <div class="section-header" style="font-size: 10px; padding: 6px 8px; font-weight: 500; color: var(--text-muted);">
+        <div class="collapsible collapsed results-details results-details--disclaimer">
+            <div class="section-header results-details-header--disclaimer">
                 * Code Scope Disclaimer
             </div>
-            <div class="section-body" style="font-size: 0.75rem; color: var(--text-muted); padding: 8px; line-height: 1.3;">
+            <div class="section-body results-details-body--disclaimer">
                 Early stage geometric simplification only. The following code egress requirements are EXCLUDED from current results and must be evaluated in later phases:<br />
                 &bull; 30 ft rules and dead end row access conditions<br />
                 &bull; Vomitory, concourse, door bank, exit stair, discharge capacity and merging flows<br />
@@ -573,7 +592,7 @@ export class StatsPanel {
 
         return `
             <div class="results-summary-container">
-                <div class="total-occupancy-label" style="text-align: center; margin-bottom: 4px; margin-top: 0;">C-VALUE ANALYSIS</div>
+                <div class="total-occupancy-label results-section-title--center results-section-title--chart">C-VALUE ANALYSIS</div>
                 <div class="visuals-col-chart">
                     ${buildPieChartMarkup(summary)}
                 </div>
@@ -585,9 +604,9 @@ export class StatsPanel {
                         ${buildOccupancyBreakdownMarkup(viewModel.tiers, totalOccupancy)}
                     </div>
 
-                    <div class="results-divider" style="margin: 24px 0;"></div>
+                    <div class="results-divider results-divider--spacious"></div>
 
-                    <div class="total-occupancy-label" style="margin-bottom: 16px;">EGRESS ANALYSIS</div>
+                    <div class="total-occupancy-label results-section-title--spaced">EGRESS ANALYSIS</div>
                     <div class="egress-metrics-container">
                         ${buildEgressMarkup(viewModel.tiers)}
                     </div>
@@ -600,21 +619,20 @@ export class StatsPanel {
         const rowTableHtml = viewModel.tiers.map((tier) => {
             const isCollapsed = this.openDetailSections.has(tier.sectionClass) ? '' : 'collapsed';
             const rowsHtml = (tier.rows || []).map((row) => {
-                const riserAttrs = row.riserWarning
-                    ? 'style="color: #ef4444; font-weight: bold;" title="Riser is 22 inches or greater!"'
-                    : '';
+                const riserClass = row.riserWarning ? ' class="row-table-cell--warning"' : '';
+                const riserTitle = row.riserWarning ? ' title="Riser is 22 inches or greater!"' : '';
 
                 return `
                     <div class="row-table-row">
                         <span>${row.rowNumber}</span>
-                        <span ${riserAttrs}>${row.riserDisplay}</span>
+                        <span${riserClass}${riserTitle}>${row.riserDisplay}</span>
                         <span>${row.elevationDisplay}</span>
-                        <span style="color:${row.cValueColor}">${row.cValueDisplay}</span>
+                        <span class="row-table-cell--accent"${serializeStyleVars({ 'row-cell-color': row.cValueColor })}>${row.cValueDisplay}</span>
                         <span>${row.treadDisplay}</span>
                         <span>${row.distToFocalDisplay}</span>
                         <span>${row.angleDisplay}</span>
-                        <span style="color:var(--text-secondary)">${row.rowLengthDisplay}</span>
-                        <span style="color:var(--text-secondary)">${row.rowSeatsDisplay}</span>
+                        <span class="row-table-cell--muted">${row.rowLengthDisplay}</span>
+                        <span class="row-table-cell--muted">${row.rowSeatsDisplay}</span>
                     </div>
                 `;
             }).join('');
@@ -636,7 +654,7 @@ export class StatsPanel {
 
         return `
             <div class="results-summary-container">
-                <div class="total-occupancy-label" style="text-align: center; margin-bottom: 16px; margin-top: 0;">TIER ROW DETAILS</div>
+                <div class="total-occupancy-label results-section-title--center results-section-title--spaced">TIER ROW DETAILS</div>
                 ${rowTableHtml}
             </div>
         `;

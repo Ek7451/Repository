@@ -97,7 +97,8 @@ export class CameraBookmarks {
     _createDropdownElement() {
         const dropdownEl = document.createElement('div');
         dropdownEl.className = 'cam-bookmark-dropdown';
-        dropdownEl.style.display = 'none';
+        dropdownEl.dataset.state = 'closed';
+        dropdownEl.hidden = true;
         dropdownEl.innerHTML = createDropdownMarkup();
         document.body.appendChild(dropdownEl);
         return dropdownEl;
@@ -263,14 +264,14 @@ export class CameraBookmarks {
     _toggleDropdownForCard(cardEl, index) {
         if (!cardEl) return;
 
-        if (this._openDropdownIndex === index && this._dropdownEl.style.display !== 'none') {
+        if (this._openDropdownIndex === index && !this._dropdownEl.hidden) {
             this.closeDropdown();
             return;
         }
 
         this._openDropdownIndex = index;
-        this._dropdownEl.style.visibility = 'hidden';
-        this._dropdownEl.style.display = 'flex';
+        this._dropdownEl.hidden = false;
+        this._dropdownEl.dataset.state = 'positioning';
 
         const cardRect = cardEl.getBoundingClientRect();
         const dropdownWidth = this._dropdownEl.offsetWidth;
@@ -285,7 +286,7 @@ export class CameraBookmarks {
         this._dropdownEl.style.left = `${left}px`;
         this._dropdownEl.style.top = 'auto';
         this._dropdownEl.style.right = 'auto';
-        this._dropdownEl.style.visibility = 'visible';
+        this._dropdownEl.dataset.state = 'open';
 
         this._updateMenuButtons();
     }
@@ -303,8 +304,8 @@ export class CameraBookmarks {
 
     closeDropdown() {
         this._openDropdownIndex = null;
-        this._dropdownEl.style.display = 'none';
-        this._dropdownEl.style.visibility = 'hidden';
+        this._dropdownEl.dataset.state = 'closed';
+        this._dropdownEl.hidden = true;
         this._updateMenuButtons();
     }
 

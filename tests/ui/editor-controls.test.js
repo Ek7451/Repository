@@ -39,12 +39,27 @@ function createClassList() {
     };
 }
 
-function createElement({ id = '', value = '', checked = false } = {}) {
+function createElement({
+    id = '',
+    value = '',
+    checked = false,
+    type = 'number',
+    min = '',
+    max = '',
+    step = ''
+} = {}) {
     const listeners = new Map();
     const element = {
         id,
         value,
         checked,
+        type,
+        min,
+        max,
+        step,
+        inputMode: '',
+        autocomplete: '',
+        spellcheck: true,
         style: {},
         dataset: {},
         textContent: '',
@@ -310,6 +325,77 @@ describe('EditorControls', () => {
             firstRowElev: 2,
             riserHeight: 10
         });
+    });
+
+    test('preserves an in-progress decimal while keeping paired controls synced', () => {
+        const elements = {
+            focalZInput: createElement({ value: '0' }),
+            focalZSlider: createElement({ value: '0' })
+        };
+        const state = createState();
+        const onChange = vi.fn();
+
+        vi.stubGlobal('document', createDocumentStub(elements));
+
+        const controls = new EditorControls({
+            state,
+            onChange
+        });
+
+        controls.init();
+        controls.syncFromState();
+
+        elements.focalZInput.value = '0.';
+        elements.focalZInput.dispatch('input');
+        expect(state.setup.focalZ).toBe(0);
+        expect(elements.focalZInput.value).toBe('0.');
+        expect(elements.focalZSlider.value).toBe('0');
+        expect(onChange).toHaveBeenCalledWith({
+            reason: 'state',
+            controlId: 'focalZInput'
+        });
+
+        onChange.mockClear();
+        elements.focalZInput.value = '0.5';
+        elements.focalZInput.dispatch('input');
+        expect(state.setup.focalZ).toBe(0.5);
+        expect(elements.focalZInput.value).toBe('0.5');
+        expect(elements.focalZSlider.value).toBe('0.5');
+        expect(onChange).toHaveBeenCalledWith({
+            reason: 'state',
+            controlId: 'focalZInput'
+        });
+    });
+
+    test('configures fractional controls for decimal text entry and restores canonical values on blur', () => {
+        const elements = {
+            focalZInput: createElement({ value: '0', step: '0.5' }),
+            focalZSlider: createElement({ value: '0', step: '0.5' }),
+            numRowsInput: createElement({ value: '30', step: '1' }),
+            numRowsSlider: createElement({ value: '30', step: '1' })
+        };
+        const state = createState();
+
+        vi.stubGlobal('document', createDocumentStub(elements));
+
+        const controls = new EditorControls({ state });
+
+        controls.init();
+
+        expect(elements.focalZInput.type).toBe('text');
+        expect(elements.focalZInput.inputMode).toBe('decimal');
+        expect(elements.focalZInput.autocomplete).toBe('off');
+        expect(elements.focalZInput.spellcheck).toBe(false);
+        expect(elements.focalZInput.classList.contains('numeric-text-input')).toBe(true);
+        expect(elements.numRowsInput.type).toBe('number');
+        expect(elements.numRowsInput.classList.contains('numeric-text-input')).toBe(false);
+
+        elements.focalZInput.value = '.';
+        elements.focalZInput.dispatch('input');
+        expect(state.setup.focalZ).toBe(0);
+        elements.focalZInput.dispatch('blur');
+        expect(elements.focalZInput.value).toBe('0');
+        expect(elements.focalZSlider.value).toBe('0');
     });
 
     test('applies tier defaults only on first enable and preserves later user positions', () => {

@@ -20,6 +20,23 @@ function getTargetElement(target) {
     return target instanceof Element ? target : null;
 }
 
+function resolveTooltipMarkup(icon) {
+    if (!(icon instanceof Element)) return '';
+
+    const templateId = icon.getAttribute('data-tooltip-template');
+    if (templateId) {
+        const template = document.getElementById(templateId);
+        if (template instanceof HTMLTemplateElement) {
+            return template.innerHTML.trim();
+        }
+        if (template instanceof HTMLElement) {
+            return template.innerHTML.trim();
+        }
+    }
+
+    return icon.getAttribute('data-tooltip') || '';
+}
+
 function normalizeViewTab(tab) {
     return ['profile', 'field', 'scene3d'].includes(tab) ? tab : 'profile';
 }
@@ -481,37 +498,6 @@ export class EditorShell {
         document.querySelectorAll('.view-panel').forEach((panel) => {
             panel.classList.toggle('active', panel.id === `${nextTab}Panel`);
         });
-
-        const toggle = (id, show) => {
-            const el = getHtmlElement(id);
-            if (el) el.style.display = show ? 'block' : 'none';
-        };
-
-        if (nextTab === 'profile') {
-            toggle('fieldSetupSection', true);
-            toggle('profileParamsSection', true);
-            toggle('focalPointSection', true);
-            toggle('additionalTiersSection', true);
-            toggle('planViewControls', false);
-            toggle('resultsSection', true);
-            toggle('bowlConfigSection', true);
-        } else if (nextTab === 'field') {
-            toggle('fieldSetupSection', true);
-            toggle('profileParamsSection', false);
-            toggle('focalPointSection', true);
-            toggle('additionalTiersSection', false);
-            toggle('planViewControls', true);
-            toggle('resultsSection', true);
-            toggle('bowlConfigSection', true);
-        } else {
-            toggle('fieldSetupSection', true);
-            toggle('profileParamsSection', false);
-            toggle('focalPointSection', false);
-            toggle('additionalTiersSection', false);
-            toggle('planViewControls', false);
-            toggle('resultsSection', true);
-            toggle('bowlConfigSection', true);
-        }
 
         this._renderProjectMenu();
 
@@ -2160,11 +2146,11 @@ export class EditorShell {
             const icon = target.closest('.info-icon');
             if (!icon) return;
 
-            const text = icon.getAttribute('data-tooltip');
-            if (!text) return;
+            const markup = resolveTooltipMarkup(icon);
+            if (!markup) return;
 
             activeIcon = icon;
-            tooltip.innerHTML = text;
+            tooltip.innerHTML = markup;
             tooltip.classList.add('visible');
 
             const rect = icon.getBoundingClientRect();

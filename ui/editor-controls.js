@@ -161,6 +161,31 @@ function normalizeNumericControlValue(baseId, rawValue) {
     return numericValue;
 }
 
+function isInProgressDecimalValue(rawValue) {
+    if (typeof rawValue !== 'string') return false;
+    return /^[-+]?(\d+)?\.$/.test(rawValue.trim());
+}
+
+function isFractionalStepValue(rawStep) {
+    const step = Number(rawStep);
+    return Number.isFinite(step) && step > 0 && !Number.isInteger(step);
+}
+
+function shouldUseDecimalTextEntry(input, slider) {
+    return isFractionalStepValue(input?.step) || isFractionalStepValue(slider?.step);
+}
+
+function configureDecimalTextEntry(input, slider) {
+    if (!input || !shouldUseDecimalTextEntry(input, slider)) return false;
+
+    input.type = 'text';
+    input.inputMode = 'decimal';
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.classList?.add('numeric-text-input');
+    return true;
+}
+
 function clampValueToBounds(value, { min = value, max = value } = {}) {
     return Math.max(min, Math.min(max, value));
 }
@@ -276,7 +301,7 @@ export class EditorControls {
 
         const sideLengthRow = getHtmlElement('sideLengthRow');
         if (sideLengthRow) {
-            sideLengthRow.style.display = String(this.state.bowl?.type || '').includes('Side') ? 'flex' : 'none';
+            sideLengthRow.hidden = !String(this.state.bowl?.type || '').includes('Side');
         }
 
         [1, 2, 3].forEach((tierNum) => {
@@ -448,7 +473,9 @@ export class EditorControls {
 
         this._bindSelectControl('bowlType', (value) => {
             const sideRow = getHtmlElement('sideLengthRow');
-            if (sideRow) sideRow.style.display = String(value || '').includes('Side') ? 'flex' : 'none';
+            if (sideRow) {
+                sideRow.hidden = !String(value || '').includes('Side');
+            }
         });
 
         this._bindCheckboxControl('showSeatCubes3D');
@@ -478,6 +505,7 @@ export class EditorControls {
 
         const slider = getInputElement(`${baseId}Slider`);
         const input = getInputElement(`${baseId}Input`);
+        const usesDecimalTextEntry = configureDecimalTextEntry(input, slider);
         const getClampedValue = (rawValue) => {
             const nextValue = normalizeNumericControlValue(baseId, rawValue);
             if (nextValue === null) return null;
@@ -503,13 +531,34 @@ export class EditorControls {
 
         if (input) {
             this._addListener(input, 'input', () => {
-                const nextValue = getClampedValue(input.value);
+                const rawValue = input.value;
+                const nextValue = getClampedValue(rawValue);
                 if (nextValue === null) return;
                 setValueAtPath(this.state, path, nextValue);
-                input.value = String(nextValue);
+                if (!isInProgressDecimalValue(rawValue)) {
+                    input.value = String(nextValue);
+                }
                 if (slider) slider.value = String(nextValue);
                 this._emitChange('state', `${baseId}Input`);
             });
+
+            if (usesDecimalTextEntry) {
+                this._addListener(input, 'blur', () => {
+                    const nextValue = getClampedValue(input.value);
+                    if (nextValue === null) {
+                        const currentValue = baseId === 'focalX'
+                            ? buildFocalXControlConfig(this.state).value
+                            : getValueAtPath(this.state, path);
+                        input.value = currentValue === undefined || currentValue === null
+                            ? ''
+                            : String(currentValue);
+                        return;
+                    }
+
+                    input.value = String(nextValue);
+                    if (slider) slider.value = String(nextValue);
+                });
+            }
         }
     }
 
