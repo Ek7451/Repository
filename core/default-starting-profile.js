@@ -16,7 +16,9 @@ export const DEFAULT_STARTUP_PROFILE = {
     "cornerRad": 8,
     "sideLength": 300,
     "structuralDepth": 12,
-    "structuralProfileMode": "stepped"
+    "structuralProfileMode": "stepped",
+    "straightAisleMode": "radial",
+    "chamferAisleMode": "radial"
   },
   "occupancy": {
     "seatWidth": 19,

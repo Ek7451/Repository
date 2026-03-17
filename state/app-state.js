@@ -44,7 +44,9 @@ const VALID_RESULTS_TABS = new Set(['statsTab', 'detailsTab']);
  *     cornerRad: number,
  *     sideLength: number,
  *     structuralDepth: number,
- *     structuralProfileMode: string
+ *     structuralProfileMode: string,
+ *     straightAisleMode: string,
+ *     chamferAisleMode: string
  *   },
  *   occupancy: {
  *     seatWidth: number,
@@ -144,7 +146,9 @@ function createDefaultStateData() {
             cornerRad: 10,
             sideLength: 300,
             structuralDepth: 12,
-            structuralProfileMode: 'stepped'
+            structuralProfileMode: 'stepped',
+            straightAisleMode: 'radial',
+            chamferAisleMode: 'radial'
         },
         occupancy: {
             seatWidth: 20,
@@ -204,6 +208,11 @@ function normalizeBowlType(value, fallback) {
 
 function normalizeStructuralProfileMode(value, fallback = 'stepped') {
     return value === 'sloped' ? 'sloped' : fallback;
+}
+
+function normalizeAisleMode(value, fallback = 'radial') {
+    if (value === 'radial' || value === 'perpendicular') return value;
+    return fallback === 'perpendicular' ? 'perpendicular' : 'radial';
 }
 
 function normalizeViewTab(value, fallback) {
@@ -341,6 +350,14 @@ function normalizeAppState(rawState = {}, fallbackState = createDefaultStateData
             structuralProfileMode: normalizeStructuralProfileMode(
                 state.bowl?.structuralProfileMode,
                 fallback.bowl.structuralProfileMode
+            ),
+            straightAisleMode: normalizeAisleMode(
+                state.bowl?.straightAisleMode,
+                fallback.bowl.straightAisleMode
+            ),
+            chamferAisleMode: normalizeAisleMode(
+                state.bowl?.chamferAisleMode,
+                fallback.bowl.chamferAisleMode
             )
         },
         occupancy: {
@@ -510,7 +527,9 @@ export function buildBowlConfig(state, template) {
         radius: bowl.cornerRad,
         sideLength: bowl.sideLength,
         structuralDepth: bowl.structuralDepth || 0,
-        structuralProfileMode: normalizeStructuralProfileMode(bowl.structuralProfileMode)
+        structuralProfileMode: normalizeStructuralProfileMode(bowl.structuralProfileMode),
+        straightAisleMode: normalizeAisleMode(bowl.straightAisleMode),
+        chamferAisleMode: normalizeAisleMode(bowl.chamferAisleMode)
     };
 }
 

@@ -23,11 +23,14 @@ describe('AppState', () => {
     });
 
     test('hydrates legacy phase5 configs into the single AppState object', () => {
+        const legacyBowl = { ...DEFAULT_STARTUP_PROFILE.bowl };
+        delete legacyBowl.straightAisleMode;
+        delete legacyBowl.chamferAisleMode;
         const legacyConfig = {
             ...DEFAULT_STARTUP_PROFILE,
             _version: 'phase5',
             bowl: {
-                ...DEFAULT_STARTUP_PROFILE.bowl,
+                ...legacyBowl,
                 type: 'Side2',
                 clipEnabled: true,
                 clipAxis: 'Y',
@@ -55,6 +58,8 @@ describe('AppState', () => {
         expect(AppState.bowl.type).toBe('Side1');
         expect(AppState.setup.customRunoff).toBeNull();
         expect(AppState.bowl.structuralProfileMode).toBe('stepped');
+        expect(AppState.bowl.straightAisleMode).toBe('radial');
+        expect(AppState.bowl.chamferAisleMode).toBe('radial');
         expect(AppState.bookmarks[0]).toEqual({
             name: 'Corner View',
             position: { x: 1, y: 2, z: 3 },
@@ -63,6 +68,8 @@ describe('AppState', () => {
         });
         expect(exported._version).toBe(APP_STATE_VERSION);
         expect(exported.ui.activeViewTab).toBe(DEFAULT_STARTUP_PROFILE.ui.activeViewTab);
+        expect(exported.bowl.straightAisleMode).toBe('radial');
+        expect(exported.bowl.chamferAisleMode).toBe('radial');
         expect(AppState.bowl).not.toHaveProperty('clipEnabled');
         expect(AppState.bowl).not.toHaveProperty('clipAxis');
         expect(AppState.bowl).not.toHaveProperty('clipPosition');
@@ -119,6 +126,8 @@ describe('AppState', () => {
         expect(first.setup.focalX).toBe(0);
         expect(first.bowl.structuralDepth).toBe(DEFAULT_STARTUP_PROFILE.bowl.structuralDepth);
         expect(first.bowl.structuralProfileMode).toBe('stepped');
+        expect(first.bowl.straightAisleMode).toBe('radial');
+        expect(first.bowl.chamferAisleMode).toBe('radial');
 
         first.tiers[0].numRows = 99;
         expect(second.tiers[0].numRows).toBe(30);
@@ -172,6 +181,8 @@ describe('AppState', () => {
         state.bowl.sideLength = 280;
         state.bowl.structuralDepth = 18;
         state.bowl.structuralProfileMode = 'sloped';
+        state.bowl.straightAisleMode = 'perpendicular';
+        state.bowl.chamferAisleMode = 'radial';
         state.occupancy.seatWidth = 22;
         state.occupancy.minAisle = 44;
         state.occupancy.maxAisle = 66;
@@ -219,7 +230,9 @@ describe('AppState', () => {
             radius: 24,
             sideLength: 280,
             structuralDepth: 18,
-            structuralProfileMode: 'sloped'
+            structuralProfileMode: 'sloped',
+            straightAisleMode: 'perpendicular',
+            chamferAisleMode: 'radial'
         });
         expect(bowlConfig).not.toHaveProperty('clip');
         expect(buildFieldVisibility(state)).toEqual({
@@ -298,7 +311,9 @@ describe('AppState', () => {
             radius: undefined,
             sideLength: undefined,
             structuralDepth: 0,
-            structuralProfileMode: 'stepped'
+            structuralProfileMode: 'stepped',
+            straightAisleMode: 'radial',
+            chamferAisleMode: 'radial'
         });
         expect(bowlConfig).not.toHaveProperty('clip');
         expect(buildFieldVisibility(partialState)).toEqual({
@@ -315,15 +330,21 @@ describe('AppState', () => {
         });
     });
 
-    test('round-trips structural profile mode through canonical state serialization', () => {
+    test('round-trips structural profile and aisle modes through canonical state serialization', () => {
         AppState.fromJSON({
             bowl: {
                 structuralDepth: 24,
-                structuralProfileMode: 'sloped'
+                structuralProfileMode: 'sloped',
+                straightAisleMode: 'perpendicular',
+                chamferAisleMode: 'perpendicular'
             }
         });
 
         expect(AppState.bowl.structuralProfileMode).toBe('sloped');
+        expect(AppState.bowl.straightAisleMode).toBe('perpendicular');
+        expect(AppState.bowl.chamferAisleMode).toBe('perpendicular');
         expect(AppState.toJSON().bowl.structuralProfileMode).toBe('sloped');
+        expect(AppState.toJSON().bowl.straightAisleMode).toBe('perpendicular');
+        expect(AppState.toJSON().bowl.chamferAisleMode).toBe('perpendicular');
     });
 });

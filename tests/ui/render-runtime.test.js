@@ -31,6 +31,8 @@ describe('RenderRuntime', () => {
         state.setup.focalZ = 9;
         state.bowl.structuralDepth = 18;
         state.bowl.structuralProfileMode = 'sloped';
+        state.bowl.straightAisleMode = 'perpendicular';
+        state.bowl.chamferAisleMode = 'radial';
         state.occupancy.showSeatCubes3D = true;
         state.occupancy.seatWidth = 22;
         state.tiers[1].enabled = true;
@@ -46,7 +48,9 @@ describe('RenderRuntime', () => {
         expect(snapshot.activeSolvers).toHaveLength(2);
         expect(snapshot.bowlConfig).toEqual(expect.objectContaining({
             width: 160,
-            structuralDepth: 18
+            structuralDepth: 18,
+            straightAisleMode: 'perpendicular',
+            chamferAisleMode: 'radial'
         }));
         expect(snapshot.visibility).toEqual(expect.objectContaining({
             t1: true,
@@ -109,7 +113,9 @@ describe('RenderRuntime', () => {
             solvers: snapshot.solvers,
             bowlConfig: expect.objectContaining({
                 structuralDepth: 18,
-                structuralProfileMode: 'sloped'
+                structuralProfileMode: 'sloped',
+                straightAisleMode: 'perpendicular',
+                chamferAisleMode: 'radial'
             }),
             egressParams: snapshot.egressParams,
             focalPointFt: snapshot.focalPointFt,
@@ -142,7 +148,11 @@ describe('RenderRuntime', () => {
         expect(snapshot.bowlConfig).not.toHaveProperty('clip');
         expect(runtime.getExportContext(state).bowlConfig).not.toHaveProperty('clip');
         expect(fieldGeometryPort.getOffsetCorrection).toHaveBeenCalledWith(
-            expect.objectContaining({ width: 160 }),
+            expect.objectContaining({
+                width: 160,
+                straightAisleMode: 'radial',
+                chamferAisleMode: 'radial'
+            }),
             'Football'
         );
         expect(tierDefaults).toEqual(expect.objectContaining({

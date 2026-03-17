@@ -66,7 +66,13 @@ describe('SeatingBowlApp runtime seams', () => {
 
         expect(app.state.sport).toBe('Soccer');
         expect(app.state.setup.focalZ).toBe(7);
+        expect(app.state.bowl.straightAisleMode).toBe('radial');
+        expect(app.state.bowl.chamferAisleMode).toBe('radial');
         expect(app.renderRuntime.getExportContext(app.state).template).toBe(getTemplate('Soccer'));
+        expect(app.renderRuntime.getExportContext(app.state).bowlConfig).toEqual(expect.objectContaining({
+            straightAisleMode: 'radial',
+            chamferAisleMode: 'radial'
+        }));
         expect(applyImportedConfig).toHaveBeenCalledWith(expect.objectContaining({
             sport: 'Soccer'
         }));
@@ -157,6 +163,8 @@ describe('SeatingBowlApp runtime seams', () => {
         app.state.setup.customRunoff = 30;
         app.state.bowl.structuralDepth = 18;
         app.state.bowl.structuralProfileMode = 'sloped';
+        app.state.bowl.straightAisleMode = 'perpendicular';
+        app.state.bowl.chamferAisleMode = 'radial';
         app.state.occupancy.showSeatCubes3D = true;
         app.state.occupancy.seatWidth = 22;
 
@@ -178,7 +186,9 @@ describe('SeatingBowlApp runtime seams', () => {
             123,
             expect.objectContaining({
                 width: 160,
-                structuralDepth: 18
+                structuralDepth: 18,
+                straightAisleMode: 'perpendicular',
+                chamferAisleMode: 'radial'
             }),
             7,
             snapshot?.tierAisleLayouts

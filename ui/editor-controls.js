@@ -49,6 +49,8 @@ const SELECT_STATE_PATHS = {
     sportSelect: ['sport'],
     bowlType: ['bowl', 'type'],
     structuralProfileMode: ['bowl', 'structuralProfileMode'],
+    straightAisleMode: ['bowl', 'straightAisleMode'],
+    chamferAisleMode: ['bowl', 'chamferAisleMode'],
     profileType: ['tiers', 0, 'profileType'],
     t2ProfileType: ['tiers', 1, 'profileType'],
     t3ProfileType: ['tiers', 2, 'profileType']
@@ -451,7 +453,14 @@ export class EditorControls {
             this._addListener(sectionEl, 'change', markInitialized);
         });
 
-        ['structuralProfileMode', 'profileType', 't2ProfileType', 't3ProfileType'].forEach((id) => {
+        [
+            'structuralProfileMode',
+            'straightAisleMode',
+            'chamferAisleMode',
+            'profileType',
+            't2ProfileType',
+            't3ProfileType'
+        ].forEach((id) => {
             this._bindSelectControl(id);
         });
 

@@ -107,7 +107,10 @@ function createState() {
             sectionMetrics: false
         },
         bowl: {
-            type: 'Full'
+            type: 'Full',
+            structuralProfileMode: 'stepped',
+            straightAisleMode: 'radial',
+            chamferAisleMode: 'radial'
         },
         occupancy: {
             showSeatCubes3D: false
@@ -176,6 +179,8 @@ describe('EditorControls', () => {
             t3NumRowsInput: createElement(),
             t3NumRowsSlider: createElement(),
             bowlType: createElement(),
+            straightAisleMode: createElement(),
+            chamferAisleMode: createElement(),
             enableTier1: createElement(),
             enableTier2: createElement(),
             enableTier3: createElement(),
@@ -189,6 +194,8 @@ describe('EditorControls', () => {
         state.setup.customRunoff = null;
         state.setup.focalX = -30.2;
         state.bowl.type = 'Side1';
+        state.bowl.straightAisleMode = 'perpendicular';
+        state.bowl.chamferAisleMode = 'radial';
 
         vi.stubGlobal('document', createDocumentStub(elements));
 
@@ -214,6 +221,8 @@ describe('EditorControls', () => {
         expect(elements.t2NumRowsInput.min).toBe('3');
         expect(elements.t2NumRowsInput.max).toBe('60');
         expect(elements.t3NumRowsSlider.max).toBe('60');
+        expect(elements.straightAisleMode.value).toBe('perpendicular');
+        expect(elements.chamferAisleMode.value).toBe('radial');
         expect(
             elements.sportSelect.children.find((option) => option.value === 'Football')?.textContent
         ).toContain('Football');
@@ -229,6 +238,8 @@ describe('EditorControls', () => {
             customRunoffSlider: createElement({ value: '25' }),
             focalXInput: createElement({ value: '0' }),
             focalXSlider: createElement({ value: '0' }),
+            straightAisleMode: createElement({ value: 'radial' }),
+            chamferAisleMode: createElement({ value: 'radial' }),
             enableTier2: createElement(),
             enableTier3: createElement(),
             tier2Section: createElement(),
@@ -291,6 +302,24 @@ describe('EditorControls', () => {
         expect(onChange).toHaveBeenCalledWith({
             reason: 'state',
             controlId: 'focalXSlider'
+        });
+
+        onChange.mockClear();
+        elements.straightAisleMode.value = 'perpendicular';
+        elements.straightAisleMode.dispatch('change');
+        expect(state.bowl.straightAisleMode).toBe('perpendicular');
+        expect(onChange).toHaveBeenCalledWith({
+            reason: 'state',
+            controlId: 'straightAisleMode'
+        });
+
+        onChange.mockClear();
+        elements.chamferAisleMode.value = 'perpendicular';
+        elements.chamferAisleMode.dispatch('change');
+        expect(state.bowl.chamferAisleMode).toBe('perpendicular');
+        expect(onChange).toHaveBeenCalledWith({
+            reason: 'state',
+            controlId: 'chamferAisleMode'
         });
 
         const tier2Defaults = buildNextTierDefaultsFromTiers(state.tiers, buildFocalPointFt(state), 2);
