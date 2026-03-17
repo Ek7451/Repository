@@ -7,8 +7,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     bootAppShell,
-    buildConfiguratorRouteRedirectUrl,
-    buildConfiguratorUrl
+    buildConfiguratorUrl,
+    getCurrentPage
 } from '../../app.js';
 import {
     buildDuplicateProjectName
@@ -266,20 +266,14 @@ describe('entry routing and bootstrap', () => {
         );
     });
 
-    it('redirects the legacy dashboard route into the configurator route while preserving query and hash', async () => {
-        const location = createLocation(
-            'http://localhost/pages/dashboard/dashboard.html?project=project-9&devBackend=local#recent'
-        );
-
-        await bootAppShell({
-            document: createRouteDocument('dashboard'),
-            location
-        });
-
-        expect(location.replace).toHaveBeenCalledWith(buildConfiguratorRouteRedirectUrl(location));
+    it('only recognizes the configurator page shell as a live route', () => {
+        expect(getCurrentPage(/** @type {Document} */ (/** @type {unknown} */ (createRouteDocument('configurator'))))).toBe('configurator');
+        expect(getCurrentPage(/** @type {Document} */ (/** @type {unknown} */ (createRouteDocument('dashboard'))))).toBeNull();
     });
 
-    it('removes the legacy dashboard runtime files from the live application path', () => {
+    it('removes the legacy dashboard route artifacts from the live application path', () => {
+        expect(fs.existsSync(path.join(repoRoot, 'pages/dashboard/dashboard.html'))).toBe(false);
+        expect(fs.existsSync(path.join(repoRoot, 'pages/dashboard/dashboard.css'))).toBe(false);
         expect(fs.existsSync(path.join(repoRoot, 'pages/dashboard/dashboard.js'))).toBe(false);
         expect(fs.existsSync(path.join(repoRoot, 'ui/project-dashboard.js'))).toBe(false);
     });

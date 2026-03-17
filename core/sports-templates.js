@@ -4,7 +4,7 @@
  * Ported from sports_templates.py
  */
 
-export const SPORTS_TEMPLATES = {
+const SPORTS_TEMPLATES = {
     "Ice Hockey": {
         field_length: 200.0,
         field_width: 85.0,
@@ -174,7 +174,7 @@ export const SPORTS_TEMPLATES = {
     }
 };
 
-export const FOCAL_X_MAX_FT = 100.0;
+const FOCAL_X_MAX_FT = 100.0;
 export const FOCAL_X_STEP_FT = 0.1;
 
 function toFiniteNumber(value) {
@@ -182,7 +182,7 @@ function toFiniteNumber(value) {
     return Number.isFinite(numeric) ? numeric : null;
 }
 
-export function resolveTemplateFieldEdgeAnchorYFt(template) {
+function resolveTemplateFieldEdgeAnchorYFt(template) {
     const explicitAnchor = toFiniteNumber(template?.focal_y);
     if (explicitAnchor !== null && explicitAnchor !== 0) {
         return explicitAnchor;

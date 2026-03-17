@@ -303,7 +303,7 @@ export function buildTierMetricsByIndex({
     return tierMetricsByIndex;
 }
 
-export class RowData {
+class RowData {
     constructor(rowNumber) {
         this.row_number = rowNumber;
         this.x = 0.0;            // Horizontal position (distance from focal)
@@ -350,7 +350,6 @@ export class ProfileSolver {
 
         this.rows = [];
         this.tierIndex = 0;
-        this.tierBreakRow = 0;
         this.solveMethod = 'Parabolic';
     }
 
@@ -644,83 +643,6 @@ export class ProfileSolver {
         };
     }
 
-    /**
-     * Calculate rows from occupant count.
-     */
-    static calculateRowsFromOccupants(params) {
-        const {
-            totalOccupants,
-            seatWidthIn,
-            seatingLengthFt,
-            maxAisleWidthIn,
-            minAisleWidthIn = 60.0,
-            egressFactor = 0.3
-        } = params;
-
-        if (totalOccupants <= 0 || seatWidthIn <= 0 || seatingLengthFt <= 0) {
-            return {
-                numRows: 1, seatsPerRow: 0, numAisles: 0,
-                aisleWidthIn: minAisleWidthIn, usableLengthIn: 0, totalCapacity: 0
-            };
-        }
-
-        const seatingLengthIn = seatingLengthFt * 12.0;
-        const clampedMaxAisle = Math.max(maxAisleWidthIn, minAisleWidthIn);
-
-        let aisleWidth = minAisleWidthIn;
-        let numAisles = 2;
-        let numRows = 1;
-        const maxIterations = 20;
-
-        for (let iter = 0; iter < maxIterations; iter++) {
-            let totalAisleSpace = numAisles * aisleWidth;
-            let usableLength = seatingLengthIn - totalAisleSpace;
-            if (usableLength <= 0) usableLength = seatWidthIn;
-
-            let seatsPerRow = Math.floor(usableLength / seatWidthIn);
-            if (seatsPerRow <= 0) seatsPerRow = 1;
-
-            let newNumRows = Math.ceil(totalOccupants / seatsPerRow);
-            if (newNumRows <= 0) newNumRows = 1;
-
-            const totalLoad = newNumRows * seatsPerRow;
-            const totalEgressWidth = totalLoad * egressFactor;
-
-            let newNumAisles = Math.ceil(totalEgressWidth / clampedMaxAisle);
-            if (newNumAisles < 1) newNumAisles = 1;
-
-            const avgWidth = totalEgressWidth / newNumAisles;
-            const newAisleWidth = Math.max(minAisleWidthIn, avgWidth);
-
-            if (newNumRows === numRows && newNumAisles === numAisles &&
-                Math.abs(newAisleWidth - aisleWidth) < 0.01) {
-                break;
-            }
-
-            numRows = newNumRows;
-            numAisles = newNumAisles;
-            aisleWidth = newAisleWidth;
-        }
-
-        // Final recalculation
-        const totalAisleSpace = numAisles * aisleWidth;
-        let usableLength = seatingLengthIn - totalAisleSpace;
-        if (usableLength <= 0) usableLength = seatWidthIn;
-        let seatsPerRow = Math.floor(usableLength / seatWidthIn);
-        if (seatsPerRow <= 0) seatsPerRow = 1;
-        numRows = Math.ceil(totalOccupants / seatsPerRow);
-        if (numRows <= 0) numRows = 1;
-
-        return {
-            numRows,
-            seatsPerRow,
-            numAisles,
-            aisleWidthIn: Math.round(aisleWidth * 100) / 100,
-            usableLengthIn: Math.round(usableLength * 100) / 100,
-            totalCapacity: seatsPerRow * numRows
-        };
-    }
-
     getStepGeometry() {
         const segments = [];
 
@@ -735,23 +657,9 @@ export class ProfileSolver {
             // Riser (vertical) - except for last row
             if (i < this.rows.length - 1) {
                 const nextRow = this.rows[i + 1];
-
-                // Check for tier break
-                if (this.tierBreakRow > 0 && (i + 1) === this.tierBreakRow) {
-                    // Walkway horizontal from current row end to next row start minus tread
-                    const walkwayStart = { x: row.x, z: row.z };
-                    const walkwayEnd = { x: nextRow.x - this.treadDepthFt, z: row.z };
-                    segments.push([walkwayStart, walkwayEnd]);
-
-                    // Riser up to next tier
-                    const riserStart = { x: nextRow.x - this.treadDepthFt, z: row.z };
-                    const riserEnd = { x: nextRow.x - this.treadDepthFt, z: nextRow.z };
-                    segments.push([riserStart, riserEnd]);
-                } else {
-                    const riserStart = { x: row.x, z: row.z };
-                    const riserEnd = { x: row.x, z: nextRow.z };
-                    segments.push([riserStart, riserEnd]);
-                }
+                const riserStart = { x: row.x, z: row.z };
+                const riserEnd = { x: row.x, z: nextRow.z };
+                segments.push([riserStart, riserEnd]);
             }
         }
 

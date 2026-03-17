@@ -430,7 +430,7 @@ export function buildGeometryPaths(segments) {
  * @param {number} distance
  * @returns {{x:number,y:number,tx:number,ty:number}}
  */
-export function samplePathPoint(path, distance) {
+function samplePathPoint(path, distance) {
     if (!path || !path.parts || path.parts.length === 0 || path.length <= EPS) {
         return { x: 0, y: 0, tx: 1, ty: 0 };
     }
@@ -513,7 +513,7 @@ export function sampleAisleBand(path, ratio, widthFt) {
  * @param {Object} path
  * @returns {Array<{u:number,ordinal:number,dist:number,x:number,y:number}>}
  */
-export function findChamferCornerAnchors(path) {
+function findChamferCornerAnchors(path) {
     if (!path || !path.parts || path.parts.length < 2 || path.length <= EPS) return [];
 
     /** @type {Array<{u:number,ordinal?:number,dist:number,x:number,y:number}>} */
@@ -560,15 +560,6 @@ export function findChamferCornerAnchors(path) {
         deduped[i].ordinal = i;
     }
     return /** @type {Array<{u:number,ordinal:number,dist:number,x:number,y:number}>} */ (deduped);
-}
-
-/**
- * Return normalized station ratios for chamfer corner vertices on a path.
- * @param {Object} path
- * @returns {number[]}
- */
-export function findChamferCornerStations(path) {
-    return findChamferCornerAnchors(path).map(c => c.u);
 }
 
 function getCachedChamferAnchors(path, cache) {
@@ -699,7 +690,7 @@ export function resolveAisleStationRatios(pathFront, pathBack, aisle, chamferCac
  * @param {Object} [options]
  * @returns {Array<{pathIndex:number,u:number,forced:boolean,anchorType:string,cornerOrdinal?:number}>}
  */
-export function computeAisleStations(paths, targetAisles, options = {}) {
+function computeAisleStations(paths, targetAisles, options = {}) {
     if (!Array.isArray(paths) || paths.length === 0) return [];
     const target = Math.max(0, Math.round(Number(targetAisles) || 0));
 

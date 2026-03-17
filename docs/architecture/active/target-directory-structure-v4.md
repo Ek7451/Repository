@@ -10,14 +10,6 @@ This version redraws the existing v3 directory guide for faster scanning. It is 
 Browser
   -> index.html
      -> app.js (root bootstrap, route-aware)
-        |
-        +-> Dashboard flow
-        |    -> pages/dashboard/dashboard.js
-        |    -> ui/project-dashboard.js
-        |    -> services/auth-service.js
-        |    -> services/project-api.js
-        |    -> state/project.js
-        |
         `-> Configurator flow
              -> ui/app.js (main orchestrator)
              -> state/app-state.js
@@ -43,7 +35,7 @@ Read it this way:
 | Area | What it owns | What it should not own | Key anchors |
 | --- | --- | --- | --- |
 | Root shell | Page detection and app bootstrapping | Solver math, DTO shaping, rendering details | `index.html`, `app.js` |
-| `pages/` | Route HTML/CSS shells and the dashboard page controller | Shared app state, protected math | `pages/configurator/*`, `pages/dashboard/*` |
+| `pages/` | Route HTML/CSS shells and shared shell styling | Shared app state, protected math | `pages/configurator/*`, `pages/styles-shared.css` |
 | `core/` | Pure calculations, solvers, sightlines, aisle math, sport templates | DOM, renderer state, persistence, editor shell logic | `profile-solver.js`, `sightline-calc.js`, `aisle-layout.js` |
 | `state/` | Canonical serializable state, normalization, project/session DTO helpers | DOM access, renderer calls, shell orchestration | `app-state.js`, `project.js` |
 | `ui/` | Configurator orchestration, control binding, shell behavior, panel rendering | Duplicated solver math, state DTO builders that belong in `state/`, geometry helpers that belong in `viz/` | `ui/app.js`, `editor-controls.js`, `editor-shell.js` |
@@ -59,36 +51,16 @@ Read it this way:
 
 ```text
 index.html
-  -> forwards to dashboard or configurator route
+  -> forwards to configurator route
 
-pages/dashboard/dashboard.html
 pages/configurator/index.html
-  -> both load ../../app.js
+  -> loads ../../app.js
 
 app.js
   -> creates services
   -> detects current page via data-page
-  -> boots dashboard or configurator
+  -> boots configurator
 ```
-
-### Dashboard path
-
-```text
-app.js
-  -> bootDashboardPage()
-     -> pages/dashboard/dashboard.js
-        -> ui/project-dashboard.js
-        -> state/project.js
-        -> services/auth-service.js
-        -> services/project-api.js
-```
-
-Dashboard intent:
-
-- session refresh, sign-in, sign-out
-- project list/create/open flows
-- DTO shaping stays in `state/project.js`
-- view rendering stays in `ui/project-dashboard.js`
 
 ### Configurator path
 
@@ -137,17 +109,13 @@ Export
 
 ```text
 Repository/
-|-- index.html                              # Redirect shell: chooses dashboard vs configurator route.
-|-- app.js                                  # Thin root bootstrap: page detection, service creation, route boot.
+|-- index.html                              # Redirect shell: forwards to the configurator route.
+|-- app.js                                  # Thin root bootstrap: page detection, service creation, configurator boot.
 |-- pages/
-|   |-- styles-shared.css                   # Shared visual tokens/base styles for page shells.
+|   |-- styles-shared.css                   # Shared visual tokens/base styles for the configurator shell.
 |   |-- configurator/
 |   |   |-- index.html                      # Configurator route shell; loads ../../app.js.
 |   |   `-- styles.css                      # Configurator-only layout and styling.
-|   `-- dashboard/
-|       |-- dashboard.html                  # Dashboard route shell; loads ../../app.js.
-|       |-- dashboard.css                   # Dashboard-only styling.
-|       `-- dashboard.js                    # Dashboard page controller.
 ```
 
 ### B. Runtime layers
@@ -172,7 +140,6 @@ Repository/
 |   |-- editor-export-controller.js         # Turns solved/runtime data into exporter arguments.
 |   |-- stats-panel.js                      # Stats/detail view model rendering.
 |   |-- camera-bookmarks.js                 # 3D bookmark save/restore/export behavior.
-|   `-- project-dashboard.js                # Dashboard rendering view class.
 |
 |-- viz/                                    # Rendering layer fed by precomputed inputs.
 |   |-- field-renderer.js                   # 2D plan rendering plus field/bowl overlay artifacts.
@@ -241,7 +208,7 @@ Use this section when you know the type of change but not the destination folder
 
 | If the change is about... | Primary home |
 | --- | --- |
-| route bootstrapping or choosing dashboard vs configurator | `app.js` |
+| route bootstrapping or choosing the configurator entry path | `app.js` |
 | configurator orchestration or top-level update sequencing | `ui/app.js` |
 | form control bindings and DOM-to-state sync | `ui/editor-controls.js` |
 | shell tabs, theme, sidebar, import/export triggers | `ui/editor-shell.js` |
@@ -264,6 +231,7 @@ Use this section when you know the type of change but not the destination folder
 - `services/` move DTOs; they do not own UI workflow.
 - `ui/app.js` is still the configurator coordination center, but it should stay an orchestration shell.
 - `pages/configurator/` intentionally has no page controller file; the root bootstrap handles startup.
+- The legacy dashboard route artifacts are no longer part of the live runtime.
 
 ## 7. Current "Do Not Misread" Notes
 

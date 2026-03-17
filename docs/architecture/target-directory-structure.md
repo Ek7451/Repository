@@ -6,11 +6,11 @@ The goal of this file is to describe the codebase as it exists during the phased
 
 ## Current Runtime Flow
 
-1. `index.html` is a redirect shell. It forwards the browser to the dashboard or configurator route based on whether `?project=` is present.
-2. Both page shells load the approved root bootstrap `app.js`.
-3. Root `app.js` reads `data-page`, creates the auth and project services, and then boots either the dashboard flow or the configurator flow.
-4. The dashboard flow runs through `pages/dashboard/dashboard.js`, which uses `ui/project-dashboard.js` for rendering and `services/*` plus `state/project.js` DTO helpers for sign-in, list, create, and open-project actions.
-5. The configurator flow runs through `ui/app.js`, which owns the single live `AppState`, initializes UI controllers, hydrates defaults or loaded project JSON, and coordinates all solve/render/export work.
+1. `index.html` is a redirect shell. It forwards the browser to the configurator route while preserving the current query string and hash.
+2. The configurator page shell loads the approved root bootstrap `app.js`.
+3. Root `app.js` reads `data-page`, creates the auth and project services, and boots the configurator flow.
+4. The configurator flow runs through `ui/app.js`, which owns the single live `AppState`, initializes UI controllers, hydrates defaults or loaded project JSON, and coordinates all solve/render/export work.
+5. Root `app.js` also owns direct-entry session bootstrap, automatic untitled project creation when no `project` query exists, and the injected project action port used by the configurator shell.
 6. Control changes go through `ui/editor-controls.js`, which writes directly into `AppState` and asks `ui/app.js` to re-run the update loop.
 7. The update loop in `ui/app.js` calls `core/profile-solver.js`, computes tier and bowl artifacts, then pushes precomputed data into `viz/*`, `ui/stats-panel.js`, and `ui/editor-export-controller.js`.
 8. Export requests travel from `ui/editor-shell.js` to `ui/editor-export-controller.js`, which assembles plain arguments for `export/*`.
@@ -21,10 +21,10 @@ The goal of this file is to describe the codebase as it exists during the phased
 | Area | Purpose in the current codebase | Primary files | Notes |
 | --- | --- | --- | --- |
 | Root shell | Entry routing and page bootstrapping | `index.html`, `app.js` | `app.js` is the approved root exception and is intentionally thin. |
-| `pages/` | Route HTML/CSS shells plus dashboard page controller | `pages/configurator/*`, `pages/dashboard/*` | The configurator route is HTML/CSS only; the dashboard route also has a page controller. |
+| `pages/` | Route HTML/CSS shells and shared shell styling | `pages/configurator/*`, `pages/styles-shared.css` | The only live route shell is the configurator. |
 | `core/` | Protected solver and geometry math | `profile-solver.js`, `sightline-calc.js`, `aisle-layout.js`, `sports-templates.js`, `default-starting-profile.js` | No DOM, no persistence, no UI orchestration. |
 | `state/` | Single source of truth for serializable app state and DTO helpers | `app-state.js`, `project.js` | `AppState` is the one live state object used by the configurator. |
-| `ui/` | Configurator and dashboard orchestration/controllers | `ui/app.js`, `editor-controls.js`, `editor-shell.js`, `editor-export-controller.js`, `stats-panel.js`, `camera-bookmarks.js`, `project-dashboard.js` | This is the operational center of the app. |
+| `ui/` | Configurator orchestration/controllers | `ui/app.js`, `editor-controls.js`, `editor-shell.js`, `editor-export-controller.js`, `stats-panel.js`, `camera-bookmarks.js` | This is the operational center of the app. |
 | `viz/` | 2D and 3D rendering from precomputed inputs | `field-renderer.js`, `profile-renderer.js`, `scene3d.js` | Renderers consume solver output and runtime artifacts; they do not own app state. |
 | `export/` | Export descriptor and file-content builders | `dxf-exporter.js`, `obj-csv-exporter.js`, `rhino/*` | Exporters work from arguments supplied by `ui/editor-export-controller.js`. |
 | `services/` | Auth and project persistence adapters | `auth-service.js`, `project-api.js` | API mode is strict fetch-based; local mode is explicit and browser-storage-backed. |
@@ -40,8 +40,8 @@ Repository/
 |-- node_modules/                              # Installed npm dependencies.
 |-- AGENTS.md                                  # Repo-wide working rules, architecture constraints, and required skills.
 |-- .gitignore                                 # Git ignore rules.
-|-- index.html                                 # Redirect shell that chooses dashboard vs configurator.
-|-- app.js                                     # Thin bootstrap: page detection, service creation, dashboard/configurator boot.
+|-- index.html                                 # Redirect shell that forwards to the configurator route.
+|-- app.js                                     # Thin bootstrap: page detection, service creation, and configurator boot.
 |-- package.json                               # npm scripts for lint, test, typecheck, and build.
 |-- package-lock.json                          # Locked dependency graph.
 |-- eslint.config.js                           # ESLint configuration for source, tests, and scripts.
@@ -50,7 +50,7 @@ Repository/
 |-- start_server.bat                           # Windows helper for local serving/workflow.
 |
 |-- assets/
-|   `-- jlg-logo.jpg                           # Shared branding asset used by dashboard/configurator shells.
+|   `-- jlg-logo.jpg                           # Shared branding asset used by the configurator shell.
 |
 |-- core/                                      # Protected pure-calculation layer.
 |   |-- profile-solver.js                      # Seating profile solver and tier metrics source of truth.
@@ -62,7 +62,7 @@ Repository/
 |-- state/                                     # Serializable application state and DTO normalization helpers.
 |   |-- AGENTS.md                              # Folder-specific state constraints for agents.
 |   |-- app-state.js                           # Single `AppState` object, normalization, migration, and JSON serialization.
-|   `-- project.js                             # Project envelope, save request, session clone, and dashboard DTO helpers.
+|   `-- project.js                             # Project envelope, save request, session clone, and option-document DTO helpers.
 |
 |-- ui/                                        # UI orchestration/controllers; no protected solver duplication.
 |   |-- app.js                                 # Main configurator orchestrator and update loop owner.
@@ -71,7 +71,6 @@ Repository/
 |   |-- editor-export-controller.js            # Bridges solved/runtime artifacts into export descriptors.
 |   |-- stats-panel.js                         # Builds stats/detail view models and renders right-side results panels.
 |   |-- camera-bookmarks.js                    # Saves/restores 3D camera views and exports bookmark screenshots.
-|   `-- project-dashboard.js                   # Dashboard view renderer for sign-in, project list, and create/open actions.
 |
 |-- viz/                                       # Rendering layer; consumes precomputed inputs.
 |   |-- field-renderer.js                      # 2D top-down field and bowl plan renderer; also produces aisle/overlay artifacts.
@@ -93,14 +92,10 @@ Repository/
 |   `-- project-api.js                         # Project list/create/get/update service; returns normalized project DTOs.
 |
 |-- pages/                                     # Route shells and route-level styling.
-|   |-- styles-shared.css                      # Shared dashboard/configurator visual tokens and base styles.
+|   |-- styles-shared.css                      # Shared configurator visual tokens and base styles.
 |   |-- configurator/
 |   |   |-- index.html                         # Configurator route shell; seeds theme, lays out DOM, loads root bootstrap.
 |   |   `-- styles.css                         # Configurator-specific styles and layout behavior.
-|   `-- dashboard/
-|       |-- dashboard.html                     # Dashboard route shell; loads root bootstrap and dashboard frame.
-|       |-- dashboard.css                      # Dashboard-specific styles.
-|       `-- dashboard.js                       # Dashboard page controller that coordinates auth/projects and dashboard UI.
 |
 |-- scripts/                                   # Local tooling scripts.
 |   |-- build-check.mjs                        # esbuild bundle smoke check that writes selected browser bundles to `dist/`.
@@ -180,18 +175,17 @@ Repository/
 
 ### 1. Entry and Route Bootstrapping
 
-- `index.html` does not boot application logic directly; it only redirects to a page shell.
-- `pages/dashboard/dashboard.html` and `pages/configurator/index.html` both set `data-page` and load `../../app.js`.
-- Root `app.js` is the only route-aware bootstrap. It decides whether to call `bootDashboardPage()` or `bootConfiguratorPage()`.
+- `index.html` does not boot application logic directly; it only redirects to the configurator page shell.
+- `pages/configurator/index.html` sets `data-page="configurator"` and loads `../../app.js`.
+- Root `app.js` is the only route-aware bootstrap. It decides whether the configurator should boot for the current page shell.
 
-### 2. Dashboard and Project Lifecycle
+### 2. Project Entry and Lifecycle
 
-- `app.js` creates `authService` and `projectApi` first, then passes them into `DashboardPage`.
-- `pages/dashboard/dashboard.js` owns dashboard page behavior: session refresh, sign-in, sign-out, create project, and open project.
-- `ui/project-dashboard.js` is a render-only dashboard view class. It emits callbacks back up to `DashboardPage`.
+- `app.js` creates `authService` and `projectApi` first, ensures a session exists, and creates a persisted `Untitled Project` when no `project` query is present.
+- `app.js` injects a narrow project action port into `ui/app.js` so the configurator can save, rename, create, open, duplicate, delete, and manage options without becoming route-aware.
 - `state/project.js` builds the default create-project payload and normalizes project/session metadata for shell use.
 - `services/project-api.js` returns plain project DTOs shaped like `{ id, name, sport, createdAt, updatedAt, state }`.
-- Opening a project navigates to `pages/configurator/index.html?project=<id>`, which shifts control to the configurator flow.
+- Opening or creating a project keeps the browser on `pages/configurator/index.html?project=<id>` and updates the URL through the root bootstrap helpers.
 
 ### 3. Configurator State, Solve, and Render Loop
 
@@ -232,4 +226,5 @@ Repository/
 - `state/app-state.js` remains the single state source for application parameters; no parallel AppState cache exists in the current source tree.
 - `ui/app.js` is still the central configurator orchestrator. The refactor has extracted supporting controllers, but the solve/render update loop still lives there.
 - `pages/configurator/` intentionally has no page controller file. The route shell is HTML/CSS, and the approved root `app.js` handles bootstrapping.
+- The legacy dashboard route artifacts have been removed from the live runtime; `/` and `/pages/configurator/index.html` are the supported browser entry paths.
 - `dist/`, `output/`, `.playwright-cli/`, and `node_modules/` are generated or external-support areas. They matter operationally but are not the architecture source of truth.

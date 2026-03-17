@@ -7,7 +7,7 @@
 /**
  * Assess C-value quality and return category + color.
  * @param {number} cValueInches - C-value in inches
- * @returns {{ quality: string, color: string, styleName: string }}
+ * @returns {{ quality: string, color: string }}
  */
 export function getCValueQuality(cValueInches) {
     // Round to 1 decimal place to match display, or 2?
@@ -28,20 +28,20 @@ export function getCValueQuality(cValueInches) {
     const rounded = Math.round(cValueInches * 100) / 100;
 
     if (rounded >= 4.75) {
-        return { quality: "Excellent", color: "#7aae1a", styleName: "Seating_Sightline_Excellent" };
+        return { quality: "Excellent", color: "#7aae1a" };
     } else if (rounded >= 3.5) {
-        return { quality: "Good", color: "#37996e", styleName: "Seating_Sightline_Good" };
+        return { quality: "Good", color: "#37996e" };
     } else if (rounded >= 2.4) {
-        return { quality: "Acceptable", color: "#de850a", styleName: "Seating_Sightline_Acceptable" };
+        return { quality: "Acceptable", color: "#de850a" };
     } else {
-        return { quality: "Poor", color: "#d1433d", styleName: "Seating_Sightline_Poor" };
+        return { quality: "Poor", color: "#d1433d" };
     }
 }
 
 /**
  * Calculate sightline from eye position to focal point.
  */
-export function calculateSightline(eyeX, eyeZ, focalX, focalZ) {
+function calculateSightline(eyeX, eyeZ, focalX, focalZ) {
     const dx = focalX - eyeX;
     const dz = focalZ - eyeZ;
     const distance = Math.sqrt(dx * dx + dz * dz);
@@ -86,13 +86,11 @@ export class SightlineAnalyzer {
      * @param {RowData[]} rows 
      * @param {number} focalX 
      * @param {number} focalZ 
-     * @param {number} [headRadius=0.375] - ~4.5 inches
      */
-    constructor(rows, focalX, focalZ, headRadius = 0.375) {
+    constructor(rows, focalX, focalZ) {
         this.rows = rows;
         this.focalX = focalX;
         this.focalZ = focalZ;
-        this.headRadius = headRadius;
         this.sightlines = [];
     }
 

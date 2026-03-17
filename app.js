@@ -53,16 +53,9 @@ export function buildConfiguratorUrl(projectId, runtimeConfig) {
     });
 }
 
-export function buildConfiguratorRouteRedirectUrl(location) {
-    const url = new URL('./pages/configurator/index.html', import.meta.url);
-    url.search = typeof location?.search === 'string' ? location.search : '';
-    url.hash = typeof location?.hash === 'string' ? location.hash : '';
-    return url.toString();
-}
-
 export function getCurrentPage(doc = document) {
     const page = doc.body?.dataset?.page;
-    return page === 'dashboard' || page === 'configurator' ? page : null;
+    return page === 'configurator' ? page : null;
 }
 
 function getProjectActionErrorMessage(actionLabel, error) {
@@ -503,15 +496,10 @@ export async function bootConfiguratorPage(runtimeConfig, authService, projectAp
 
 export async function bootAppShell(options = {}) {
     const doc = options.document ?? document;
-    const location = options.location ?? window.location;
     const currentPage = getCurrentPage(doc);
     if (!currentPage) return;
 
-    if (currentPage === 'dashboard') {
-        location.replace(buildConfiguratorRouteRedirectUrl(location));
-        return;
-    }
-
+    const location = options.location ?? window.location;
     const runtimeConfig = options.runtimeConfig ?? resolveRuntimeConfig(location);
     const authService = options.authService ?? createAuthService({ devBackend: runtimeConfig.devBackend });
     const projectApi = options.projectApi ?? createProjectsService({ devBackend: runtimeConfig.devBackend });
