@@ -58,7 +58,19 @@ describe('SeatingBowlApp shell callbacks', () => {
                 updatedAt: ''
             },
             session: null,
-            canSave: false
+            canSave: false,
+            activeOptionId: 'option-1',
+            options: [
+                {
+                    id: 'option-1',
+                    label: 'Option 1',
+                    color: '#7aae1a',
+                    isActive: true
+                }
+            ],
+            canCreateOption: false,
+            canManageOptions: false,
+            canDeleteOption: false
         });
         expect(app.getProjectStatus()).toEqual({
             message: 'Project persistence ready',
@@ -115,12 +127,14 @@ describe('SeatingBowlApp shell callbacks', () => {
 
     it('routes project chrome, status, and save-busy updates through the editor shell API', () => {
         const renderProjectChrome = vi.fn();
+        const renderOptionChrome = vi.fn();
         const renderProjectStatus = vi.fn();
         const setProjectSaveBusy = vi.fn();
         const app = new SeatingBowlApp();
 
         app.editorShell = /** @type {any} */ ({
             renderProjectChrome,
+            renderOptionChrome,
             renderProjectStatus,
             setProjectSaveBusy
         });
@@ -156,8 +170,104 @@ describe('SeatingBowlApp shell callbacks', () => {
         expect(setProjectSaveBusy).toHaveBeenCalledWith(true);
     });
 
+    it('forwards the structured project action port into the editor shell constructor', async () => {
+        const projectActions = {
+            saveCurrentProject: vi.fn()
+        };
+        const mockShell = {
+            init: vi.fn(),
+            connectViewCanvases: vi.fn(() => ({
+                fieldCanvas: { id: 'fieldCanvas' },
+                profileCanvas: { id: 'profileCanvas' }
+            })),
+            getTheme: vi.fn(() => 'light'),
+            syncFromState: vi.fn(),
+            renderProjectChrome: vi.fn(),
+            renderOptionChrome: vi.fn(),
+            renderProjectStatus: vi.fn(),
+            applyUrlViewOverride: vi.fn(),
+            isScene3DActive: vi.fn(() => false)
+        };
+
+        vi.spyOn(editorShellModule, 'EditorShell').mockImplementation(() => /** @type {any} */ (mockShell));
+        vi.spyOn(fieldRendererModule, 'FieldRenderer').mockImplementation(() => /** @type {any} */ ({}));
+        vi.spyOn(profileRendererModule, 'ProfileRenderer').mockImplementation(() => /** @type {any} */ ({}));
+        vi.spyOn(scene3DControllerModule, 'Scene3DController').mockImplementation(() => /** @type {any} */ ({
+            renderBookmarks: vi.fn(),
+            applyTheme: vi.fn(),
+            update: vi.fn(),
+            destroy: vi.fn()
+        }));
+        vi.spyOn(statsPanelModule, 'StatsPanel').mockImplementation(() => /** @type {any} */ ({ update: vi.fn() }));
+        vi.stubGlobal('requestAnimationFrame', (callback) => {
+            callback();
+            return 1;
+        });
+
+        const app = new SeatingBowlApp({ projectActions });
+        app.editorControls = /** @type {any} */ ({
+            init: vi.fn(),
+            syncFromState: vi.fn(),
+            destroy: vi.fn()
+        });
+        vi.spyOn(app, 'update').mockImplementation(() => {});
+
+        await app.init();
+
+        expect(editorShellModule.EditorShell).toHaveBeenCalledWith(expect.objectContaining({
+            projectActions
+        }));
+    });
+
+    it('locks project-picker actions while a prior action is still running', async () => {
+        const shell = new editorShellModule.EditorShell();
+        shell._renderProjectPicker = vi.fn();
+
+        /** @type {(value?: unknown) => void} */
+        let resolveFirstAction = () => {};
+        const firstAction = new Promise((resolve) => {
+            resolveFirstAction = resolve;
+        });
+        const firstCallback = vi.fn(() => firstAction);
+        const secondCallback = vi.fn();
+
+        const firstPromise = shell._runProjectPickerAction('open', 'project-1', firstCallback);
+        const secondPromise = shell._runProjectPickerAction('delete', 'project-1', secondCallback);
+
+        expect(firstCallback).toHaveBeenCalledTimes(1);
+        expect(secondCallback).not.toHaveBeenCalled();
+        expect(shell._projectPicker.busyAction).toBe('open');
+        expect(shell._projectPicker.busyProjectId).toBe('project-1');
+
+        resolveFirstAction();
+        await firstPromise;
+        await secondPromise;
+
+        expect(shell._projectPicker.busyAction).toBe('');
+        expect(shell._projectPicker.busyProjectId).toBe('');
+    });
+
+    it('opens config import from the toolbar file input instead of a legacy rail button proxy', async () => {
+        const configFileInput = {
+            click: vi.fn()
+        };
+        vi.stubGlobal('document', {
+            getElementById: vi.fn((id) => (id === 'configFileInput' ? configFileInput : null))
+        });
+
+        const shell = new editorShellModule.EditorShell();
+        shell._renderProjectMenu = vi.fn();
+
+        await shell._handleProjectMenuAction('import-config');
+
+        expect(configFileInput.click).toHaveBeenCalledTimes(1);
+        expect(document.getElementById).toHaveBeenCalledWith('configFileInput');
+        expect(document.getElementById).not.toHaveBeenCalledWith('loadConfigBtn');
+    });
+
     it('replays pre-init session chrome into the editor shell during init', async () => {
         const renderProjectChrome = vi.fn();
+        const renderOptionChrome = vi.fn();
         const renderProjectStatus = vi.fn();
         const mockShell = {
             init: vi.fn(),
@@ -168,6 +278,7 @@ describe('SeatingBowlApp shell callbacks', () => {
             getTheme: vi.fn(() => 'light'),
             syncFromState: vi.fn(),
             renderProjectChrome,
+            renderOptionChrome,
             renderProjectStatus,
             applyUrlViewOverride: vi.fn(),
             isScene3DActive: vi.fn(() => false)
@@ -233,6 +344,7 @@ describe('SeatingBowlApp shell callbacks', () => {
             getTheme: vi.fn(() => 'light'),
             syncFromState: vi.fn(),
             renderProjectChrome: vi.fn(),
+            renderOptionChrome: vi.fn(),
             renderProjectStatus: vi.fn(),
             applyUrlViewOverride: vi.fn(),
             isScene3DActive: vi.fn(() => false)
@@ -310,6 +422,7 @@ describe('SeatingBowlApp shell callbacks', () => {
             getTheme: vi.fn(() => 'light'),
             syncFromState: vi.fn(),
             renderProjectChrome: vi.fn(),
+            renderOptionChrome: vi.fn(),
             renderProjectStatus: vi.fn(),
             applyUrlViewOverride: vi.fn(),
             isScene3DActive: vi.fn(() => false)
@@ -375,17 +488,35 @@ describe('SeatingBowlApp shell callbacks', () => {
         expect(applyTierCanvasPosition).not.toHaveBeenCalled();
     });
 
-    it('builds save requests from the single live AppState', () => {
+    it('captures live AppState snapshots separately from project save requests', () => {
         const chromeUpdates = [];
         const app = new SeatingBowlApp({
             onProjectChromeChanged: (chrome) => chromeUpdates.push(chrome)
         });
 
         app.state.sport = 'Basketball';
-        const saveRequest = app.getProjectSaveRequest();
+        const saveRequest = app.getProjectSaveRequest({
+            _projectVersion: 'dashboard-cutover-v1',
+            sport: 'Basketball',
+            activeOptionId: 'option-1',
+            options: [
+                {
+                    id: 'option-1',
+                    name: 'Option 1',
+                    color: '#7aae1a',
+                    createdAt: '2026-03-16T00:00:00.000Z',
+                    updatedAt: '2026-03-16T00:00:00.000Z',
+                    state: { sport: 'Basketball' }
+                }
+            ]
+        });
 
         expect(saveRequest.name).toBe('Basketball Study');
-        expect(saveRequest.state.sport).toBe('Basketball');
+        expect(saveRequest.state).toMatchObject({
+            _projectVersion: 'dashboard-cutover-v1',
+            sport: 'Basketball'
+        });
+        expect(app.captureStateSnapshot().sport).toBe('Basketball');
         expect(chromeUpdates.at(-1)?.name).toBe('Basketball Study');
     });
 
@@ -401,7 +532,21 @@ describe('SeatingBowlApp shell callbacks', () => {
 
         expect(app.getProjectChrome().name).toBe('');
 
-        const saveRequest = app.getProjectSaveRequest();
+        const saveRequest = app.getProjectSaveRequest({
+            _projectVersion: 'dashboard-cutover-v1',
+            sport: 'Baseball',
+            activeOptionId: 'option-1',
+            options: [
+                {
+                    id: 'option-1',
+                    name: 'Option 1',
+                    color: '#7aae1a',
+                    createdAt: '2026-03-16T00:00:00.000Z',
+                    updatedAt: '2026-03-16T00:00:00.000Z',
+                    state: { sport: 'Baseball' }
+                }
+            ]
+        });
         expect(saveRequest.name).toBe('Baseball Study');
         expect(app.getProjectMetadata().name).toBe('Baseball Study');
     });
@@ -638,6 +783,7 @@ describe('SeatingBowlApp shell callbacks', () => {
         app.editorShell = /** @type {any} */ ({
             syncFromState: vi.fn(),
             renderProjectChrome: vi.fn(),
+            renderOptionChrome: vi.fn(),
             renderProjectStatus: vi.fn(),
             getViewCanvases: vi.fn(() => ({
                 fieldCanvas: null,

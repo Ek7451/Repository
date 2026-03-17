@@ -83,7 +83,7 @@ describe('SeatingBowlApp runtime seams', () => {
             onStatusChanged: (status) => statuses.push(status)
         });
         const eventOrder = [];
-        const loadStateSpy = vi.spyOn(app, 'loadState').mockImplementation(() => {
+        const replaceLiveStateSpy = vi.spyOn(app, 'replaceLiveState').mockImplementation(() => {
             eventOrder.push(`load:${app.getProjectMetadata().id}`);
         });
 
@@ -101,7 +101,10 @@ describe('SeatingBowlApp runtime seams', () => {
             id: 'project-1',
             name: 'Arena Study'
         });
-        expect(loadStateSpy).toHaveBeenCalledWith({ sport: 'Basketball' }, { logSuccess: true });
+        expect(replaceLiveStateSpy).toHaveBeenCalledWith(
+            expect.objectContaining({ sport: 'Basketball' }),
+            { logSuccess: true }
+        );
         expect(eventOrder).toEqual(['load:project-1']);
         expect(statuses.at(-1)).toEqual({
             message: 'Loaded Arena Study',

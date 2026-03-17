@@ -485,17 +485,8 @@
 
             </div><!-- end sidebar-content -->
 
-            <!-- ========== EXPORT MENU (Docked at Bottom) ========== -->
-            <div class="export-menu-panel collapsed">
-                <div class="export-menu-header" id="exportMenuSection">
-                    <button class="export-header-btn" type="button" aria-label="File menu" title="File menu">
-                        <svg class="export-header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
-                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M3 8.5A2.5 2.5 0 0 1 5.5 6H10l2 2h6.5A2.5 2.5 0 0 1 21 10.5v7A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-9z"></path>
-                            <path d="M3 11h18"></path>
-                        </svg>
-                        <span class="export-header-label">File</span>
-                    </button>
+            <div class="sidebar-utility-panel">
+                <div class="sidebar-utility-strip">
                     <button id="saveProjectBtn" class="sidebar-save-btn" type="button" title="Save project" aria-label="Save project" disabled>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
                             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -525,16 +516,6 @@
                         </svg>
                         <span class="theme-toggle-label">Toggle dark mode</span>
                     </button>
-                    <button id="backToDashboardBtn" class="sidebar-dashboard-btn" type="button" title="Dashboard" aria-label="Back to dashboard">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
-                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <rect x="3" y="3" width="8" height="8" rx="1.5"></rect>
-                            <rect x="13" y="3" width="8" height="5" rx="1.5"></rect>
-                            <rect x="13" y="10" width="8" height="11" rx="1.5"></rect>
-                            <rect x="3" y="13" width="8" height="8" rx="1.5"></rect>
-                        </svg>
-                        <span class="sr-only">Dashboard</span>
-                    </button>
                     <button id="editorSignOutBtn" class="sidebar-signout-btn" type="button" title="Sign out" aria-label="Sign out">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
                             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -544,48 +525,9 @@
                         </svg>
                         <span class="sr-only">Sign Out</span>
                     </button>
-
-                </div>
-                <div class="export-menu-body" id="exportMenuBody">
-                    <div class="export-group">
-                        <div class="export-group-label">Data Exports</div>
-                        <button class="export-item" id="exportBtn" title="Export all parameters and row data as JSON">
-                            <span>Save JSON</span>
-                        </button>
-                        <button class="export-item" id="exportCsvBtn" title="Export tier metrics as CSV spreadsheet">
-                            <span>Export Tier CSV</span>
-                        </button>
-                    </div>
-                    <div class="export-group">
-                        <div class="export-group-label">CAD Exports</div>
-                        <button class="export-item" id="exportDxfBtn" title="Export section profile as DXF polylines">
-                            <span>Profile DXF</span>
-                        </button>
-                        <button class="export-item" id="exportPlanDxfBtn" title="Export field plan view as DXF">
-                            <span>Plan DXF</span>
-                        </button>
-                        <button class="export-item" id="exportObjBtn"
-                            title="Export 3D geometry as OBJ (requires 3D view)">
-                            <span>3D OBJ</span>
-                        </button>
-                        <button class="export-item" id="exportRhinoBtn"
-                            title="Export 3D geometry as Rhino 3DM (requires 3D view)">
-                            <span>3D Rhino (.3dm)</span>
-                        </button>
-                    </div>
-                    <div class="export-group">
-                        <div class="export-group-label">Configuration</div>
-                        <button class="export-item" id="exportConfigBtn"
-                            title="Save current configuration to a file for later use">
-                            <span>Save Config</span>
-                        </button>
-                        <button class="export-item" id="loadConfigBtn" title="Load a previously saved configuration">
-                            <span>Load Config</span>
-                        </button>
-                        <input type="file" id="configFileInput" accept=".json" style="display:none">
-                    </div>
                 </div>
             </div>
+            <input type="file" id="configFileInput" accept=".json" hidden>
 
             <div class="resize-handle" id="leftSidebarResizer"></div>
         </aside>
@@ -593,16 +535,146 @@
         <!-- ========== MAIN AREA ========== -->
         <main class="main-area">
             <div class="view-tabs">
-                <div class="view-tabs-left" aria-label="View selection">
+                <div class="view-tabs-left" aria-label="Project toolbar">
+                    <div class="editor-route-toolbar">
+                        <div class="editor-toolbar-shell">
+                            <div class="editor-toolbar-group">
+                                <div class="project-menu-shell">
+                                    <button id="projectMenuTrigger"
+                                        class="editor-toolbar-icon-btn"
+                                        type="button"
+                                        aria-label="Project menu"
+                                        aria-haspopup="true"
+                                        aria-expanded="false">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                            <line x1="4" y1="7" x2="20" y2="7"></line>
+                                            <line x1="4" y1="12" x2="20" y2="12"></line>
+                                            <line x1="4" y1="17" x2="20" y2="17"></line>
+                                        </svg>
+                                    </button>
+                                    <div id="projectMenuPanel" class="project-menu-panel" hidden>
+                                        <button class="project-menu-item" type="button" data-project-menu-action="create-project">
+                                            <span>New project</span>
+                                        </button>
+                                        <button class="project-menu-item" type="button" data-project-menu-action="open-project">
+                                            <span>Open project</span>
+                                        </button>
+                                        <button class="project-menu-item" type="button" data-project-menu-action="duplicate-project">
+                                            <span>Duplicate project</span>
+                                        </button>
+                                        <button class="project-menu-item project-menu-item-danger" type="button" data-project-menu-action="delete-project">
+                                            <span>Delete project</span>
+                                        </button>
+                                        <div class="project-menu-divider" role="presentation"></div>
+                                        <div class="project-menu-submenu-shell">
+                                            <button class="project-menu-item project-menu-submenu-trigger"
+                                                type="button"
+                                                aria-haspopup="true"
+                                                aria-expanded="false"
+                                                data-project-submenu-trigger="import">
+                                                <span>Import</span>
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                                                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                    <polyline points="9 6 15 12 9 18"></polyline>
+                                                </svg>
+                                            </button>
+                                            <div class="project-menu-submenu-panel" data-project-submenu-panel="import" hidden>
+                                                <button class="project-menu-item" type="button" data-project-menu-action="import-config">
+                                                    <span>Load Config</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="project-menu-submenu-shell">
+                                            <button class="project-menu-item project-menu-submenu-trigger"
+                                                type="button"
+                                                aria-haspopup="true"
+                                                aria-expanded="false"
+                                                data-project-submenu-trigger="export">
+                                                <span>Export</span>
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                                                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                    <polyline points="9 6 15 12 9 18"></polyline>
+                                                </svg>
+                                            </button>
+                                            <div class="project-menu-submenu-panel" data-project-submenu-panel="export" hidden>
+                                                <button class="project-menu-item" type="button" data-toolbar-export-kind="json">
+                                                    <span>Save JSON</span>
+                                                </button>
+                                                <button class="project-menu-item" type="button" data-toolbar-export-kind="csv">
+                                                    <span>Export Tier CSV</span>
+                                                </button>
+                                                <button class="project-menu-item" type="button" data-toolbar-export-kind="profile-dxf">
+                                                    <span>Profile DXF</span>
+                                                </button>
+                                                <button class="project-menu-item" type="button" data-toolbar-export-kind="plan-dxf">
+                                                    <span>Plan DXF</span>
+                                                </button>
+                                                <button class="project-menu-item" type="button" data-toolbar-export-kind="obj">
+                                                    <span>3D OBJ</span>
+                                                </button>
+                                                <button class="project-menu-item" type="button" data-toolbar-export-kind="rhino">
+                                                    <span>3D Rhino (.3dm)</span>
+                                                </button>
+                                                <button class="project-menu-item" type="button" data-toolbar-export-kind="config">
+                                                    <span>Save Config</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="projectNameField" class="project-name-field" data-editing="false">
+                                    <label class="sr-only" for="projectNameInput">Project name</label>
+                                    <input id="projectNameInput"
+                                        class="project-name-input"
+                                        type="text"
+                                        maxlength="120"
+                                        placeholder="Project name"
+                                        readonly>
+                                    <button id="projectNameEditBtn"
+                                        class="project-name-edit-btn"
+                                        type="button"
+                                        aria-label="Rename project"
+                                        title="Rename project">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                            <path d="M12 20h9"></path>
+                                            <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div class="project-option-shell">
+                                    <button id="projectOptionTrigger"
+                                        class="project-option-trigger"
+                                        type="button"
+                                        aria-haspopup="true"
+                                        aria-expanded="false">
+                                        <span class="project-option-dot" aria-hidden="true"></span>
+                                        <span id="projectOptionLabel">Option 1</span>
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                            <polyline points="6 9 12 15 18 9"></polyline>
+                                        </svg>
+                                    </button>
+                                    <div id="projectOptionMenu" class="project-option-menu" hidden>
+                                        <button class="project-option-item active" type="button" data-project-option-id="option-1">
+                                            <span class="project-option-dot" aria-hidden="true"></span>
+                                            <span>Option 1</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="editor-toolbar-meta">
+                            <div id="editorProjectMeta" class="editor-project-meta">Create or open a project</div>
+                            <div id="projectStatusMessage" class="project-status-message" data-tone="default">Project persistence ready</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="view-tabs-center" aria-label="View selection">
                     <button class="view-tab-btn active" data-tab="profile">Section</button>
                     <button class="view-tab-btn" data-tab="field">Plan</button>
                     <button class="view-tab-btn" data-tab="scene3d">3D</button>
-                </div>
-                <div class="editor-route-toolbar" aria-label="Project name">
-                    <label class="project-name-field" for="projectNameInput">
-                        <span class="sr-only">Project name</span>
-                        <input id="projectNameInput" class="project-name-input" type="text" maxlength="120" placeholder="Project name">
-                    </label>
                 </div>
                 <div class="view-tabs-right" aria-label="Project actions">
                     <div class="view-tabs-note" role="note" aria-label="Beta disclaimer">
@@ -614,6 +686,61 @@
                        title="Opens your default email app. If nothing opens, email eklinger@jlgarchitects.com."
                        aria-label="Send beta feedback by email to eklinger@jlgarchitects.com">Feedback</a>
                 </div>
+            </div>
+
+            <div id="projectPickerModal" class="project-picker-modal" hidden>
+                <div class="project-picker-backdrop" data-project-picker-close></div>
+                <section class="project-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="projectPickerTitle">
+                    <div class="project-picker-header">
+                        <h2 id="projectPickerTitle">Open project</h2>
+                        <button id="projectPickerCloseBtn" class="project-picker-close-btn" type="button" aria-label="Close open project dialog">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="project-picker-toolbar">
+                        <label class="project-picker-search-field" for="projectPickerSearchInput">
+                            <span class="sr-only">Search projects</span>
+                            <input id="projectPickerSearchInput" type="search" placeholder="Search projects">
+                        </label>
+                        <button id="projectPickerCreateBtn" class="project-picker-create-btn" type="button">New project</button>
+                    </div>
+                    <p id="projectPickerError" class="project-picker-error" hidden></p>
+                    <div class="project-picker-table">
+                        <div class="project-picker-table-head" aria-hidden="true">
+                            <span>Name</span>
+                            <span>Last updated</span>
+                            <span></span>
+                        </div>
+                        <div id="projectPickerList" class="project-picker-list" role="list"></div>
+                    </div>
+                </section>
+            </div>
+
+            <div id="projectOptionManagerModal" class="project-option-manager-modal" hidden>
+                <div class="project-option-manager-backdrop" data-project-option-manager-close></div>
+                <section class="project-option-manager-dialog" role="dialog" aria-modal="true" aria-labelledby="projectOptionManagerTitle">
+                    <div class="project-option-manager-header">
+                        <div>
+                            <h2 id="projectOptionManagerTitle">Manage Options</h2>
+                            <p>Create, rename, duplicate, delete, and switch between saved option snapshots.</p>
+                        </div>
+                        <button id="projectOptionManagerCloseBtn" class="project-option-manager-close-btn" type="button" aria-label="Close manage options dialog">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                    </div>
+                    <div id="projectOptionManagerList" class="project-option-manager-list" role="list"></div>
+                    <div class="project-option-manager-footer">
+                        <button id="projectOptionManagerCreateBtn" class="project-option-manager-create-btn" type="button">+ Option</button>
+                    </div>
+                </section>
             </div>
 
             <div class="view-container">

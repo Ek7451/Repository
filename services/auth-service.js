@@ -1,6 +1,12 @@
 const DEV_LOCAL_SESSION_KEY = 'sbg-dev-auth-session';
 
 const LOCAL_DEV_JOB_TITLE = 'Design Technology Specialist II';
+const LOCAL_DEV_MICROSOFT_SESSION = Object.freeze({
+    userId: 'pat@example.com',
+    displayName: 'Pat Example',
+    email: 'pat@example.com',
+    jobTitle: LOCAL_DEV_JOB_TITLE
+});
 
 function getBrowserStorage() {
     try {
@@ -100,6 +106,14 @@ function normalizeSignInPayload(credentials = {}) {
     return { displayName, email };
 }
 
+function buildLocalMicrosoftSession() {
+    const session = normalizeSession(LOCAL_DEV_MICROSOFT_SESSION);
+    if (!session) {
+        throw new Error('Local Microsoft sign-in did not produce a valid session.');
+    }
+    return session;
+}
+
 function createApiAuthService({ baseUrl }) {
     return {
         async getSession() {
@@ -144,6 +158,10 @@ function createApiAuthService({ baseUrl }) {
             return session;
         },
 
+        async signInWithMicrosoft() {
+            throw new Error('Microsoft SSO is not implemented in this build.');
+        },
+
         async signOut() {
             const response = await fetch(`${baseUrl}/logout`, {
                 method: 'POST',
@@ -177,6 +195,17 @@ function createLocalAuthService() {
                 throw new Error('Sign-in succeeded but no session was returned.');
             }
 
+            writeLocalSession(session);
+            return session;
+        },
+
+        async signInWithMicrosoft() {
+            const existingSession = readLocalSession();
+            if (existingSession) {
+                return existingSession;
+            }
+
+            const session = buildLocalMicrosoftSession();
             writeLocalSession(session);
             return session;
         },

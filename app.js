@@ -1,22 +1,25 @@
-import { DashboardPage } from './pages/dashboard/dashboard.js';
 import { createAuthService } from './services/auth-service.js';
 import { createProjectsService } from './services/project-api.js';
+import {
+    buildDuplicateProjectName,
+    buildUntitledProjectCreateRequest,
+    createProjectOption,
+    deleteProjectOption,
+    duplicateProjectOption,
+    getActiveProjectOption,
+    getActiveProjectStateSnapshot,
+    renameProjectOption,
+    selectProjectOption,
+    stageActiveProjectOptionState
+} from './state/project.js';
 import { SeatingBowlApp } from './ui/app.js';
-
-function getButtonElement(id) {
-    return /** @type {HTMLButtonElement | null} */ (document.getElementById(id));
-}
-
-function getInputElement(id) {
-    return /** @type {HTMLInputElement | null} */ (document.getElementById(id));
-}
 
 function normalizeDevBackend(value) {
     return value === 'local' ? 'local' : null;
 }
 
-function resolveRuntimeConfig() {
-    const url = new URL(window.location.href);
+export function resolveRuntimeConfig(location = window.location) {
+    const url = new URL(location.href);
 
     return {
         devBackend: normalizeDevBackend(url.searchParams.get('devBackend'))
@@ -42,11 +45,7 @@ function buildRouteUrl(relativePath, runtimeConfig, configure = null) {
     return url.toString();
 }
 
-function buildDashboardUrl(runtimeConfig) {
-    return buildRouteUrl('./pages/dashboard/dashboard.html', runtimeConfig);
-}
-
-function buildConfiguratorUrl(projectId, runtimeConfig) {
+export function buildConfiguratorUrl(projectId, runtimeConfig) {
     return buildRouteUrl('./pages/configurator/index.html', runtimeConfig, (url) => {
         if (projectId) {
             url.searchParams.set('project', projectId);
@@ -54,141 +53,472 @@ function buildConfiguratorUrl(projectId, runtimeConfig) {
     });
 }
 
-function getCurrentPage() {
-    const page = document.body?.dataset?.page;
+export function buildConfiguratorRouteRedirectUrl(location) {
+    const url = new URL('./pages/configurator/index.html', import.meta.url);
+    url.search = typeof location?.search === 'string' ? location.search : '';
+    url.hash = typeof location?.hash === 'string' ? location.hash : '';
+    return url.toString();
+}
+
+export function getCurrentPage(doc = document) {
+    const page = doc.body?.dataset?.page;
     return page === 'dashboard' || page === 'configurator' ? page : null;
 }
 
-function wireProjectShellControls(app, authService, projectApi, runtimeConfig) {
-    const backBtn = getButtonElement('backToDashboardBtn');
-    const saveBtn = getButtonElement('saveProjectBtn');
-    const signOutBtn = getButtonElement('editorSignOutBtn');
-    const projectNameInput = getInputElement('projectNameInput');
+function getProjectActionErrorMessage(actionLabel, error) {
+    const suffix = error instanceof Error && error.message
+        ? error.message
+        : `${actionLabel} failed.`;
+    return suffix;
+}
 
-    backBtn?.addEventListener('click', () => {
-        app.destroy?.();
-        window.location.assign(buildDashboardUrl(runtimeConfig));
-    });
+function replaceProjectRoute(projectId, runtimeConfig, location, history) {
+    const nextUrl = buildConfiguratorUrl(projectId, runtimeConfig);
 
-    signOutBtn?.addEventListener('click', async () => {
+    if (typeof history?.replaceState === 'function') {
+        history.replaceState(null, '', nextUrl);
+        return;
+    }
+
+    location?.assign?.(nextUrl);
+}
+
+async function loadProjectIntoApp({
+    app,
+    projectApi,
+    projectId,
+    runtimeConfig,
+    location,
+    history,
+    pendingMessage = 'Loading project...'
+}) {
+    app.setProjectStatus(pendingMessage, 'pending');
+    const project = await projectApi.getProject(projectId);
+    app.loadProject(project);
+    replaceProjectRoute(project.id, runtimeConfig, location, history);
+    return project;
+}
+
+function stageCurrentProjectStateDocument(app) {
+    return stageActiveProjectOptionState(
+        app.getProjectStateDocument(),
+        app.captureStateSnapshot()
+    );
+}
+
+function applySavedProject(app, savedProject, { reloadActiveOption = false } = {}) {
+    app.setProjectMetadata(savedProject);
+    app.setProjectStateDocument(savedProject.state);
+
+    if (reloadActiveOption) {
+        app.replaceLiveState(
+            getActiveProjectStateSnapshot(savedProject.state, app.captureStateSnapshot())
+        );
+    }
+}
+
+async function persistProjectStateDocument({
+    app,
+    projectApi,
+    projectStateDocument,
+    pendingMessage,
+    successMessage,
+    failureLabel,
+    reloadActiveOption = false
+}) {
+    const metadata = app.getProjectMetadata();
+    if (!metadata.id) {
+        return null;
+    }
+
+    app.setProjectSaveBusy(true);
+    app.setProjectStatus(pendingMessage, 'pending');
+
+    try {
+        const savedProject = await projectApi.updateProject(
+            metadata.id,
+            app.getProjectSaveRequest(projectStateDocument)
+        );
+        applySavedProject(app, savedProject, { reloadActiveOption });
+        app.setProjectStatus(
+            typeof successMessage === 'function'
+                ? successMessage(savedProject)
+                : successMessage,
+            'success'
+        );
+        return savedProject;
+    } catch (error) {
+        console.error(`${failureLabel} failed:`, error);
+        app.setProjectStatus(
+            getProjectActionErrorMessage(failureLabel, error),
+            'error'
+        );
+        throw error;
+    } finally {
+        app.setProjectSaveBusy(false);
+    }
+}
+
+function createProjectActionPort({
+    getApp,
+    authService,
+    projectApi,
+    runtimeConfig,
+    location,
+    history
+}) {
+    async function saveCurrentProject() {
+        const app = getApp();
+        const projectStateDocument = stageCurrentProjectStateDocument(app);
+        await persistProjectStateDocument({
+            app,
+            projectApi,
+            projectStateDocument,
+            pendingMessage: 'Saving project...',
+            successMessage: (savedProject) => `Saved ${savedProject.name}`,
+            failureLabel: 'Project save'
+        });
+    }
+
+    async function createProject() {
+        const app = getApp();
+        app.setProjectStatus('Creating project...', 'pending');
+
         try {
-            await authService.signOut();
+            const createdProject = await projectApi.createProject(buildUntitledProjectCreateRequest());
+            app.loadProject(createdProject);
+            replaceProjectRoute(createdProject.id, runtimeConfig, location, history);
         } catch (error) {
-            console.error('Sign-out failed:', error);
-        } finally {
-            app.destroy?.();
-            window.location.assign(buildDashboardUrl(runtimeConfig));
-        }
-    });
-
-    projectNameInput?.addEventListener('input', () => {
-        app.setProjectName(projectNameInput.value);
-    });
-
-    saveBtn?.addEventListener('click', async () => {
-        const metadata = app.getProjectMetadata();
-        if (!metadata.id) return;
-
-        app.setProjectSaveBusy(true);
-        app.setProjectStatus('Saving project...', 'pending');
-
-        try {
-            const savedProject = await projectApi.updateProject(
-                metadata.id,
-                app.getProjectSaveRequest()
-            );
-            app.setProjectMetadata(savedProject);
-            app.setProjectStatus(`Saved ${savedProject.name}`, 'success');
-        } catch (error) {
-            console.error('Project save failed:', error);
+            console.error('Project creation failed:', error);
             app.setProjectStatus(
-                error instanceof Error ? error.message : 'Project save failed.',
+                getProjectActionErrorMessage('Project creation', error),
                 'error'
             );
-        } finally {
-            app.setProjectSaveBusy(false);
+            throw error;
         }
-    });
+    }
+
+    /**
+     * @param {{
+     *   pendingMessage: string,
+     *   failureLabel: string,
+     *   reloadActiveOption?: boolean | ((previousProjectState: object, nextProjectState: object) => boolean),
+     *   successMessage: string | ((savedProject: object) => string),
+     *   mutate: (projectStateDocument: object) => object
+     * }} options
+     */
+    async function mutateProjectOptions({
+        pendingMessage,
+        failureLabel,
+        reloadActiveOption = false,
+        successMessage,
+        mutate
+    }) {
+        const app = getApp();
+        const stagedProjectState = stageCurrentProjectStateDocument(app);
+        const nextProjectState = mutate(stagedProjectState);
+        const shouldReloadActiveOption = typeof reloadActiveOption === 'function'
+            ? reloadActiveOption(stagedProjectState, nextProjectState)
+            : Boolean(reloadActiveOption);
+
+        return persistProjectStateDocument({
+            app,
+            projectApi,
+            projectStateDocument: nextProjectState,
+            pendingMessage,
+            successMessage,
+            failureLabel,
+            reloadActiveOption: shouldReloadActiveOption
+        });
+    }
+
+    return {
+        async saveCurrentProject() {
+            await saveCurrentProject();
+        },
+
+        async renameCurrentProject(name) {
+            const app = getApp();
+            const previousMetadata = app.getProjectMetadata();
+            app.setProjectName(name);
+
+            try {
+                await saveCurrentProject();
+            } catch (error) {
+                app.setProjectMetadata(previousMetadata);
+                throw error;
+            }
+        },
+
+        async createOption() {
+            await mutateProjectOptions({
+                pendingMessage: 'Creating option...',
+                failureLabel: 'Option create',
+                reloadActiveOption: true,
+                successMessage: (savedProject) => {
+                    const activeOption = getActiveProjectOption(savedProject.state);
+                    return `Created ${activeOption?.name ?? 'option'}`;
+                },
+                mutate: (projectStateDocument) => createProjectOption(projectStateDocument)
+            });
+        },
+
+        async renameOption(optionId, name) {
+            await mutateProjectOptions({
+                pendingMessage: 'Renaming option...',
+                failureLabel: 'Option rename',
+                successMessage: (savedProject) => {
+                    const renamedOption = getActiveProjectOption(
+                        selectProjectOption(savedProject.state, optionId)
+                    );
+                    return `Renamed ${renamedOption?.name ?? 'option'}`;
+                },
+                mutate: (projectStateDocument) => renameProjectOption(projectStateDocument, optionId, name)
+            });
+        },
+
+        async duplicateOption(optionId) {
+            await mutateProjectOptions({
+                pendingMessage: 'Duplicating option...',
+                failureLabel: 'Option duplicate',
+                reloadActiveOption: true,
+                successMessage: (savedProject) => {
+                    const activeOption = getActiveProjectOption(savedProject.state);
+                    return `Duplicated ${activeOption?.name ?? 'option'}`;
+                },
+                mutate: (projectStateDocument) => duplicateProjectOption(projectStateDocument, optionId)
+            });
+        },
+
+        async deleteOption(optionId) {
+            await mutateProjectOptions({
+                pendingMessage: 'Deleting option...',
+                failureLabel: 'Option delete',
+                reloadActiveOption: (previousProjectState, nextProjectState) => (
+                    previousProjectState.activeOptionId !== nextProjectState.activeOptionId
+                ),
+                successMessage: (savedProject) => {
+                    const activeOption = getActiveProjectOption(savedProject.state);
+                    return `Deleted option. Active option is ${activeOption?.name ?? 'Option 1'}`;
+                },
+                mutate: (projectStateDocument) => deleteProjectOption(projectStateDocument, optionId)
+            });
+        },
+
+        async selectOption(optionId) {
+            await mutateProjectOptions({
+                pendingMessage: 'Switching option...',
+                failureLabel: 'Option select',
+                reloadActiveOption: (previousProjectState, nextProjectState) => (
+                    previousProjectState.activeOptionId !== nextProjectState.activeOptionId
+                ),
+                successMessage: (savedProject) => {
+                    const activeOption = getActiveProjectOption(savedProject.state);
+                    return `Switched to ${activeOption?.name ?? 'option'}`;
+                },
+                mutate: (projectStateDocument) => selectProjectOption(projectStateDocument, optionId)
+            });
+        },
+
+        async createProject() {
+            await createProject();
+        },
+
+        async listProjects() {
+            try {
+                return await projectApi.listProjects();
+            } catch (error) {
+                const app = getApp();
+                console.error('Project list failed:', error);
+                app.setProjectStatus(
+                    getProjectActionErrorMessage('Project list', error),
+                    'error'
+                );
+                throw error;
+            }
+        },
+
+        async openProject(projectId) {
+            const app = getApp();
+
+            try {
+                await loadProjectIntoApp({
+                    app,
+                    projectApi,
+                    projectId,
+                    runtimeConfig,
+                    location,
+                    history
+                });
+            } catch (error) {
+                console.error('Project open failed:', error);
+                app.setProjectStatus(
+                    getProjectActionErrorMessage('Project open', error),
+                    'error'
+                );
+                throw error;
+            }
+        },
+
+        async duplicateProject(projectId) {
+            const app = getApp();
+            app.setProjectStatus('Duplicating project...', 'pending');
+
+            try {
+                const sourceProject = await projectApi.getProject(projectId);
+                const duplicatedProject = await projectApi.createProject({
+                    name: buildDuplicateProjectName(sourceProject.name),
+                    state: sourceProject.state
+                });
+                app.setProjectStatus(`Duplicated ${duplicatedProject.name}`, 'success');
+            } catch (error) {
+                console.error('Project duplicate failed:', error);
+                app.setProjectStatus(
+                    getProjectActionErrorMessage('Project duplicate', error),
+                    'error'
+                );
+                throw error;
+            }
+        },
+
+        async deleteProject(projectId) {
+            const app = getApp();
+            const currentProjectId = app.getProjectMetadata().id;
+            app.setProjectStatus('Deleting project...', 'pending');
+
+            try {
+                await projectApi.deleteProject(projectId);
+                if (projectId && currentProjectId === projectId) {
+                    const replacementProject = await projectApi.createProject(buildUntitledProjectCreateRequest());
+                    app.loadProject(replacementProject);
+                    replaceProjectRoute(replacementProject.id, runtimeConfig, location, history);
+                    return;
+                }
+
+                app.setProjectStatus('Deleted project', 'success');
+            } catch (error) {
+                console.error('Project delete failed:', error);
+                app.setProjectStatus(
+                    getProjectActionErrorMessage('Project delete', error),
+                    'error'
+                );
+                throw error;
+            }
+        },
+
+        async signOut() {
+            try {
+                await authService.signOut();
+            } catch (error) {
+                console.error('Sign-out failed:', error);
+                throw error;
+            } finally {
+                getApp().destroy?.();
+                location?.assign?.(buildConfiguratorUrl(null, runtimeConfig));
+            }
+        }
+    };
 }
 
-async function bootDashboardPage(runtimeConfig, authService, projectApi) {
-    const projectId = new URLSearchParams(window.location.search).get('project');
-    if (projectId) {
-        window.location.replace(buildConfiguratorUrl(projectId, runtimeConfig));
-        return;
+async function ensureSession(authService) {
+    const existingSession = await authService.getSession();
+    if (existingSession) {
+        return existingSession;
     }
 
-    const dashboardPage = new DashboardPage({
-        root: document.getElementById('dashboardPageRoot'),
-        authService,
-        projectsService: projectApi,
-        runtimeConfig,
-        onOpenProject: (nextProjectId) => {
-            window.location.assign(buildConfiguratorUrl(nextProjectId, runtimeConfig));
-        }
-    });
-
-    await dashboardPage.show();
-}
-
-async function bootConfiguratorPage(runtimeConfig, authService, projectApi) {
-    const projectId = new URLSearchParams(window.location.search).get('project');
-    if (!projectId) {
-        window.location.replace(buildDashboardUrl(runtimeConfig));
-        return;
-    }
-
-    let session = null;
-
-    try {
-        session = await authService.getSession();
-    } catch (error) {
-        console.error('Session bootstrap failed:', error);
-        window.location.replace(buildDashboardUrl(runtimeConfig));
-        return;
-    }
-
+    const session = await authService.signInWithMicrosoft();
     if (!session) {
-        window.location.replace(buildDashboardUrl(runtimeConfig));
+        throw new Error('Microsoft sign-in did not return a session.');
+    }
+
+    return session;
+}
+
+async function ensureProjectId(projectApi, runtimeConfig, location) {
+    const projectId = new URLSearchParams(location.search).get('project');
+    if (projectId) {
+        return projectId;
+    }
+
+    const createdProject = await projectApi.createProject(buildUntitledProjectCreateRequest());
+    if (!createdProject?.id) {
+        throw new Error('Project creation did not return a project id.');
+    }
+
+    location.replace(buildConfiguratorUrl(createdProject.id, runtimeConfig));
+    return null;
+}
+
+export async function bootConfiguratorPage(runtimeConfig, authService, projectApi, options = {}) {
+    const doc = options.document ?? document;
+    const location = options.location ?? window.location;
+    const history = options.history
+        ?? (typeof window !== 'undefined' ? window.history : null);
+    const setTimeoutFn = options.setTimeoutFn
+        ?? (typeof window !== 'undefined'
+            ? window.setTimeout.bind(window)
+            : globalThis.setTimeout.bind(globalThis));
+    const appFactory = options.appFactory ?? ((appOptions) => new SeatingBowlApp(appOptions));
+
+    const session = await ensureSession(authService);
+    const projectId = await ensureProjectId(projectApi, runtimeConfig, location);
+    if (!projectId) {
         return;
     }
 
-    const app = new SeatingBowlApp();
-    wireProjectShellControls(app, authService, projectApi, runtimeConfig);
+    let app = null;
+    const projectActions = createProjectActionPort({
+        getApp: () => app,
+        authService,
+        projectApi,
+        runtimeConfig,
+        location,
+        history
+    });
+    app = appFactory({ projectActions, document: doc });
     app.setSession(session);
     await app.init();
-    app.setProjectStatus('Loading project...', 'pending');
 
     try {
-        const project = await projectApi.getProject(projectId);
-        app.loadProject(project);
+        await loadProjectIntoApp({
+            app,
+            projectApi,
+            projectId,
+            runtimeConfig,
+            location,
+            history
+        });
     } catch (error) {
         console.error('Project load failed:', error);
         app.setProjectStatus(
             error instanceof Error ? error.message : 'Project load failed.',
             'error'
         );
-        window.setTimeout(() => {
+        setTimeoutFn(() => {
             app.destroy?.();
-            window.location.assign(buildDashboardUrl(runtimeConfig));
+            location.assign(buildConfiguratorUrl(null, runtimeConfig));
         }, 900);
     }
 }
 
-async function bootAppShell() {
-    const currentPage = getCurrentPage();
+export async function bootAppShell(options = {}) {
+    const doc = options.document ?? document;
+    const location = options.location ?? window.location;
+    const currentPage = getCurrentPage(doc);
     if (!currentPage) return;
 
-    const runtimeConfig = resolveRuntimeConfig();
-    const authService = createAuthService({ devBackend: runtimeConfig.devBackend });
-    const projectApi = createProjectsService({ devBackend: runtimeConfig.devBackend });
-
     if (currentPage === 'dashboard') {
-        await bootDashboardPage(runtimeConfig, authService, projectApi);
+        location.replace(buildConfiguratorRouteRedirectUrl(location));
         return;
     }
 
-    await bootConfiguratorPage(runtimeConfig, authService, projectApi);
+    const runtimeConfig = options.runtimeConfig ?? resolveRuntimeConfig(location);
+    const authService = options.authService ?? createAuthService({ devBackend: runtimeConfig.devBackend });
+    const projectApi = options.projectApi ?? createProjectsService({ devBackend: runtimeConfig.devBackend });
+
+    await bootConfiguratorPage(runtimeConfig, authService, projectApi, options);
 }
 
-bootAppShell().catch((error) => console.error('App init failed:', error));
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    bootAppShell().catch((error) => console.error('App init failed:', error));
+}

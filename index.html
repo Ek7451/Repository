@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JLG Seating Bowl Study</title>
-    <meta name="description" content="Redirecting to the seating bowl dashboard or configurator.">
+    <meta name="description" content="Redirecting to the seating bowl configurator.">
     <style>
         html,
         body {
@@ -32,11 +32,7 @@
     </style>
     <script>
         (() => {
-            const params = new URLSearchParams(window.location.search);
-            const target = params.get('project')
-                ? './pages/configurator/index.html'
-                : './pages/dashboard/dashboard.html';
-            window.location.replace(`${target}${window.location.search}${window.location.hash}`);
+            window.location.replace(`./pages/configurator/index.html${window.location.search}${window.location.hash}`);
         })();
     </script>
 </head>
@@ -46,8 +42,7 @@
         <noscript>
             <p>
                 JavaScript is required for automatic routing.
-                Open <a href="./pages/dashboard/dashboard.html">the dashboard</a>
-                or <a href="./pages/configurator/index.html">the configurator</a>.
+                Open <a href="./pages/configurator/index.html">the configurator</a>.
             </p>
         </noscript>
     </main>

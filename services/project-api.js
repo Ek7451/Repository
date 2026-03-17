@@ -30,6 +30,7 @@ function normalizeProjectSummary(rawProject) {
 
     const id = typeof rawProject.id === 'string' ? rawProject.id.trim() : '';
     const name = typeof rawProject.name === 'string' ? rawProject.name.trim() : '';
+    const stateSport = typeof rawProject.state?.sport === 'string' ? rawProject.state.sport.trim() : '';
     const sport = typeof rawProject.sport === 'string' ? rawProject.sport.trim() : '';
     const createdAt = typeof rawProject.createdAt === 'string' ? rawProject.createdAt : '';
     const updatedAt = typeof rawProject.updatedAt === 'string' ? rawProject.updatedAt : '';
@@ -39,7 +40,7 @@ function normalizeProjectSummary(rawProject) {
     return {
         id,
         name,
-        sport: sport || 'Football',
+        sport: sport || stateSport || 'Football',
         createdAt,
         updatedAt
     };

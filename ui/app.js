@@ -7,6 +7,10 @@ import { FieldRenderer } from '../viz/field-renderer.js';
 import { ProfileRenderer } from '../viz/profile-renderer.js';
 import { DEFAULT_STARTUP_PROFILE } from '../core/default-starting-profile.js';
 import { createAppState, resolveSportName, resolveSportTemplate } from '../state/app-state.js';
+import {
+    getActiveProjectStateSnapshot,
+    normalizeProjectEnvelope
+} from '../state/project.js';
 import { EditorControls } from './editor-controls.js';
 import { EditorExportController } from './editor-export-controller.js';
 import { EditorShell } from './editor-shell.js';
@@ -24,7 +28,8 @@ export class SeatingBowlApp {
                 session: object | null,
                 canSave: boolean
             }) => void),
-            onStatusChanged?: ((status: { message: string, tone: string }) => void)
+            onStatusChanged?: ((status: { message: string, tone: string }) => void),
+            projectActions?: object | null
         }} */ (options && typeof options === 'object' ? options : {});
         this.state = createAppState();
         this.fieldRenderer = null;
@@ -49,12 +54,16 @@ export class SeatingBowlApp {
             getFieldGeometryPort: () => this.fieldRenderer?.getGeometryPort?.() ?? null,
             getSceneGeometryPort: () => this.scene3DController?.getGeometryPort() ?? null
         });
+        this._projectActions = callbacks.projectActions ?? null;
         this.editorShell = null;
         this.projectShell = new ProjectShellController({
             getSportName: () => resolveSportName(this.state),
             onProjectChromeChanged: (chrome) => {
                 this.editorShell?.renderProjectChrome(chrome, { isSaveBusy: this._projectSaveBusy });
                 callbacks.onProjectChromeChanged?.(chrome);
+            },
+            onProjectOptionChromeChanged: (optionChrome) => {
+                this.editorShell?.renderOptionChrome(optionChrome);
             },
             onStatusChanged: (status) => {
                 this.editorShell?.renderProjectStatus(status);
@@ -159,8 +168,12 @@ export class SeatingBowlApp {
         return this.projectShell.getProjectStatus();
     }
 
-    getProjectSaveRequest() {
-        return this.projectShell.getProjectSaveRequest(this.state.toJSON());
+    getProjectStateDocument() {
+        return this.projectShell.getProjectStateDocument();
+    }
+
+    getProjectSaveRequest(projectState = this.getProjectStateDocument()) {
+        return this.projectShell.getProjectSaveRequest(projectState);
     }
 
     setProjectStatus(message, tone = 'default') {
@@ -172,10 +185,23 @@ export class SeatingBowlApp {
         this.editorShell?.setProjectSaveBusy(this._projectSaveBusy);
     }
 
+    setProjectStateDocument(projectState = null) {
+        this.projectShell.setProjectStateDocument(projectState);
+    }
+
+    captureStateSnapshot() {
+        return this.state.toJSON();
+    }
+
     loadProject(project) {
         if (!project || typeof project !== 'object') return;
-        this.setProjectMetadata(project);
-        this.loadState(project.state ?? {}, { logSuccess: true });
+        const normalizedProject = normalizeProjectEnvelope(project, this.captureStateSnapshot());
+        this.setProjectMetadata(normalizedProject);
+        this.setProjectStateDocument(normalizedProject.state);
+        this.replaceLiveState(
+            getActiveProjectStateSnapshot(normalizedProject.state, this.captureStateSnapshot()),
+            { logSuccess: true }
+        );
         this.setProjectStatus(
             `Loaded ${this.getProjectChrome().name}`,
             'success'
@@ -186,6 +212,7 @@ export class SeatingBowlApp {
         this.editorShell?.destroy();
         this.editorShell = new EditorShell({
             themeStorageKey: 'jlg-seating-theme',
+            projectActions: this._projectActions,
             onThemeChanged: (theme, options = {}) => {
                 this.applyTheme(theme, options);
             },
@@ -207,6 +234,7 @@ export class SeatingBowlApp {
         this.editorShell.renderProjectChrome(this.projectShell.getProjectChrome(), {
             isSaveBusy: this._projectSaveBusy
         });
+        this.editorShell.renderOptionChrome(this.projectShell.getProjectOptionChrome());
         this.editorShell.renderProjectStatus(this.projectShell.getProjectStatus());
     }
 
@@ -308,7 +336,7 @@ export class SeatingBowlApp {
     _loadConfigText(text) {
         try {
             const config = JSON.parse(text);
-            this.loadState(config, { logSuccess: true });
+            this.replaceLiveState(config, { logSuccess: true });
         } catch (err) {
             console.error('Failed to load config:', err);
             throw err;
@@ -316,6 +344,10 @@ export class SeatingBowlApp {
     }
 
     loadState(config, options = {}) {
+        this.replaceLiveState(config, options);
+    }
+
+    replaceLiveState(config, options = {}) {
         if (!config || typeof config !== 'object') return;
         const { logSuccess = false } = options;
         this.state.fromJSON(config);

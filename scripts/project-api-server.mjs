@@ -154,7 +154,11 @@ function toProjectSummary(project) {
     return {
         id: project.id,
         name: project.name,
-        sport: project.sport,
+        sport: typeof project.sport === 'string' && project.sport
+            ? project.sport
+            : (typeof project.state?.sport === 'string' && project.state.sport
+                ? project.state.sport
+                : 'Football'),
         createdAt: project.createdAt,
         updatedAt: project.updatedAt
     };

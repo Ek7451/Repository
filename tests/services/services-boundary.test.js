@@ -103,6 +103,28 @@ describe('service DTO boundaries', () => {
         await expect(service.getSession()).resolves.toBeNull();
     });
 
+    it('seeds a local Microsoft session without requiring manual sign-in input', async () => {
+        const service = createAuthService({ devBackend: 'local' });
+
+        const session = await service.signInWithMicrosoft();
+
+        expect(session).toEqual({
+            userId: 'pat@example.com',
+            displayName: 'Pat Example',
+            email: 'pat@example.com',
+            jobTitle: 'Design Technology Specialist II'
+        });
+        await expect(service.getSession()).resolves.toEqual(session);
+    });
+
+    it('returns an explicit scaffold error for Microsoft sign-in in API mode', async () => {
+        const service = createAuthService();
+
+        await expect(service.signInWithMicrosoft()).rejects.toThrow(
+            'Microsoft SSO is not implemented in this build.'
+        );
+    });
+
     it('accepts optional profile fields from the auth API without changing the required contract', async () => {
         /** @type {any} */ (globalThis.fetch).mockResolvedValue(createJsonResponse(200, {
             session: {
@@ -181,7 +203,7 @@ describe('service DTO boundaries', () => {
         await expect(service.deleteProject('missing-project')).rejects.toThrow('Project not found.');
     });
 
-    it('uses explicit local project mode without leaking AppState instances', async () => {
+    it('uses explicit local project mode without leaking project document instances', async () => {
         const authService = createAuthService({ devBackend: 'local' });
         const projectsService = createProjectsService({ devBackend: 'local' });
 
@@ -190,42 +212,57 @@ describe('service DTO boundaries', () => {
             email: 'pat@example.com'
         });
 
-        const appStateJson = {
-            _version: 'phase6-app-state',
+        const projectStateDocument = {
+            _projectVersion: 'dashboard-cutover-v1',
             sport: 'Football',
-            setup: { customRunoff: 25, focalZ: 0, sightlineVisuals: true, sectionMetrics: false },
-            bowl: {
-                type: 'Full',
-                cornerRad: 10,
-                sideLength: 300,
-                structuralDepth: 6
-            },
-            occupancy: {
-                seatWidth: 20,
-                minAisle: 48,
-                maxAisle: 72,
-                seatsBetweenAisles: 20,
-                egressFactor: 0.2,
-                showSeatCubes3D: false
-            },
-            ui: { activeViewTab: 'profile', activeResultsTab: 'statsTab' },
-            tiers: [],
-            bookmarks: []
+            activeOptionId: 'option-1',
+            options: [
+                {
+                    id: 'option-1',
+                    name: 'Option 1',
+                    color: '#7aae1a',
+                    createdAt: '2026-03-16T00:00:00.000Z',
+                    updatedAt: '2026-03-16T00:00:00.000Z',
+                    state: {
+                        _version: 'phase6-app-state',
+                        sport: 'Football',
+                        setup: { customRunoff: 25, focalZ: 0, sightlineVisuals: true, sectionMetrics: false },
+                        bowl: {
+                            type: 'Full',
+                            cornerRad: 10,
+                            sideLength: 300,
+                            structuralDepth: 6
+                        },
+                        occupancy: {
+                            seatWidth: 20,
+                            minAisle: 48,
+                            maxAisle: 72,
+                            seatsBetweenAisles: 20,
+                            egressFactor: 0.2,
+                            showSeatCubes3D: false
+                        },
+                        ui: { activeViewTab: 'profile', activeResultsTab: 'statsTab' },
+                        tiers: [],
+                        bookmarks: []
+                    }
+                }
+            ]
         };
 
         const created = await projectsService.createProject({
             name: 'Local Study',
-            state: appStateJson
+            state: projectStateDocument
         });
 
         expect(created.name).toBe('Local Study');
-        expect(created.state).toEqual(appStateJson);
-        expect(created.state).not.toBe(appStateJson);
+        expect(created.state).toEqual(projectStateDocument);
+        expect(created.state).not.toBe(projectStateDocument);
 
-        appStateJson.sport = 'Mutated';
+        projectStateDocument.options[0].state.sport = 'Mutated';
         const loaded = await projectsService.getProject(created.id);
 
         expect(loaded.state.sport).toBe('Football');
+        expect(loaded.state.options[0].state.sport).toBe('Football');
         await expect(projectsService.listProjects()).resolves.toHaveLength(1);
     });
 

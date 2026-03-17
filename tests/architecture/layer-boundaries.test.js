@@ -1,8 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { runInNewContext } from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import {
+    bootAppShell,
+    buildConfiguratorRouteRedirectUrl,
+    buildConfiguratorUrl
+} from '../../app.js';
+import {
+    buildDuplicateProjectName
+} from '../../state/project.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const layerRules = {
@@ -129,6 +139,66 @@ function collectLayerImportViolations() {
     return violations;
 }
 
+function extractInlineScript(filePath) {
+    const sourceText = fs.readFileSync(filePath, 'utf8');
+    const match = sourceText.match(/<script>\s*([\s\S]*?)<\/script>/i);
+
+    if (!match) {
+        throw new Error(`No inline script found in ${toRepoPath(filePath)}`);
+    }
+
+    return match[1];
+}
+
+function createRouteDocument(page) {
+    return {
+        body: {
+            dataset: {
+                page
+            }
+        },
+        getElementById: vi.fn(() => null)
+    };
+}
+
+function createLocation(href) {
+    const url = new URL(href);
+
+    return {
+        href: url.toString(),
+        search: url.search,
+        hash: url.hash,
+        replace: vi.fn(),
+        assign: vi.fn()
+    };
+}
+
+function createProjectStateDocument({
+    sport = 'Football',
+    activeOptionId = 'option-1',
+    options = null
+} = {}) {
+    return {
+        _projectVersion: 'dashboard-cutover-v1',
+        sport,
+        activeOptionId,
+        options: options ?? [
+            {
+                id: 'option-1',
+                name: 'Option 1',
+                color: '#7aae1a',
+                createdAt: '2026-03-16T00:00:00.000Z',
+                updatedAt: '2026-03-16T00:00:00.000Z',
+                state: { sport }
+            }
+        ]
+    };
+}
+
+afterEach(() => {
+    vi.restoreAllMocks();
+});
+
 describe('architecture layer boundaries', () => {
     it('only allows imports across approved layers', () => {
         expect(collectLayerImportViolations()).toEqual([]);
@@ -173,5 +243,549 @@ describe('architecture layer boundaries', () => {
         }
 
         expect(violations).toEqual([]);
+    });
+});
+
+describe('entry routing and bootstrap', () => {
+    it('routes root entry directly to the configurator while preserving search and hash', () => {
+        const location = {
+            search: '?project=project-7&devBackend=local',
+            hash: '#recent',
+            replace: vi.fn()
+        };
+
+        runInNewContext(
+            extractInlineScript(path.join(repoRoot, 'index.html')),
+            {
+                window: { location }
+            }
+        );
+
+        expect(location.replace).toHaveBeenCalledWith(
+            './pages/configurator/index.html?project=project-7&devBackend=local#recent'
+        );
+    });
+
+    it('redirects the legacy dashboard route into the configurator route while preserving query and hash', async () => {
+        const location = createLocation(
+            'http://localhost/pages/dashboard/dashboard.html?project=project-9&devBackend=local#recent'
+        );
+
+        await bootAppShell({
+            document: createRouteDocument('dashboard'),
+            location
+        });
+
+        expect(location.replace).toHaveBeenCalledWith(buildConfiguratorRouteRedirectUrl(location));
+    });
+
+    it('removes the legacy dashboard runtime files from the live application path', () => {
+        expect(fs.existsSync(path.join(repoRoot, 'pages/dashboard/dashboard.js'))).toBe(false);
+        expect(fs.existsSync(path.join(repoRoot, 'ui/project-dashboard.js'))).toBe(false);
+    });
+
+    it('signs in and creates one untitled project when direct entry has no project query', async () => {
+        const location = createLocation('http://localhost/pages/configurator/index.html?devBackend=local');
+        const session = {
+            userId: 'pat@example.com',
+            displayName: 'Pat Example',
+            email: 'pat@example.com',
+            jobTitle: 'Design Technology Specialist II'
+        };
+        const authService = {
+            getSession: vi.fn().mockResolvedValue(null),
+            signInWithMicrosoft: vi.fn().mockResolvedValue(session)
+        };
+        const projectApi = {
+            createProject: vi.fn().mockResolvedValue({
+                id: 'project-1'
+            })
+        };
+        const appFactory = vi.fn();
+
+        await bootAppShell({
+            document: createRouteDocument('configurator'),
+            location,
+            runtimeConfig: { devBackend: 'local' },
+            authService,
+            projectApi,
+            appFactory
+        });
+
+        expect(authService.getSession).toHaveBeenCalledTimes(1);
+        expect(authService.signInWithMicrosoft).toHaveBeenCalledTimes(1);
+        expect(projectApi.createProject).toHaveBeenCalledTimes(1);
+        expect(projectApi.createProject).toHaveBeenCalledWith(expect.objectContaining({
+            name: 'Untitled Project',
+            state: expect.objectContaining({
+                _projectVersion: 'dashboard-cutover-v1',
+                activeOptionId: 'option-1',
+                sport: 'Football'
+            })
+        }));
+        expect(location.replace).toHaveBeenCalledWith(
+            buildConfiguratorUrl('project-1', { devBackend: 'local' })
+        );
+        expect(appFactory).not.toHaveBeenCalled();
+    });
+
+    it('loads an existing project into the configurator when a project query is present', async () => {
+        const document = createRouteDocument('configurator');
+        const location = createLocation(
+            'http://localhost/pages/configurator/index.html?project=project-1&devBackend=local'
+        );
+        const session = {
+            userId: 'pat@example.com',
+            displayName: 'Pat Example',
+            email: 'pat@example.com',
+            jobTitle: 'Design Technology Specialist II'
+        };
+        const project = {
+            id: 'project-1',
+            name: 'Arena Study',
+            createdAt: '2026-03-16T00:00:00.000Z',
+            updatedAt: '2026-03-16T00:00:00.000Z',
+            state: { sport: 'Football' }
+        };
+        const authService = {
+            getSession: vi.fn().mockResolvedValue(session),
+            signInWithMicrosoft: vi.fn()
+        };
+        const projectApi = {
+            getProject: vi.fn().mockResolvedValue(project)
+        };
+        const app = {
+            destroy: vi.fn(),
+            init: vi.fn().mockResolvedValue(),
+            loadProject: vi.fn(),
+            setProjectStatus: vi.fn(),
+            setSession: vi.fn()
+        };
+        const appFactory = vi.fn(() => app);
+
+        await bootAppShell({
+            document,
+            location,
+            runtimeConfig: { devBackend: 'local' },
+            authService,
+            projectApi,
+            appFactory
+        });
+
+        expect(authService.getSession).toHaveBeenCalledTimes(1);
+        expect(authService.signInWithMicrosoft).not.toHaveBeenCalled();
+        expect(appFactory).toHaveBeenCalledTimes(1);
+        expect(appFactory).toHaveBeenCalledWith(expect.objectContaining({
+            projectActions: expect.any(Object),
+            document
+        }));
+        expect(document.getElementById).not.toHaveBeenCalled();
+        expect(app.setSession).toHaveBeenCalledWith(session);
+        expect(app.init).toHaveBeenCalledTimes(1);
+        expect(app.setProjectStatus).toHaveBeenCalledWith('Loading project...', 'pending');
+        expect(projectApi.getProject).toHaveBeenCalledWith('project-1');
+        expect(app.loadProject).toHaveBeenCalledWith(project);
+        expect(location.replace).not.toHaveBeenCalled();
+    });
+
+    it('keeps import and export owned by the configurator toolbar instead of the legacy left rail', () => {
+        const configuratorMarkup = fs.readFileSync(
+            path.join(repoRoot, 'pages/configurator/index.html'),
+            'utf8'
+        );
+        const editorShellSource = fs.readFileSync(
+            path.join(repoRoot, 'ui/editor-shell.js'),
+            'utf8'
+        );
+
+        expect(configuratorMarkup).toContain('data-toolbar-export-kind="json"');
+        expect(configuratorMarkup).toContain('id="configFileInput"');
+        expect(configuratorMarkup).not.toContain('id="loadConfigBtn"');
+        expect(configuratorMarkup).not.toContain('class="export-menu-body"');
+        expect(editorShellSource).not.toContain('loadConfigBtn');
+        expect(editorShellSource).not.toContain('.export-menu-panel');
+        expect(editorShellSource).not.toContain('.export-menu-header');
+    });
+
+    it('injects project actions that save, rename, and duplicate through project-document DTOs', async () => {
+        const location = createLocation(
+            'http://localhost/pages/configurator/index.html?project=project-1&devBackend=local'
+        );
+        const session = {
+            userId: 'pat@example.com',
+            displayName: 'Pat Example',
+            email: 'pat@example.com',
+            jobTitle: 'Design Technology Specialist II'
+        };
+        const loadedProject = {
+            id: 'project-1',
+            name: 'Arena Study',
+            createdAt: '2026-03-16T00:00:00.000Z',
+            updatedAt: '2026-03-16T00:00:00.000Z',
+            state: createProjectStateDocument()
+        };
+        const savedProject = {
+            ...loadedProject,
+            updatedAt: '2026-03-16T00:05:00.000Z'
+        };
+        const renamedProject = {
+            ...loadedProject,
+            name: 'Renamed Study',
+            updatedAt: '2026-03-16T00:10:00.000Z'
+        };
+        const duplicatedProject = {
+            ...loadedProject,
+            id: 'project-2',
+            name: 'Arena Study Copy'
+        };
+        const authService = {
+            getSession: vi.fn().mockResolvedValue(session),
+            signInWithMicrosoft: vi.fn()
+        };
+        let currentProjectState = createProjectStateDocument();
+        const projectApi = {
+            getProject: vi.fn().mockResolvedValue(loadedProject),
+            updateProject: vi.fn()
+                .mockResolvedValueOnce(savedProject)
+                .mockResolvedValueOnce(renamedProject),
+            createProject: vi.fn().mockResolvedValue(duplicatedProject)
+        };
+        const app = {
+            destroy: vi.fn(),
+            init: vi.fn().mockResolvedValue(),
+            loadProject: vi.fn(),
+            setProjectMetadata: vi.fn(),
+            setProjectName: vi.fn(),
+            setProjectSaveBusy: vi.fn(),
+            setProjectStateDocument: vi.fn((projectStateDocument) => {
+                currentProjectState = projectStateDocument;
+            }),
+            setProjectStatus: vi.fn(),
+            setSession: vi.fn(),
+            captureStateSnapshot: vi.fn(() => ({
+                sport: 'Football'
+            })),
+            getProjectMetadata: vi.fn(() => ({
+                id: 'project-1',
+                name: 'Arena Study'
+            })),
+            getProjectStateDocument: vi.fn(() => currentProjectState),
+            getProjectSaveRequest: vi.fn((projectStateDocument) => ({
+                name: 'Arena Study',
+                state: projectStateDocument
+            }))
+        };
+        let projectActions = /** @type {any} */ (null);
+        const appFactory = vi.fn((options) => {
+            projectActions = options.projectActions;
+            return app;
+        });
+
+        await bootAppShell({
+            document: createRouteDocument('configurator'),
+            location,
+            runtimeConfig: { devBackend: 'local' },
+            authService,
+            projectApi,
+            appFactory
+        });
+
+        if (!projectActions) {
+            throw new Error('projectActions were not injected');
+        }
+
+        await projectActions.saveCurrentProject();
+        await projectActions.renameCurrentProject('  Renamed Study  ');
+        await projectActions.duplicateProject('project-1');
+
+        expect(projectApi.updateProject).toHaveBeenNthCalledWith(1, 'project-1', expect.objectContaining({
+            name: 'Arena Study',
+            state: expect.objectContaining({
+                _projectVersion: 'dashboard-cutover-v1',
+                activeOptionId: 'option-1',
+                sport: 'Football'
+            })
+        }));
+        expect(projectApi.updateProject).toHaveBeenNthCalledWith(2, 'project-1', expect.objectContaining({
+            name: 'Arena Study',
+            state: expect.objectContaining({
+                _projectVersion: 'dashboard-cutover-v1',
+                activeOptionId: 'option-1',
+                sport: 'Football'
+            })
+        }));
+        expect(app.setProjectSaveBusy).toHaveBeenCalledWith(true);
+        expect(app.setProjectSaveBusy).toHaveBeenCalledWith(false);
+        expect(app.setProjectName).toHaveBeenCalledWith('  Renamed Study  ');
+        expect(app.setProjectMetadata).toHaveBeenCalledWith(savedProject);
+        expect(app.setProjectMetadata).toHaveBeenCalledWith(renamedProject);
+        expect(app.setProjectStateDocument).toHaveBeenCalledWith(savedProject.state);
+        expect(app.setProjectStateDocument).toHaveBeenCalledWith(renamedProject.state);
+        expect(projectApi.createProject).toHaveBeenCalledWith({
+            name: buildDuplicateProjectName(loadedProject.name),
+            state: loadedProject.state
+        });
+        expect(app.setProjectStatus).toHaveBeenCalledWith('Saving project...', 'pending');
+        expect(app.setProjectStatus).toHaveBeenCalledWith('Duplicating project...', 'pending');
+        expect(app.setProjectStatus).toHaveBeenCalledWith(`Duplicated ${duplicatedProject.name}`, 'success');
+    });
+
+    it('injects option actions that stage the active snapshot before persisting and reload the selected option', async () => {
+        const location = createLocation(
+            'http://localhost/pages/configurator/index.html?project=project-1&devBackend=local'
+        );
+        const session = {
+            userId: 'pat@example.com',
+            displayName: 'Pat Example',
+            email: 'pat@example.com',
+            jobTitle: 'Design Technology Specialist II'
+        };
+        const currentProjectState = createProjectStateDocument({
+            sport: 'Football',
+            activeOptionId: 'option-1',
+            options: [
+                {
+                    id: 'option-1',
+                    name: 'Option 1',
+                    color: '#7aae1a',
+                    createdAt: '2026-03-16T00:00:00.000Z',
+                    updatedAt: '2026-03-16T00:00:00.000Z',
+                    state: { sport: 'Football' }
+                },
+                {
+                    id: 'option-2',
+                    name: 'Option 2',
+                    color: '#37996e',
+                    createdAt: '2026-03-16T00:05:00.000Z',
+                    updatedAt: '2026-03-16T00:05:00.000Z',
+                    state: { sport: 'Soccer' }
+                }
+            ]
+        });
+        const loadedProject = {
+            id: 'project-1',
+            name: 'Arena Study',
+            createdAt: '2026-03-16T00:00:00.000Z',
+            updatedAt: '2026-03-16T00:00:00.000Z',
+            state: currentProjectState
+        };
+        const selectedProject = {
+            ...loadedProject,
+            updatedAt: '2026-03-16T00:10:00.000Z',
+            state: {
+                ...currentProjectState,
+                sport: 'Soccer',
+                activeOptionId: 'option-2',
+                options: [
+                    {
+                        ...currentProjectState.options[0],
+                        updatedAt: '2026-03-16T00:09:00.000Z',
+                        state: { sport: 'Baseball' }
+                    },
+                    currentProjectState.options[1]
+                ]
+            }
+        };
+        const authService = {
+            getSession: vi.fn().mockResolvedValue(session),
+            signInWithMicrosoft: vi.fn()
+        };
+        const projectApi = {
+            getProject: vi.fn().mockResolvedValue(loadedProject),
+            updateProject: vi.fn().mockResolvedValue(selectedProject)
+        };
+        let liveProjectState = currentProjectState;
+        const app = {
+            destroy: vi.fn(),
+            init: vi.fn().mockResolvedValue(),
+            loadProject: vi.fn(),
+            replaceLiveState: vi.fn(),
+            setProjectMetadata: vi.fn(),
+            setProjectStateDocument: vi.fn((projectStateDocument) => {
+                liveProjectState = projectStateDocument;
+            }),
+            setProjectSaveBusy: vi.fn(),
+            setProjectStatus: vi.fn(),
+            setSession: vi.fn(),
+            captureStateSnapshot: vi.fn(() => ({ sport: 'Baseball' })),
+            getProjectMetadata: vi.fn(() => ({
+                id: 'project-1',
+                name: 'Arena Study'
+            })),
+            getProjectStateDocument: vi.fn(() => liveProjectState),
+            getProjectSaveRequest: vi.fn((projectStateDocument) => ({
+                name: 'Arena Study',
+                state: projectStateDocument
+            }))
+        };
+        let projectActions = /** @type {any} */ (null);
+        const appFactory = vi.fn((options) => {
+            projectActions = options.projectActions;
+            return app;
+        });
+
+        await bootAppShell({
+            document: createRouteDocument('configurator'),
+            location,
+            runtimeConfig: { devBackend: 'local' },
+            authService,
+            projectApi,
+            appFactory
+        });
+
+        if (!projectActions) {
+            throw new Error('projectActions were not injected');
+        }
+
+        await projectActions.selectOption('option-2');
+
+        expect(projectApi.updateProject).toHaveBeenCalledWith('project-1', expect.objectContaining({
+            name: 'Arena Study',
+            state: expect.objectContaining({
+                activeOptionId: 'option-2',
+                sport: 'Soccer',
+                options: expect.arrayContaining([
+                    expect.objectContaining({
+                        id: 'option-1',
+                        state: expect.objectContaining({
+                            sport: 'Baseball'
+                        })
+                    }),
+                    expect.objectContaining({
+                        id: 'option-2',
+                        state: expect.objectContaining({
+                            sport: 'Soccer'
+                        })
+                    })
+                ])
+            })
+        }));
+        expect(app.setProjectStateDocument).toHaveBeenCalledWith(selectedProject.state);
+        expect(app.replaceLiveState).toHaveBeenCalledWith(expect.objectContaining({
+            sport: 'Soccer',
+            setup: expect.any(Object),
+            bowl: expect.any(Object),
+            occupancy: expect.any(Object),
+            ui: expect.any(Object),
+            tiers: expect.any(Array),
+            bookmarks: expect.any(Array),
+            _version: expect.any(String)
+        }));
+        expect(app.setProjectStatus).toHaveBeenCalledWith('Switching option...', 'pending');
+        expect(app.setProjectStatus).toHaveBeenCalledWith('Switched to Option 2', 'success');
+    });
+
+    it('injects project actions that open projects in-place and replace the deleted current project', async () => {
+        const location = createLocation(
+            'http://localhost/pages/configurator/index.html?project=project-1&devBackend=local'
+        );
+        const history = {
+            replaceState: vi.fn()
+        };
+        const session = {
+            userId: 'pat@example.com',
+            displayName: 'Pat Example',
+            email: 'pat@example.com',
+            jobTitle: 'Design Technology Specialist II'
+        };
+        const initialProject = {
+            id: 'project-1',
+            name: 'Arena Study',
+            createdAt: '2026-03-16T00:00:00.000Z',
+            updatedAt: '2026-03-16T00:00:00.000Z',
+            state: { sport: 'Football' }
+        };
+        const openedProject = {
+            id: 'project-2',
+            name: 'Soccer Study',
+            createdAt: '2026-03-16T01:00:00.000Z',
+            updatedAt: '2026-03-16T01:00:00.000Z',
+            state: { sport: 'Soccer' }
+        };
+        const replacementProject = {
+            id: 'project-3',
+            name: 'Untitled Project',
+            createdAt: '2026-03-16T02:00:00.000Z',
+            updatedAt: '2026-03-16T02:00:00.000Z',
+            state: { sport: 'Football' }
+        };
+        const authService = {
+            getSession: vi.fn().mockResolvedValue(session),
+            signInWithMicrosoft: vi.fn()
+        };
+        const projectApi = {
+            getProject: vi.fn()
+                .mockResolvedValueOnce(initialProject)
+                .mockResolvedValueOnce(openedProject),
+            deleteProject: vi.fn().mockResolvedValue(),
+            createProject: vi.fn().mockResolvedValue(replacementProject)
+        };
+        let currentProjectId = 'project-1';
+        const app = {
+            destroy: vi.fn(),
+            init: vi.fn().mockResolvedValue(),
+            loadProject: vi.fn((project) => {
+                currentProjectId = project.id;
+            }),
+            setProjectStatus: vi.fn(),
+            setSession: vi.fn(),
+            getProjectMetadata: vi.fn(() => ({
+                id: currentProjectId,
+                name: currentProjectId === 'project-2' ? 'Soccer Study' : 'Arena Study'
+            }))
+        };
+        let projectActions = /** @type {any} */ (null);
+        const appFactory = vi.fn((options) => {
+            projectActions = options.projectActions;
+            return app;
+        });
+
+        await bootAppShell({
+            document: createRouteDocument('configurator'),
+            history,
+            location,
+            runtimeConfig: { devBackend: 'local' },
+            authService,
+            projectApi,
+            appFactory
+        });
+
+        if (!projectActions) {
+            throw new Error('projectActions were not injected');
+        }
+
+        await projectActions.openProject('project-2');
+        await projectActions.deleteProject('project-2');
+
+        expect(projectApi.getProject).toHaveBeenNthCalledWith(2, 'project-2');
+        expect(app.loadProject).toHaveBeenCalledWith(openedProject);
+        expect(app.loadProject).toHaveBeenCalledWith(replacementProject);
+        expect(projectApi.deleteProject).toHaveBeenCalledWith('project-2');
+        expect(projectApi.createProject).toHaveBeenCalledWith(expect.objectContaining({
+            name: 'Untitled Project',
+            state: expect.objectContaining({
+                _projectVersion: 'dashboard-cutover-v1',
+                activeOptionId: 'option-1',
+                sport: 'Football'
+            })
+        }));
+        expect(history.replaceState).toHaveBeenNthCalledWith(
+            1,
+            null,
+            '',
+            buildConfiguratorUrl('project-1', { devBackend: 'local' })
+        );
+        expect(history.replaceState).toHaveBeenNthCalledWith(
+            2,
+            null,
+            '',
+            buildConfiguratorUrl('project-2', { devBackend: 'local' })
+        );
+        expect(history.replaceState).toHaveBeenNthCalledWith(
+            3,
+            null,
+            '',
+            buildConfiguratorUrl('project-3', { devBackend: 'local' })
+        );
     });
 });

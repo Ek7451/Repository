@@ -3,28 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JLG Seating Bowl Project Dashboard</title>
-    <meta name="description" content="Project dashboard for saved seating bowl studies.">
-    <link rel="stylesheet" href="../styles-shared.css?v=1">
-    <link rel="stylesheet" href="./dashboard.css?v=1">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-</head>
-<body class="dashboard-shell" data-page="dashboard">
-    <div class="dashboard-stage">
-        <div class="dashboard-frame">
-            <div class="dashboard-hero">
-                <div class="dashboard-kicker">JLG Architects</div>
-                <h1>Seating Bowl Feasibility Tool</h1>
-                <p>
-                    Log in to view your saved seating bowl studies, manage your projects, and access resources to help you get the most out of the JLG Seating Bowl Project.
-                </p>
-            </div>
-            <div id="dashboardPageRoot"></div>
-        </div>
-    </div>
+    <title>JLG Seating Bowl Configurator Redirect</title>
+    <meta name="description" content="Redirecting the legacy dashboard route to the seating bowl configurator.">
+    <style>
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            font-family: system-ui, sans-serif;
+            background: #0f1113;
+            color: #f5f7f1;
+        }
 
+        body {
+            display: grid;
+            place-items: center;
+            padding: 24px;
+        }
+
+        main {
+            max-width: 32rem;
+            text-align: center;
+        }
+
+        a {
+            color: #d8ecb1;
+        }
+    </style>
+</head>
+<body data-page="dashboard">
+    <main>
+        <p>Redirecting from the legacy dashboard route to the seating bowl configurator...</p>
+        <noscript>
+            <p>
+                JavaScript is required for automatic routing.
+                Open <a href="../configurator/index.html">the configurator</a>.
+            </p>
+        </noscript>
+    </main>
     <script type="module" src="../../app.js?v=1"></script>
 </body>
 </html>
