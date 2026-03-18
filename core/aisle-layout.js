@@ -66,15 +66,6 @@ function stationDistance(path, uA, uB) {
     return d;
 }
 
-function isStationValid(path, stationRecords, u, minSpacingFt) {
-    if (!Number.isFinite(u)) return false;
-    const candidate = path.closed ? normalizeUnit(u) : clamp01(u);
-    for (let i = 0; i < stationRecords.length; i++) {
-        if (stationDistance(path, candidate, stationRecords[i].u) < (minSpacingFt - 1e-4)) return false;
-    }
-    return true;
-}
-
 function addStationRecord(path, stationRecords, rec, tolFt = 1e-3) {
     if (!path || path.length <= EPS) return false;
     const u = path.closed ? normalizeUnit(rec.u) : clamp01(rec.u);
@@ -83,129 +74,6 @@ function addStationRecord(path, stationRecords, rec, tolFt = 1e-3) {
     }
     stationRecords.push({ ...rec, u });
     return true;
-}
-
-function getGaps(path, stations) {
-    if (!stations.length) {
-        return [{ start: 0, span: 1, length: path.length }];
-    }
-
-    const sorted = dedupeSorted(stations.slice().sort((a, b) => a - b));
-    const gaps = [];
-
-    if (path.closed) {
-        for (let i = 0; i < sorted.length; i++) {
-            const a = sorted[i];
-            const b = (i === sorted.length - 1) ? sorted[0] + 1 : sorted[i + 1];
-            const span = b - a;
-            if (span > EPS) {
-                gaps.push({
-                    start: normalizeUnit(a),
-                    span,
-                    length: span * path.length
-                });
-            }
-        }
-        return gaps;
-    }
-
-    const open = [0, ...sorted, 1];
-    for (let i = 0; i < open.length - 1; i++) {
-        const start = open[i];
-        const end = open[i + 1];
-        const span = end - start;
-        if (span > EPS) {
-            gaps.push({
-                start,
-                span,
-                length: span * path.length
-            });
-        }
-    }
-    return gaps;
-}
-
-function gapCandidates(path, gap) {
-    const fractions = [0.5, 0.25, 0.75, 0.125, 0.875];
-    const out = [];
-    for (let i = 0; i < fractions.length; i++) {
-        const raw = gap.start + gap.span * fractions[i];
-        out.push(path.closed ? normalizeUnit(raw) : clamp01(raw));
-    }
-    return dedupeSorted(out.sort((a, b) => a - b), 1e-7);
-}
-
-function localGapLength(path, stations, u) {
-    if (!stations.length) return path.length;
-    const sorted = dedupeSorted(stations.slice().sort((a, b) => a - b));
-
-    if (path.closed) {
-        let prev = sorted[sorted.length - 1] - 1;
-        let next = sorted[0] + 1;
-        for (let i = 0; i < sorted.length; i++) {
-            if (sorted[i] <= u) prev = sorted[i];
-            if (sorted[i] >= u) {
-                next = sorted[i];
-                break;
-            }
-        }
-        return (next - prev) * path.length;
-    }
-
-    let prev = 0;
-    let next = 1;
-    for (let i = 0; i < sorted.length; i++) {
-        if (sorted[i] <= u) prev = sorted[i];
-        if (sorted[i] >= u) {
-            next = sorted[i];
-            break;
-        }
-    }
-    return Math.max(0, (next - prev) * path.length);
-}
-
-function nearestStationDistance(path, stationRecords, u) {
-    if (!stationRecords.length) return path.length;
-    let best = Infinity;
-    for (let i = 0; i < stationRecords.length; i++) {
-        const d = stationDistance(path, u, stationRecords[i].u);
-        if (d < best) best = d;
-    }
-    return Number.isFinite(best) ? best : path.length;
-}
-
-function axisClearance(path, u) {
-    const pt = samplePathPointByRatio(path, u);
-    return Math.min(Math.abs(pt.x), Math.abs(pt.y));
-}
-
-function isNearCenterAxes(path, u, axisExclusionFt) {
-    if (!(axisExclusionFt > 0)) return false;
-    return axisClearance(path, u) < axisExclusionFt;
-}
-
-function candidateScore(path, stationRecords, u) {
-    const stationUs = stationRecords.map(s => s.u);
-    const localGap = localGapLength(path, stationUs, u);
-    const nearest = nearestStationDistance(path, stationRecords, u);
-    const axis = Math.min(40, axisClearance(path, u));
-    return (localGap * 1.0) + (nearest * 0.75) + (axis * 0.05);
-}
-
-function betterSingle(a, b) {
-    if (!b) return true;
-    if (a.score > b.score + 1e-9) return true;
-    if (b.score > a.score + 1e-9) return false;
-    if (a.pathIndex !== b.pathIndex) return a.pathIndex < b.pathIndex;
-    return a.u < b.u;
-}
-
-function betterPair(a, b) {
-    if (!b) return true;
-    if (a.score > b.score + 1e-9) return true;
-    if (b.score > a.score + 1e-9) return false;
-    if (a.pathIndex !== b.pathIndex) return a.pathIndex < b.pathIndex;
-    return a.u < b.u;
 }
 
 function isAxisAligned(dir) {
@@ -226,11 +94,6 @@ function classifyAxisDirection(dir) {
     if (ax >= 0.92 && ay <= 0.35) return 'horizontal';
     if (ay >= 0.92 && ax <= 0.35) return 'vertical';
     return null;
-}
-
-function isAxisAlignedStation(path, u) {
-    const pt = samplePathPointByRatio(path, u);
-    return classifyAxisDirection(pt) !== null;
 }
 
 function scoreAxisEdgeMatch(path, u, targetCoord, actualCoord, preferU) {
@@ -507,68 +370,6 @@ export function sampleAisleBand(path, ratio, widthFt) {
     return { left, right, center };
 }
 
-/**
- * Detect chamfer corner stations with a stable ordinal index along the path.
- * The ordinal index is used to pair front/back chamfer points across offsets.
- * @param {Object} path
- * @returns {Array<{u:number,ordinal:number,dist:number,x:number,y:number}>}
- */
-function findChamferCornerAnchors(path) {
-    if (!path || !path.parts || path.parts.length < 2 || path.length <= EPS) return [];
-
-    /** @type {Array<{u:number,ordinal?:number,dist:number,x:number,y:number}>} */
-    const raw = [];
-    const parts = path.parts;
-    const count = parts.length;
-    const startIdx = path.closed ? 0 : 1;
-    const endIdx = path.closed ? count : (count - 1);
-
-    for (let i = startIdx; i < endIdx; i++) {
-        const prev = parts[(i - 1 + count) % count];
-        const next = parts[i % count];
-        if (!prev || !next || prev.type !== 'line' || next.type !== 'line') continue;
-
-        const prevDir = partEndDirection(prev);
-        const nextDir = partStartDirection(next);
-        const chamferLike =
-            (isDiagonal(prevDir) && isAxisAligned(nextDir)) ||
-            (isAxisAligned(prevDir) && isDiagonal(nextDir));
-        if (!chamferLike) continue;
-
-        const dist = next.startDist;
-        const u = path.closed ? normalizeUnit(dist / path.length) : clamp01(dist / path.length);
-        const pt = samplePathPoint(path, dist);
-        raw.push({ u, dist, x: pt.x, y: pt.y });
-    }
-
-    if (!raw.length) return [];
-
-    raw.sort((a, b) => a.u - b.u);
-    const deduped = [raw[0]];
-    for (let i = 1; i < raw.length; i++) {
-        if (Math.abs(raw[i].u - deduped[deduped.length - 1].u) > 1e-5) deduped.push(raw[i]);
-    }
-
-    // Closed paths can produce one duplicate across the wrap seam (0/1).
-    if (path.closed && deduped.length > 1) {
-        const first = deduped[0];
-        const last = deduped[deduped.length - 1];
-        if (stationDistance(path, first.u, last.u) < 1e-3) deduped.pop();
-    }
-
-    for (let i = 0; i < deduped.length; i++) {
-        deduped[i].ordinal = i;
-    }
-    return /** @type {Array<{u:number,ordinal:number,dist:number,x:number,y:number}>} */ (deduped);
-}
-
-function getCachedChamferAnchors(path, cache) {
-    if (!path) return [];
-    if (!cache) return findChamferCornerAnchors(path);
-    if (!cache.has(path)) cache.set(path, findChamferCornerAnchors(path));
-    return cache.get(path);
-}
-
 function computeWrappedSpan(startU, endU) {
     const start = normalizeUnit(startU);
     let end = normalizeUnit(endU);
@@ -579,6 +380,439 @@ function computeWrappedSpan(startU, endU) {
 function interpolateWrappedU(startU, endU, t) {
     const w = computeWrappedSpan(startU, endU);
     return normalizeUnit(w.start + w.span * clamp01(t));
+}
+
+function interpolatePathIntervalU(path, startU, endU, t) {
+    if (path && path.closed) return interpolateWrappedU(startU, endU, t);
+    const a = clamp01(startU);
+    const b = clamp01(endU);
+    return clamp01(a + (b - a) * clamp01(t));
+}
+
+function resolvePathIntervalT(path, startU, endU, u) {
+    if (!Number.isFinite(u)) return 0;
+    if (path && path.closed) {
+        const w = computeWrappedSpan(startU, endU);
+        let offset = normalizeUnit(u) - w.start;
+        if (offset < 0) offset += 1;
+        return w.span > EPS ? clamp01(offset / w.span) : 0;
+    }
+
+    const a = clamp01(startU);
+    const b = clamp01(endU);
+    const span = b - a;
+    if (Math.abs(span) <= EPS) return 0;
+    return clamp01((clamp01(u) - a) / span);
+}
+
+function isChamferTransition(prev, next) {
+    if (!prev || !next || prev.type !== 'line' || next.type !== 'line') return false;
+    const prevDir = partEndDirection(prev);
+    const nextDir = partStartDirection(next);
+    return (
+        (isDiagonal(prevDir) && isAxisAligned(nextDir)) ||
+        (isAxisAligned(prevDir) && isDiagonal(nextDir))
+    );
+}
+
+function isChamferLikePart(part) {
+    if (!part || part.type !== 'line') return false;
+    return isDiagonal(partStartDirection(part));
+}
+
+/**
+ * Collect stable chamfer/straight transition anchors along a path.
+ * @param {Object} path
+ * @returns {Array<{u:number,ordinal:number,dist:number,x:number,y:number}>}
+ */
+function collectTransitionAnchors(path) {
+    if (!path || !path.parts || !path.parts.length || path.length <= EPS) return [];
+
+    /** @type {Array<{u:number,ordinal?:number,dist:number,x:number,y:number}>} */
+    const raw = [];
+    const parts = path.parts;
+    const count = parts.length;
+
+    const pushAnchor = (dist) => {
+        const safeDist = Math.max(0, Math.min(path.length, Number(dist) || 0));
+        const u = path.closed ? normalizeUnit(safeDist / path.length) : clamp01(safeDist / path.length);
+        const pt = samplePathPoint(path, safeDist);
+        raw.push({ u, dist: safeDist, x: pt.x, y: pt.y });
+    };
+
+    if (path.closed) {
+        for (let i = 0; i < count; i++) {
+            const prev = parts[(i - 1 + count) % count];
+            const next = parts[i % count];
+            if (isChamferTransition(prev, next)) pushAnchor(next.startDist);
+        }
+    } else {
+        for (let i = 1; i < count; i++) {
+            const prev = parts[i - 1];
+            const next = parts[i];
+            if (isChamferTransition(prev, next)) pushAnchor(next.startDist);
+        }
+        if (isChamferLikePart(parts[0])) pushAnchor(0);
+        if (isChamferLikePart(parts[count - 1])) pushAnchor(path.length);
+    }
+
+    if (!raw.length) return [];
+
+    raw.sort((a, b) => a.u - b.u);
+    const deduped = [raw[0]];
+    for (let i = 1; i < raw.length; i++) {
+        if (Math.abs(raw[i].u - deduped[deduped.length - 1].u) > 1e-5) deduped.push(raw[i]);
+    }
+
+    if (path.closed && deduped.length > 1) {
+        const first = deduped[0];
+        const last = deduped[deduped.length - 1];
+        if (stationDistance(path, first.u, last.u) < 1e-3) deduped.pop();
+    }
+
+    for (let i = 0; i < deduped.length; i++) {
+        deduped[i].ordinal = i;
+    }
+
+    return /** @type {Array<{u:number,ordinal:number,dist:number,x:number,y:number}>} */ (deduped);
+}
+
+function getCachedPathTopologyEntry(path, cache) {
+    if (!path || !cache) return null;
+    const cached = cache.get(path);
+    if (cached && !Array.isArray(cached)) return cached;
+
+    const entry = cached && Array.isArray(cached)
+        ? { transitionAnchors: cached }
+        : {};
+    cache.set(path, entry);
+    return entry;
+}
+
+function getCachedTransitionAnchors(path, cache) {
+    if (!path) return [];
+    if (!cache) return collectTransitionAnchors(path);
+
+    const entry = getCachedPathTopologyEntry(path, cache);
+    if (!entry.transitionAnchors) entry.transitionAnchors = collectTransitionAnchors(path);
+    return entry.transitionAnchors;
+}
+
+function buildIntervalSideRecord(path, startAnchor, endAnchor) {
+    if (!path || !startAnchor || !endAnchor || path.length <= EPS) return null;
+
+    const span = path.closed
+        ? computeWrappedSpan(startAnchor.u, endAnchor.u).span
+        : Math.max(0, clamp01(endAnchor.u) - clamp01(startAnchor.u));
+    const startPt = samplePathPointByRatio(path, startAnchor.u);
+    const endPt = samplePathPointByRatio(path, endAnchor.u);
+    const axis = classifyAxisDirection({
+        x: endPt.x - startPt.x,
+        y: endPt.y - startPt.y
+    });
+
+    return {
+        startOrdinal: startAnchor.ordinal,
+        endOrdinal: endAnchor.ordinal,
+        startU: startAnchor.u,
+        endU: endAnchor.u,
+        span,
+        length: span * path.length,
+        startPt,
+        endPt,
+        axis
+    };
+}
+
+function getAnchorSetsForIntervals(anchors) {
+    if (Array.isArray(anchors)) {
+        return { front: anchors, back: anchors };
+    }
+
+    const front = Array.isArray(anchors && anchors.front) ? anchors.front : [];
+    const back = Array.isArray(anchors && anchors.back) ? anchors.back : front;
+    return { front, back };
+}
+
+function buildPerimeterIntervals(pathFront, pathBack, anchors) {
+    const anchorSets = getAnchorSetsForIntervals(anchors);
+    const frontAnchors = anchorSets.front;
+    const backAnchors = anchorSets.back;
+    const closed = pathFront
+        ? !!pathFront.closed
+        : !!(pathBack && pathBack.closed);
+    const count = Math.min(frontAnchors.length, backAnchors.length);
+    if (count < 2) return [];
+
+    const intervalCount = closed ? count : (count - 1);
+    const out = [];
+
+    for (let i = 0; i < intervalCount; i++) {
+        const nextIndex = closed ? ((i + 1) % count) : (i + 1);
+        const front = buildIntervalSideRecord(pathFront, frontAnchors[i], frontAnchors[nextIndex]);
+        const back = buildIntervalSideRecord(pathBack, backAnchors[i], backAnchors[nextIndex]);
+        const axis = back?.axis || front?.axis || null;
+
+        out.push({
+            index: i,
+            closed,
+            frontPath: pathFront,
+            backPath: pathBack,
+            front,
+            back,
+            axis,
+            family: axis ? 'straight' : 'chamfer',
+            symmetryKey: `interval:${i}`,
+            oppositeIndex: null
+        });
+    }
+
+    return out;
+}
+
+function buildSymmetryGroups(path, intervals, bowlConfig) {
+    const list = Array.isArray(intervals) ? intervals : [];
+    const bowlType = String(bowlConfig && bowlConfig.type ? bowlConfig.type : '').toLowerCase();
+    const supportsOpposites =
+        !!(path && path.closed) &&
+        list.length >= 2 &&
+        list.length % 2 === 0 &&
+        (bowlType === '' || bowlType === 'full');
+
+    for (let i = 0; i < list.length; i++) {
+        list[i].symmetryKey = `interval:${list[i].index}`;
+        list[i].oppositeIndex = null;
+    }
+
+    if (!supportsOpposites) return list;
+
+    const half = list.length / 2;
+    for (let i = 0; i < list.length; i++) {
+        const oppositeIndex = (i + half) % list.length;
+        list[i].oppositeIndex = oppositeIndex;
+        list[i].symmetryKey = `opposite:${Math.min(i, oppositeIndex)}`;
+    }
+
+    return list;
+}
+
+function buildPerimeterModel(frontPaths, backPaths, bowlConfig) {
+    const safeFrontPaths = Array.isArray(frontPaths) ? frontPaths : [];
+    const safeBackPaths = (Array.isArray(backPaths) && backPaths.length)
+        ? backPaths
+        : safeFrontPaths;
+    const pathCount = Math.max(safeFrontPaths.length, safeBackPaths.length);
+    const paths = new Array(pathCount).fill(null);
+
+    for (let pathIndex = 0; pathIndex < pathCount; pathIndex++) {
+        const frontPath = safeFrontPaths[pathIndex] || null;
+        const backPath = safeBackPaths[pathIndex] || frontPath;
+        if (!frontPath && !backPath) continue;
+
+        const frontAnchorsAll = collectTransitionAnchors(frontPath);
+        const backAnchorsAll = collectTransitionAnchors(backPath);
+        const transitionCount = Math.min(frontAnchorsAll.length, backAnchorsAll.length);
+        const frontAnchors = frontAnchorsAll.slice(0, transitionCount);
+        const backAnchors = backAnchorsAll.slice(0, transitionCount);
+        const intervals = buildPerimeterIntervals(frontPath, backPath, {
+            front: frontAnchors,
+            back: backAnchors
+        });
+        buildSymmetryGroups(frontPath || backPath, intervals, bowlConfig);
+
+        paths[pathIndex] = {
+            pathIndex,
+            frontPath,
+            backPath,
+            closed: !!((frontPath && frontPath.closed) || (backPath && backPath.closed)),
+            frontAnchors,
+            backAnchors,
+            intervals
+        };
+    }
+
+    return {
+        bowlType: String(bowlConfig && bowlConfig.type ? bowlConfig.type : ''),
+        cornerType: String(bowlConfig && bowlConfig.corner ? bowlConfig.corner : ''),
+        paths
+    };
+}
+
+function getPerimeterIntervalByIndex(pathFront, pathBack, aisle, cache) {
+    if (!aisle || !Number.isFinite(aisle.segmentIndex)) return null;
+    const intervals = getCachedPerimeterIntervals(pathFront, pathBack, cache);
+    if (!intervals.length) return null;
+
+    const closed = pathFront
+        ? !!pathFront.closed
+        : !!(pathBack && pathBack.closed);
+    let index = Math.max(0, Math.floor(Number(aisle.segmentIndex) || 0));
+    if (closed) index %= intervals.length;
+    else index = Math.min(intervals.length - 1, index);
+    return intervals[index] || null;
+}
+
+function getCachedPerimeterIntervals(pathFront, pathBack, cache) {
+    const sourcePath = pathFront || pathBack;
+    const targetPath = pathBack || pathFront;
+    if (!sourcePath || !targetPath) return [];
+
+    if (!cache) {
+        return buildPerimeterIntervals(pathFront, pathBack, {
+            front: collectTransitionAnchors(pathFront),
+            back: collectTransitionAnchors(pathBack)
+        });
+    }
+
+    const entry = getCachedPathTopologyEntry(sourcePath, cache);
+    if (!entry.intervalsByTarget) entry.intervalsByTarget = new Map();
+
+    if (!entry.intervalsByTarget.has(targetPath)) {
+        entry.intervalsByTarget.set(targetPath, buildPerimeterIntervals(pathFront, pathBack, {
+            front: getCachedTransitionAnchors(pathFront, cache),
+            back: getCachedTransitionAnchors(pathBack, cache)
+        }));
+    }
+
+    return entry.intervalsByTarget.get(targetPath);
+}
+
+function normalizeResolvedStationRatios(pathFront, pathBack, uFront, uBack) {
+    if (!Number.isFinite(uFront) && Number.isFinite(uBack)) uFront = uBack;
+    if (!Number.isFinite(uBack) && Number.isFinite(uFront)) uBack = uFront;
+    if (!Number.isFinite(uFront) || !Number.isFinite(uBack)) return null;
+
+    if (pathFront) uFront = pathFront.closed ? normalizeUnit(uFront) : clamp01(uFront);
+    if (pathBack) uBack = pathBack.closed ? normalizeUnit(uBack) : clamp01(uBack);
+    return { uFront, uBack };
+}
+
+function normalizeAlignmentMode(mode) {
+    return String(mode || '').toLowerCase() === 'perpendicular'
+        ? 'perpendicular'
+        : 'radial';
+}
+
+function resolveTransitionOrdinal(pathFront, pathBack, aisle, cache = null) {
+    if (!aisle || !Number.isFinite(aisle.cornerOrdinal)) return null;
+
+    let uFront = Number.isFinite(aisle.uFront) ? aisle.uFront : (Number.isFinite(aisle.u) ? aisle.u : NaN);
+    let uBack = Number.isFinite(aisle.uBack) ? aisle.uBack : (Number.isFinite(aisle.u) ? aisle.u : NaN);
+    const ordinal = Math.max(0, Math.floor(Number(aisle.cornerOrdinal) || 0));
+
+    if (pathFront) {
+        const frontAnchors = getCachedTransitionAnchors(pathFront, cache);
+        if (ordinal < frontAnchors.length) uFront = frontAnchors[ordinal].u;
+    }
+
+    if (pathBack) {
+        const backAnchors = getCachedTransitionAnchors(pathBack, cache);
+        if (ordinal < backAnchors.length) uBack = backAnchors[ordinal].u;
+    }
+
+    return normalizeResolvedStationRatios(pathFront, pathBack, uFront, uBack);
+}
+
+function resolveRadialStationRatios(pathFront, pathBack, aisle, cache = null) {
+    if (!aisle) return null;
+
+    let uFront = Number.isFinite(aisle.uFront) ? aisle.uFront : (Number.isFinite(aisle.u) ? aisle.u : NaN);
+    let uBack = Number.isFinite(aisle.uBack) ? aisle.uBack : (Number.isFinite(aisle.u) ? aisle.u : NaN);
+    const interval = getPerimeterIntervalByIndex(pathFront, pathBack, aisle, cache);
+
+    if (interval && Number.isFinite(aisle.segmentT)) {
+        const segT = clamp01(aisle.segmentT);
+        if (interval.front) {
+            uFront = interpolatePathIntervalU(pathFront, interval.front.startU, interval.front.endU, segT);
+        }
+        if (interval.back) {
+            uBack = interpolatePathIntervalU(pathBack, interval.back.startU, interval.back.endU, segT);
+        }
+    }
+
+    return normalizeResolvedStationRatios(pathFront, pathBack, uFront, uBack);
+}
+
+function getIntervalSideForPath(intervalRecord, path) {
+    if (!intervalRecord || !path) return null;
+    if (intervalRecord.frontPath === path) return intervalRecord.front || null;
+    if (intervalRecord.backPath === path) return intervalRecord.back || null;
+    return null;
+}
+
+function projectPerpendicularStationToCounterpart(pathSource, pathTarget, intervalRecord, sourceU) {
+    if (!pathSource || !pathTarget || !Number.isFinite(sourceU)) return NaN;
+
+    const sourcePt = samplePathPointByRatio(pathSource, sourceU);
+    const sourceSide = getIntervalSideForPath(intervalRecord, pathSource);
+    const targetSide = getIntervalSideForPath(intervalRecord, pathTarget);
+    const axis = sourceSide?.axis || targetSide?.axis || classifyAxisDirection(sourcePt);
+    const fallbackU = targetSide
+        ? interpolatePathIntervalU(
+            pathTarget,
+            targetSide.startU,
+            targetSide.endU,
+            sourceSide
+                ? resolvePathIntervalT(pathSource, sourceSide.startU, sourceSide.endU, sourceU)
+                : 0.5
+        )
+        : (pathTarget.closed ? normalizeUnit(sourceU) : clamp01(sourceU));
+
+    if (axis === 'horizontal') {
+        const sideSign = sourcePt.y >= 0 ? 1 : -1;
+        const targetU = findAxisEdgeStationByCoordinate(
+            pathTarget,
+            'horizontal',
+            sourcePt.x,
+            sideSign,
+            fallbackU
+        );
+        if (Number.isFinite(targetU)) return targetU;
+    } else if (axis === 'vertical') {
+        const sideSign = sourcePt.x >= 0 ? 1 : -1;
+        const targetU = findAxisEdgeStationByCoordinate(
+            pathTarget,
+            'vertical',
+            sourcePt.y,
+            sideSign,
+            fallbackU
+        );
+        if (Number.isFinite(targetU)) return targetU;
+    }
+
+    if (sourceSide && targetSide) {
+        const t = resolvePathIntervalT(pathSource, sourceSide.startU, sourceSide.endU, sourceU);
+        return interpolatePathIntervalU(pathTarget, targetSide.startU, targetSide.endU, t);
+    }
+
+    return fallbackU;
+}
+
+function resolvePerpendicularStationRatios(pathFront, pathBack, aisle, cache = null) {
+    const radial = resolveRadialStationRatios(pathFront, pathBack, aisle, cache);
+    if (!radial) return null;
+
+    const interval = getPerimeterIntervalByIndex(pathFront, pathBack, aisle, cache);
+    const useBackDrivenSource =
+        Number.isFinite(aisle && aisle.segmentIndex) &&
+        Number.isFinite(aisle && aisle.segmentT) &&
+        pathBack &&
+        Number.isFinite(radial.uBack);
+
+    if (pathFront && pathBack) {
+        if (useBackDrivenSource) {
+            const projectedFront = projectPerpendicularStationToCounterpart(pathBack, pathFront, interval, radial.uBack);
+            if (Number.isFinite(projectedFront)) radial.uFront = projectedFront;
+        } else if (Number.isFinite(radial.uFront)) {
+            const projectedBack = projectPerpendicularStationToCounterpart(pathFront, pathBack, interval, radial.uFront);
+            if (Number.isFinite(projectedBack)) radial.uBack = projectedBack;
+        } else if (Number.isFinite(radial.uBack)) {
+            const projectedFront = projectPerpendicularStationToCounterpart(pathBack, pathFront, interval, radial.uBack);
+            if (Number.isFinite(projectedFront)) radial.uFront = projectedFront;
+        }
+    }
+
+    return normalizeResolvedStationRatios(pathFront, pathBack, radial.uFront, radial.uBack);
 }
 
 /**
@@ -594,235 +828,13 @@ function interpolateWrappedU(startU, endU, t) {
 export function resolveAisleStationRatios(pathFront, pathBack, aisle, chamferCache = null) {
     if (!aisle) return null;
 
-    let uFront = Number.isFinite(aisle.uFront) ? aisle.uFront : (Number.isFinite(aisle.u) ? aisle.u : NaN);
-    let uBack = Number.isFinite(aisle.uBack) ? aisle.uBack : (Number.isFinite(aisle.u) ? aisle.u : NaN);
+    const transition = resolveTransitionOrdinal(pathFront, pathBack, aisle, chamferCache);
+    if (transition) return transition;
 
-    if (Number.isFinite(aisle.cornerOrdinal)) {
-        const ordinal = Math.max(0, Math.floor(aisle.cornerOrdinal));
-
-        if (pathFront) {
-            const frontAnchors = getCachedChamferAnchors(pathFront, chamferCache);
-            if (ordinal < frontAnchors.length) uFront = frontAnchors[ordinal].u;
-        }
-
-        if (pathBack) {
-            const backAnchors = getCachedChamferAnchors(pathBack, chamferCache);
-            if (ordinal < backAnchors.length) uBack = backAnchors[ordinal].u;
-        }
-    }
-
-    if (
-        !Number.isFinite(aisle.cornerOrdinal) &&
-        Number.isFinite(aisle.segmentIndex) &&
-        Number.isFinite(aisle.segmentT)
-    ) {
-        const segIndex = Math.max(0, Math.floor(aisle.segmentIndex));
-        const segT = clamp01(aisle.segmentT);
-
-        if (pathFront) {
-            const frontAnchors = getCachedChamferAnchors(pathFront, chamferCache);
-            if (frontAnchors.length >= 2) {
-                const n = frontAnchors.length;
-                const i = segIndex % n;
-                const j = (i + 1) % n;
-                uFront = interpolateWrappedU(frontAnchors[i].u, frontAnchors[j].u, segT);
-            }
-        }
-
-        if (pathBack) {
-            const backAnchors = getCachedChamferAnchors(pathBack, chamferCache);
-            if (backAnchors.length >= 2) {
-                const n = backAnchors.length;
-                const i = segIndex % n;
-                const j = (i + 1) % n;
-                uBack = interpolateWrappedU(backAnchors[i].u, backAnchors[j].u, segT);
-            }
-        }
-    }
-
-    // For distributed aisles on straight edges, preserve world X/Y coordinate
-    // so front/back traces stay orthogonal to the long/side bowls.
-    if (!Number.isFinite(aisle.cornerOrdinal) && pathFront && pathBack && Number.isFinite(uFront)) {
-        const useBackDrivenAxis =
-            Number.isFinite(aisle.segmentIndex) &&
-            Number.isFinite(aisle.segmentT) &&
-            Number.isFinite(uBack);
-
-        const axisSourcePath = useBackDrivenAxis ? pathBack : pathFront;
-        const axisSourceU = useBackDrivenAxis ? uBack : uFront;
-        const axisPt = samplePathPointByRatio(axisSourcePath, axisSourceU);
-        const axisDir = classifyAxisDirection(axisPt);
-
-        if (axisDir === 'horizontal') {
-            const sideSign = axisPt.y >= 0 ? 1 : -1;
-            const targetCoord = axisPt.x;
-            const frontAligned = findAxisEdgeStationByCoordinate(pathFront, 'horizontal', targetCoord, sideSign, uFront);
-            const backAligned = findAxisEdgeStationByCoordinate(pathBack, 'horizontal', targetCoord, sideSign, uBack);
-            if (Number.isFinite(frontAligned)) uFront = frontAligned;
-            if (Number.isFinite(backAligned)) uBack = backAligned;
-        } else if (axisDir === 'vertical') {
-            const sideSign = axisPt.x >= 0 ? 1 : -1;
-            const targetCoord = axisPt.y;
-            const frontAligned = findAxisEdgeStationByCoordinate(pathFront, 'vertical', targetCoord, sideSign, uFront);
-            const backAligned = findAxisEdgeStationByCoordinate(pathBack, 'vertical', targetCoord, sideSign, uBack);
-            if (Number.isFinite(frontAligned)) uFront = frontAligned;
-            if (Number.isFinite(backAligned)) uBack = backAligned;
-        }
-    }
-
-    if (!Number.isFinite(uFront) && Number.isFinite(uBack)) uFront = uBack;
-    if (!Number.isFinite(uBack) && Number.isFinite(uFront)) uBack = uFront;
-    if (!Number.isFinite(uFront) || !Number.isFinite(uBack)) return null;
-
-    if (pathFront) uFront = pathFront.closed ? normalizeUnit(uFront) : clamp01(uFront);
-    if (pathBack) uBack = pathBack.closed ? normalizeUnit(uBack) : clamp01(uBack);
-    return { uFront, uBack };
-}
-
-/**
- * Compute aisle station ratios from one or more paths.
- * Placement priority:
- * 1) Forced stations (e.g., chamfer corners)
- * 2) Symmetric opposite pairs on closed paths
- * 3) Single-station fill for any odd remainder
- * @param {Array} paths Output of buildGeometryPaths
- * @param {number} targetAisles
- * @param {Object} [options]
- * @returns {Array<{pathIndex:number,u:number,forced:boolean,anchorType:string,cornerOrdinal?:number}>}
- */
-function computeAisleStations(paths, targetAisles, options = {}) {
-    if (!Array.isArray(paths) || paths.length === 0) return [];
-    const target = Math.max(0, Math.round(Number(targetAisles) || 0));
-
-    const avoidCenterAxes = options.avoidCenterAxes !== false;
-    const axisToleranceFt = Number.isFinite(options.axisToleranceFt) ? options.axisToleranceFt : 2;
-    const axisExclusionFt = Number.isFinite(options.axisExclusionFt)
-        ? Math.max(0, Number(options.axisExclusionFt) || 0)
-        : Math.max(0, axisToleranceFt);
-    const minSpacingFt = Math.max(0.1, Number(options.minSpacingFt) || 1);
-    const forcedStations = Array.isArray(options.forcedStations) ? options.forcedStations : [];
-    const allowOppositePairs = options.allowOppositePairs !== false;
-    const axisOnlyCandidates = options.axisOnlyCandidates === true;
-
-    const stationsByPath = paths.map(() => []);
-    for (let i = 0; i < forcedStations.length; i++) {
-        const fs = forcedStations[i];
-        const path = paths[fs.pathIndex];
-        if (!path || path.length <= EPS) continue;
-        addStationRecord(path, stationsByPath[fs.pathIndex], {
-            u: fs.u,
-            forced: true,
-            anchorType: fs.anchorType || 'forced',
-            cornerOrdinal: Number.isFinite(fs.cornerOrdinal) ? Math.max(0, Math.floor(fs.cornerOrdinal)) : undefined,
-            segmentIndex: Number.isFinite(fs.segmentIndex) ? Math.max(0, Math.floor(fs.segmentIndex)) : undefined,
-            segmentT: Number.isFinite(fs.segmentT) ? clamp01(fs.segmentT) : undefined
-        }, 1e-3);
-    }
-
-    let total = stationsByPath.reduce((sum, list) => sum + list.length, 0);
-    while (total < target) {
-        const remaining = target - total;
-        let bestPair = null;
-        let bestSingle = null;
-
-        for (let pathIndex = 0; pathIndex < paths.length; pathIndex++) {
-            const path = paths[pathIndex];
-            if (!path || path.length <= EPS) continue;
-            const stationRecords = stationsByPath[pathIndex];
-            const stationUs = stationRecords.map(s => s.u);
-            const gaps = getGaps(path, stationUs).sort((a, b) => b.length - a.length);
-
-            for (let g = 0; g < gaps.length; g++) {
-                const gap = gaps[g];
-                const candidates = gapCandidates(path, gap);
-
-                for (let c = 0; c < candidates.length; c++) {
-                    const u = candidates[c];
-                    if (!isStationValid(path, stationRecords, u, minSpacingFt)) continue;
-                    if (avoidCenterAxes && isNearCenterAxes(path, u, axisExclusionFt)) continue;
-                    if (axisOnlyCandidates && !isAxisAlignedStation(path, u)) continue;
-
-                    const score = candidateScore(path, stationRecords, u);
-                    const singleCandidate = { pathIndex, u, score };
-                    if (betterSingle(singleCandidate, bestSingle)) bestSingle = singleCandidate;
-
-                    if (remaining < 2 || !allowOppositePairs || !path.closed) continue;
-
-                    const uOpp = normalizeUnit(u + 0.5);
-                    if (!isStationValid(path, stationRecords, uOpp, minSpacingFt)) continue;
-                    if (avoidCenterAxes && isNearCenterAxes(path, uOpp, axisExclusionFt)) continue;
-                    if (axisOnlyCandidates && !isAxisAlignedStation(path, uOpp)) continue;
-                    if (stationDistance(path, u, uOpp) < (minSpacingFt - 1e-4)) continue;
-
-                    const scoreOpp = candidateScore(path, stationRecords, uOpp);
-                    const pairCandidate = {
-                        pathIndex,
-                        u,
-                        uOpp,
-                        score: score + scoreOpp + 0.75 // hard bias toward symmetry first
-                    };
-                    if (betterPair(pairCandidate, bestPair)) bestPair = pairCandidate;
-                }
-            }
-        }
-
-        // Symmetry-first: always place a valid pair if we still need at least 2.
-        if (remaining >= 2 && bestPair) {
-            const path = paths[bestPair.pathIndex];
-            const list = stationsByPath[bestPair.pathIndex];
-            const addA = addStationRecord(path, list, {
-                u: bestPair.u,
-                forced: false,
-                anchorType: 'distributed_pair'
-            }, 1e-3);
-            const addB = addStationRecord(path, list, {
-                u: bestPair.uOpp,
-                forced: false,
-                anchorType: 'distributed_pair'
-            }, 1e-3);
-            total += (addA ? 1 : 0) + (addB ? 1 : 0);
-            if (addA || addB) continue;
-        }
-
-        if (bestSingle) {
-            const path = paths[bestSingle.pathIndex];
-            const list = stationsByPath[bestSingle.pathIndex];
-            if (addStationRecord(path, list, {
-                u: bestSingle.u,
-                forced: false,
-                anchorType: 'distributed_single'
-            }, 1e-3)) {
-                total += 1;
-                continue;
-            }
-        }
-
-        break;
-    }
-
-    const out = [];
-    for (let pathIndex = 0; pathIndex < stationsByPath.length; pathIndex++) {
-        const path = paths[pathIndex];
-        const records = stationsByPath[pathIndex]
-            .slice()
-            .sort((a, b) => a.u - b.u);
-
-        for (let i = 0; i < records.length; i++) {
-            const r = records[i];
-            const aisle = {
-                pathIndex,
-                u: path.closed ? normalizeUnit(r.u) : clamp01(r.u),
-                forced: !!r.forced,
-                anchorType: r.anchorType || (r.forced ? 'forced' : 'distributed')
-            };
-            if (Number.isFinite(r.cornerOrdinal)) aisle.cornerOrdinal = r.cornerOrdinal;
-            if (Number.isFinite(r.segmentIndex)) aisle.segmentIndex = r.segmentIndex;
-            if (Number.isFinite(r.segmentT)) aisle.segmentT = r.segmentT;
-            out.push(aisle);
-        }
-    }
-
-    return out;
+    const alignmentMode = normalizeAlignmentMode(aisle.alignmentMode);
+    return alignmentMode === 'perpendicular'
+        ? resolvePerpendicularStationRatios(pathFront, pathBack, aisle, chamferCache)
+        : resolveRadialStationRatios(pathFront, pathBack, aisle, chamferCache);
 }
 
 function computeEvenOpenPathAisleStations(paths, targetAisles, aisleWidthFt = 0) {
@@ -869,6 +881,26 @@ function computeEvenAislesForOpenPaths(paths, targetAisles, aisleWidthFt = 0) {
                 pathIndex
             });
         }
+    }
+    return out;
+}
+
+function computeEvenClosedPathAisleStations(paths, targetAisles) {
+    if (!Array.isArray(paths) || paths.length !== 1) return [];
+    const path = paths[0];
+    if (!path || !path.closed || path.length <= EPS) return [];
+
+    const target = Math.max(0, Math.round(Number(targetAisles) || 0));
+    if (target <= 0) return [];
+
+    const out = [];
+    for (let i = 0; i < target; i++) {
+        out.push({
+            pathIndex: 0,
+            u: normalizeUnit(i / target),
+            forced: false,
+            anchorType: 'distributed_closed_even'
+        });
     }
     return out;
 }
@@ -920,76 +952,6 @@ function distributeCoordsEvenly(intervals, count) {
         if (!Number.isFinite(coord)) coord = intervals[intervals.length - 1].max;
         out.push(coord);
     }
-    return out;
-}
-
-function intervalPressure(lengthFt, count) {
-    return lengthFt / (count + 1);
-}
-
-function spacingVariance(lengthFt, count, targetGapFt) {
-    const gap = intervalPressure(lengthFt, Math.max(0, count));
-    const delta = gap - targetGapFt;
-    return delta * delta;
-}
-
-function pairAllocationBenefit(intervals, counts, i, j, targetGapFt) {
-    const cI = Math.max(0, Math.floor(Number(counts[i]) || 0));
-    const cJ = Math.max(0, Math.floor(Number(counts[j]) || 0));
-    const beforeErr =
-        spacingVariance(intervals[i].length, cI, targetGapFt) +
-        spacingVariance(intervals[j].length, cJ, targetGapFt);
-    const afterErr =
-        spacingVariance(intervals[i].length, cI + 1, targetGapFt) +
-        spacingVariance(intervals[j].length, cJ + 1, targetGapFt);
-    return {
-        benefit: beforeErr - afterErr,
-        pressure: Math.max(
-            intervalPressure(intervals[i].length, cI),
-            intervalPressure(intervals[j].length, cJ)
-        )
-    };
-}
-
-function singleAllocationBenefit(intervals, counts, i, targetGapFt) {
-    const c = Math.max(0, Math.floor(Number(counts[i]) || 0));
-    const beforeErr = spacingVariance(intervals[i].length, c, targetGapFt);
-    const afterErr = spacingVariance(intervals[i].length, c + 1, targetGapFt);
-    return {
-        benefit: beforeErr - afterErr,
-        pressure: intervalPressure(intervals[i].length, c)
-    };
-}
-
-function buildChamferIntervals(path, anchors, cornerCount) {
-    const n = Math.max(0, Math.min(cornerCount, anchors.length));
-    const out = [];
-    if (!path || path.length <= EPS || n < 2) return out;
-
-    for (let i = 0; i < n; i++) {
-        const j = (i + 1) % n;
-        const startU = anchors[i].u;
-        const endU = anchors[j].u;
-        const w = computeWrappedSpan(startU, endU);
-        const startPt = samplePathPointByRatio(path, startU);
-        const endPt = samplePathPointByRatio(path, endU);
-        const axis = classifyAxisDirection({
-            x: endPt.x - startPt.x,
-            y: endPt.y - startPt.y
-        });
-
-        out.push({
-            index: i,
-            startU,
-            endU,
-            span: w.span,
-            length: w.span * path.length,
-            startPt,
-            endPt,
-            axis
-        });
-    }
-
     return out;
 }
 
@@ -1074,381 +1036,488 @@ function estimateWorstSeatsInInterval(interval, count, seatWidthIn, aisleWidthFt
     return worst;
 }
 
-function buildChamferSymmetricStations(paths, targetAisles, options = {}) {
-    if (!Array.isArray(paths) || !paths.length) return [];
-    const pathIndex = Number.isFinite(options.pathIndex) ? Math.max(0, Math.floor(options.pathIndex)) : 0;
-    const path = paths[pathIndex];
-    if (!path || path.length <= EPS || !path.closed) return [];
+function compareAislesByPathAndStation(a, b) {
+    const pathDelta = (Number(a?.pathIndex) || 0) - (Number(b?.pathIndex) || 0);
+    if (pathDelta !== 0) return pathDelta;
+    return (Number(a?.u) || 0) - (Number(b?.u) || 0);
+}
 
-    const backPath = (options.backPath && options.backPath.length > EPS) ? options.backPath : path;
-    const frontAnchorsAll = findChamferCornerAnchors(path);
-    const backAnchorsAll = findChamferCornerAnchors(backPath);
-    const cornerCount = Math.min(frontAnchorsAll.length, backAnchorsAll.length);
-    if (cornerCount < 2) {
-        return computeAisleStations(paths, targetAisles, options);
-    }
+function getPerimeterIntervalEntries(perimeterModel, predicate = null) {
+    const out = [];
+    if (!perimeterModel || !Array.isArray(perimeterModel.paths)) return out;
 
-    const frontAnchors = frontAnchorsAll.slice(0, cornerCount);
-    const backAnchors = backAnchorsAll.slice(0, cornerCount);
-    const intervalsFront = buildChamferIntervals(path, frontAnchors, cornerCount);
-    const intervalsBack = buildChamferIntervals(backPath, backAnchors, cornerCount);
+    for (let pathIndex = 0; pathIndex < perimeterModel.paths.length; pathIndex++) {
+        const pathRecord = perimeterModel.paths[pathIndex];
+        if (!pathRecord || !Array.isArray(pathRecord.intervals)) continue;
 
-    const forcedStations = Array.isArray(options.forcedStations)
-        ? options.forcedStations.filter(fs => Math.max(0, Math.floor(Number(fs.pathIndex) || 0)) === pathIndex)
-        : [];
-    const widthFt = Math.max(0, Number(options.aisleWidthFt) || 0);
-    const axisExclusionFt = Math.max(0, Number(options.axisExclusionFt) || 0);
-    const minSpacingFt = Math.max(0.1, Number(options.minSpacingFt) || 1);
-    const cornerClearanceFt = Math.max(2.0, widthFt * 1.0, minSpacingFt * 0.5);
-    const safeTarget = Math.max(0, Math.round(Number(targetAisles) || 0));
-    const seatWidthIn = Math.max(1, Number(options.seatWidthIn) || 20);
-    const maxSeatsBetweenAisles = Number(options.maxSeatsBetweenAisles);
-    const enforceMaxSeats = Number.isFinite(maxSeatsBetweenAisles) && maxSeatsBetweenAisles > 0;
-    const maxGapFt = enforceMaxSeats
-        ? ((maxSeatsBetweenAisles * seatWidthIn) / 12.0) + widthFt
-        : Infinity;
+        for (let i = 0; i < pathRecord.intervals.length; i++) {
+            const interval = pathRecord.intervals[i];
+            if (!interval) continue;
 
-    const isChamferInterval = (idx) => intervalsBack[idx] && intervalsBack[idx].axis === null;
-    const chamferIndices = [];
-    const straightIndices = [];
-    for (let i = 0; i < cornerCount; i++) {
-        if (isChamferInterval(i)) chamferIndices.push(i);
-        else straightIndices.push(i);
-    }
-    const chamferIndexSet = new Set(chamferIndices);
-    const hasChamferRing =
-        chamferIndices.length >= 4 &&
-        cornerCount % 2 === 0 &&
-        (() => {
-            const half = cornerCount / 2;
-            for (let i = 0; i < chamferIndices.length; i++) {
-                const idx = chamferIndices[i];
-                const opp = (idx + half) % cornerCount;
-                if (!chamferIndexSet.has(opp)) return false;
-            }
-            return true;
-        })();
-
-    const list = [];
-    const forcedOrdinals = new Set();
-
-    for (let i = 0; i < forcedStations.length; i++) {
-        const fs = forcedStations[i];
-        const ord = Number.isFinite(fs.cornerOrdinal) ? Math.max(0, Math.floor(fs.cornerOrdinal)) : NaN;
-        if (Number.isFinite(ord) && ord < cornerCount) forcedOrdinals.add(ord);
-        addStationRecord(path, list, {
-            u: fs.u,
-            forced: true,
-            anchorType: fs.anchorType || 'forced_chamfer',
-            cornerOrdinal: Number.isFinite(ord) && ord < cornerCount ? ord : undefined
-        }, 1e-3);
-    }
-
-    // Ensure every detected chamfer corner is forced.
-    for (let ord = 0; ord < cornerCount; ord++) {
-        if (forcedOrdinals.has(ord)) continue;
-        addStationRecord(path, list, {
-            u: frontAnchors[ord].u,
-            forced: true,
-            anchorType: 'forced_chamfer',
-            cornerOrdinal: ord
-        }, 1e-3);
-    }
-
-    const forcedCount = list.length;
-    const requiredCounts = new Array(cornerCount).fill(0);
-
-    if (enforceMaxSeats && maxGapFt > EPS) {
-        for (let i = 0; i < cornerCount; i++) {
-            let c = 0;
-            let worst = estimateWorstSeatsInInterval(intervalsBack[i], c, seatWidthIn, widthFt, axisExclusionFt, cornerClearanceFt);
-            while (worst > maxSeatsBetweenAisles && c < 500) {
-                c += 1;
-                worst = estimateWorstSeatsInInterval(intervalsBack[i], c, seatWidthIn, widthFt, axisExclusionFt, cornerClearanceFt);
-            }
-            requiredCounts[i] = c;
+            const entry = {
+                pathIndex: pathRecord.pathIndex,
+                pathRecord,
+                interval
+            };
+            if (!predicate || predicate(entry)) out.push(entry);
         }
     }
 
-    if (cornerCount % 2 === 0) {
-        const half = cornerCount / 2;
-        for (let i = 0; i < half; i++) {
-            const j = i + half;
-            const base = Math.max(requiredCounts[i], requiredCounts[j]);
-            requiredCounts[i] = base;
-            requiredCounts[j] = base;
+    return out;
+}
+
+function createPerimeterCountMatrix(perimeterModel, sourceCounts = null) {
+    const paths = Array.isArray(perimeterModel?.paths) ? perimeterModel.paths : [];
+    const out = new Array(paths.length).fill(null).map(() => []);
+
+    for (let pathIndex = 0; pathIndex < paths.length; pathIndex++) {
+        const length = paths[pathIndex]?.intervals?.length || 0;
+        out[pathIndex] = new Array(length).fill(0);
+
+        const sourceRow = Array.isArray(sourceCounts?.[pathIndex]) ? sourceCounts[pathIndex] : [];
+        for (let i = 0; i < length; i++) {
+            out[pathIndex][i] = Math.max(0, Math.floor(Number(sourceRow[i]) || 0));
         }
     }
 
-    // Keep chamfer corner intermediate aisle demand uniform across all chamfers.
-    // This prevents the "one opposite chamfer pair gets an extra aisle" outcome.
-    if (hasChamferRing) {
-        let chamferRequired = 0;
-        for (let i = 0; i < chamferIndices.length; i++) {
-            chamferRequired = Math.max(chamferRequired, requiredCounts[chamferIndices[i]]);
-        }
-        for (let i = 0; i < chamferIndices.length; i++) {
-            requiredCounts[chamferIndices[i]] = chamferRequired;
-        }
-    }
+    return out;
+}
 
-    const counts = new Array(cornerCount).fill(0);
-    const requiredDistributed = requiredCounts.reduce((sum, c) => sum + c, 0);
-    const requestedDistributed = Math.max(0, safeTarget - forcedCount);
-    // Max seats/row is a hard limit. If the requested aisle target cannot satisfy
-    // the back-row seat cap (especially at chamfers), allow extra aisles.
-    const desiredDistributed = (enforceMaxSeats && requiredDistributed > 0)
-        ? Math.max(requestedDistributed, requiredDistributed)
-        : requestedDistributed;
+function getIntervalSide(interval) {
+    return interval?.back || interval?.front || null;
+}
 
-    const totalBackIntervalLength = intervalsBack.reduce((sum, interval) => sum + Math.max(0, interval.length), 0);
-    const targetGapFt = totalBackIntervalLength > EPS
-        ? totalBackIntervalLength / Math.max(1, desiredDistributed + cornerCount)
-        : 0;
+function getIntervalLength(interval) {
+    return Math.max(0, Number(getIntervalSide(interval)?.length) || 0);
+}
 
-    let remaining = desiredDistributed;
-
-    const canAddChamferRing = () => {
-        // Only add chamfer extras when they can be applied evenly to ALL chamfers.
-        if (!hasChamferRing) return false;
-        if (remaining < chamferIndices.length) return false;
-        return true;
+function getIntervalMidpoint(interval) {
+    const side = getIntervalSide(interval);
+    return {
+        x: ((Number(side?.startPt?.x) || 0) + (Number(side?.endPt?.x) || 0)) * 0.5,
+        y: ((Number(side?.startPt?.y) || 0) + (Number(side?.endPt?.y) || 0)) * 0.5
     };
+}
 
-    // Use the requested aisle count as the baseline target, but when max seats/row
-    // is enabled treat it as a hard cap requirement and add aisles if needed.
-    if (enforceMaxSeats && requiredDistributed > 0 && remaining > 0) {
-        if (cornerCount % 2 === 0) {
-            const half = cornerCount / 2;
-            while (remaining >= 2) {
-                let bestIdx = -1;
-                let bestNeed = -Infinity;
-                let bestPressure = -Infinity;
-                for (let i = 0; i < half; i++) {
-                    const j = i + half;
-                    if (isChamferInterval(i) && isChamferInterval(j)) continue;
-                    const need = Math.max(0, requiredCounts[i] - counts[i]) + Math.max(0, requiredCounts[j] - counts[j]);
-                    if (need <= 0) continue;
-                    const pressure = Math.max(
-                        intervalPressure(intervalsBack[i].length, counts[i]),
-                        intervalPressure(intervalsBack[j].length, counts[j])
-                    );
-                    if (
-                        need > bestNeed + 1e-9 ||
-                        (Math.abs(need - bestNeed) <= 1e-9 && pressure > bestPressure + 1e-9)
-                    ) {
-                        bestNeed = need;
-                        bestPressure = pressure;
-                        bestIdx = i;
-                    }
-                }
-                if (bestIdx < 0) break;
-                counts[bestIdx] += 1;
-                counts[bestIdx + half] += 1;
-                remaining -= 2;
-            }
-        }
+function comparePreferredIntervalEntries(a, b) {
+    if (!a) return 1;
+    if (!b) return -1;
 
-        // Chamfer extras are only added as a full ring so all corners stay even.
-        while (canAddChamferRing()) {
-            let chamferNeed = 0;
-            for (let i = 0; i < chamferIndices.length; i++) {
-                const idx = chamferIndices[i];
-                chamferNeed = Math.max(chamferNeed, Math.max(0, requiredCounts[idx] - counts[idx]));
-            }
-            if (chamferNeed <= 0) break;
-            for (let i = 0; i < chamferIndices.length; i++) {
-                counts[chamferIndices[i]] += 1;
-            }
-            remaining -= chamferIndices.length;
-        }
+    const lengthDelta = getIntervalLength(b.interval) - getIntervalLength(a.interval);
+    if (Math.abs(lengthDelta) > 1e-9) return lengthDelta;
 
-        while (remaining > 0) {
-            let bestIdx = -1;
-            let bestNeed = -Infinity;
-            let bestPressure = -Infinity;
-            for (let i = 0; i < cornerCount; i++) {
-                if (isChamferInterval(i)) continue;
-                const need = Math.max(0, requiredCounts[i] - counts[i]);
-                if (need <= 0) continue;
-                const pressure = intervalPressure(intervalsBack[i].length, counts[i]);
-                if (
-                    need > bestNeed + 1e-9 ||
-                    (Math.abs(need - bestNeed) <= 1e-9 && pressure > bestPressure + 1e-9)
-                ) {
-                    bestNeed = need;
-                    bestPressure = pressure;
-                    bestIdx = i;
-                }
-            }
-            if (bestIdx < 0) break;
-            counts[bestIdx] += 1;
-            remaining -= 1;
+    const aMid = getIntervalMidpoint(a.interval);
+    const bMid = getIntervalMidpoint(b.interval);
+    if (Math.abs(bMid.y - aMid.y) > 1e-9) return bMid.y - aMid.y;
+    if (Math.abs(bMid.x - aMid.x) > 1e-9) return bMid.x - aMid.x;
+    if (a.pathIndex !== b.pathIndex) return a.pathIndex - b.pathIndex;
+    return a.interval.index - b.interval.index;
+}
+
+function getPreferredPairMidpoint(pairEntry) {
+    const first = getIntervalMidpoint(pairEntry.interval);
+    const second = getIntervalMidpoint(pairEntry.opposite);
+    if (second.y > first.y + 1e-9) return second;
+    if (first.y > second.y + 1e-9) return first;
+    if (second.x > first.x + 1e-9) return second;
+    return first;
+}
+
+function comparePreferredPairEntries(a, b) {
+    if (!a) return 1;
+    if (!b) return -1;
+
+    const aLength = Math.max(getIntervalLength(a.interval), getIntervalLength(a.opposite));
+    const bLength = Math.max(getIntervalLength(b.interval), getIntervalLength(b.opposite));
+    if (Math.abs(bLength - aLength) > 1e-9) return bLength - aLength;
+
+    const aMid = getPreferredPairMidpoint(a);
+    const bMid = getPreferredPairMidpoint(b);
+    if (Math.abs(bMid.y - aMid.y) > 1e-9) return bMid.y - aMid.y;
+    if (Math.abs(bMid.x - aMid.x) > 1e-9) return bMid.x - aMid.x;
+    if (a.pathIndex !== b.pathIndex) return a.pathIndex - b.pathIndex;
+    return a.interval.index - b.interval.index;
+}
+
+function isSymmetricClosedPathRecord(pathRecord) {
+    return !!pathRecord?.closed &&
+        Array.isArray(pathRecord?.intervals) &&
+        pathRecord.intervals.some(interval => Number.isFinite(interval?.oppositeIndex));
+}
+
+function getStraightPairEntries(perimeterModel) {
+    return getPerimeterIntervalEntries(perimeterModel, ({ pathRecord, interval }) => {
+        if (!isSymmetricClosedPathRecord(pathRecord)) return false;
+        if (interval?.family !== 'straight') return false;
+        if (!Number.isFinite(interval?.oppositeIndex)) return false;
+        if (interval.index > interval.oppositeIndex) return false;
+
+        const opposite = pathRecord.intervals[interval.oppositeIndex];
+        return !!opposite && opposite.family === 'straight';
+    }).map((entry) => ({
+        ...entry,
+        opposite: entry.pathRecord.intervals[entry.interval.oppositeIndex]
+    }));
+}
+
+function buildForcedTransitionAisles(perimeterModel) {
+    const out = [];
+    if (!perimeterModel || !Array.isArray(perimeterModel.paths)) return out;
+
+    for (let pathIndex = 0; pathIndex < perimeterModel.paths.length; pathIndex++) {
+        const pathRecord = perimeterModel.paths[pathIndex];
+        const path = pathRecord?.frontPath || pathRecord?.backPath;
+        const anchors = Array.isArray(pathRecord?.frontAnchors) ? pathRecord.frontAnchors : [];
+        if (!path || !anchors.length) continue;
+
+        for (let i = 0; i < anchors.length; i++) {
+            out.push({
+                pathIndex: pathRecord.pathIndex,
+                u: path.closed ? normalizeUnit(anchors[i].u) : clamp01(anchors[i].u),
+                forced: true,
+                anchorType: 'forced_chamfer',
+                cornerOrdinal: anchors[i].ordinal
+            });
         }
     }
 
-    const averagePressure = (indices) => {
-        if (!indices.length) return NaN;
-        let sum = 0;
-        for (let i = 0; i < indices.length; i++) {
-            const idx = indices[i];
-            sum += intervalPressure(intervalsBack[idx].length, counts[idx]);
-        }
-        return sum / indices.length;
-    };
+    return out.sort(compareAislesByPathAndStation);
+}
 
-    const bestPairIndex = (predicate) => {
-        if (cornerCount % 2 !== 0) return -1;
-        const half = cornerCount / 2;
-        let bestIdx = -1;
-        let bestBenefit = -Infinity;
+function computeRequiredSegmentCounts(perimeterModel, options) {
+    const counts = createPerimeterCountMatrix(perimeterModel);
+    const maxSeatsBetweenAisles = Number(options?.maxSeatsBetweenAisles);
+    if (!(Number.isFinite(maxSeatsBetweenAisles) && maxSeatsBetweenAisles > 0)) return counts;
+
+    const seatWidthIn = Math.max(1, Number(options?.seatWidthIn) || 20);
+    const aisleWidthFt = Math.max(0, Number(options?.aisleWidthFt) || 0);
+    const axisExclusionFt = Math.max(0, Number(options?.axisExclusionFt) || 0);
+    const endpointBufferFt = Math.max(0, Number(options?.endpointBufferFt) || 0);
+
+    getPerimeterIntervalEntries(perimeterModel).forEach(({ pathIndex, interval }) => {
+        const intervalSide = interval.back || interval.front;
+        if (!intervalSide || intervalSide.length <= EPS) return;
+
+        let required = 0;
+        while (
+            estimateWorstSeatsInInterval(
+                intervalSide,
+                required,
+                seatWidthIn,
+                aisleWidthFt,
+                axisExclusionFt,
+                endpointBufferFt
+            ) > maxSeatsBetweenAisles &&
+            required < 500
+        ) {
+            required += 1;
+        }
+
+        counts[pathIndex][interval.index] = required;
+    });
+
+    return counts;
+}
+
+function normalizeRequiredCountsForSymmetry(perimeterModel, requiredCounts) {
+    const counts = createPerimeterCountMatrix(perimeterModel, requiredCounts);
+
+    if (!perimeterModel || !Array.isArray(perimeterModel.paths)) return counts;
+    for (let pathIndex = 0; pathIndex < perimeterModel.paths.length; pathIndex++) {
+        const pathRecord = perimeterModel.paths[pathIndex];
+        if (!isSymmetricClosedPathRecord(pathRecord)) continue;
+
+        for (let i = 0; i < pathRecord.intervals.length; i++) {
+            const interval = pathRecord.intervals[i];
+            if (!Number.isFinite(interval?.oppositeIndex)) continue;
+            if (interval.index > interval.oppositeIndex) continue;
+
+            const mirrored = Math.max(
+                counts[pathIndex][interval.index],
+                counts[pathIndex][interval.oppositeIndex]
+            );
+            counts[pathIndex][interval.index] = mirrored;
+            counts[pathIndex][interval.oppositeIndex] = mirrored;
+        }
+    }
+
+    return counts;
+}
+
+function sumIntervalCounts(intervalCounts) {
+    if (!Array.isArray(intervalCounts)) return 0;
+    return intervalCounts.reduce(
+        (sum, row) => sum + (Array.isArray(row) ? row.reduce((inner, value) => inner + Math.max(0, Math.floor(Number(value) || 0)), 0) : 0),
+        0
+    );
+}
+
+function choosePreferredSingleEntry(entries, intervalCounts) {
+    let best = null;
+    let bestPressure = -Infinity;
+
+    for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        const currentCount = Math.max(0, Math.floor(Number(intervalCounts?.[entry.pathIndex]?.[entry.interval.index]) || 0));
+        const pressure = getIntervalLength(entry.interval) / Math.max(1, currentCount + 1);
+
+        if (
+            pressure > bestPressure + 1e-9 ||
+            (Math.abs(pressure - bestPressure) <= 1e-9 && comparePreferredIntervalEntries(entry, best) < 0)
+        ) {
+            best = entry;
+            bestPressure = pressure;
+        }
+    }
+
+    return best;
+}
+
+function allocateSingleEntries(entries, allocationState, remaining) {
+    let left = Math.max(0, Math.floor(Number(remaining) || 0));
+    if (!entries.length) return left;
+
+    while (left > 0) {
+        const best = choosePreferredSingleEntry(entries, allocationState.counts);
+        if (!best) break;
+
+        allocationState.counts[best.pathIndex][best.interval.index] += 1;
+        left -= 1;
+    }
+
+    return left;
+}
+
+function allocateStraightPairs(perimeterModel, allocationState, remaining) {
+    let left = Math.max(0, Math.floor(Number(remaining) || 0));
+    const pairEntries = getStraightPairEntries(perimeterModel);
+    if (!pairEntries.length) return left;
+
+    while (left >= 2) {
+        let best = null;
         let bestPressure = -Infinity;
-        for (let i = 0; i < half; i++) {
-            const j = i + half;
-            if (typeof predicate === 'function' && !predicate(i, j)) continue;
-            const score = pairAllocationBenefit(intervalsBack, counts, i, j, targetGapFt);
+
+        for (let i = 0; i < pairEntries.length; i++) {
+            const entry = pairEntries[i];
+            const currentCount = Math.max(
+                0,
+                Math.floor(Number(allocationState.counts?.[entry.pathIndex]?.[entry.interval.index]) || 0)
+            );
+            const pressure = getIntervalLength(entry.interval) / Math.max(1, currentCount + 1);
+
             if (
-                score.benefit > bestBenefit + 1e-9 ||
-                (Math.abs(score.benefit - bestBenefit) <= 1e-9 && score.pressure > bestPressure + 1e-9)
+                pressure > bestPressure + 1e-9 ||
+                (Math.abs(pressure - bestPressure) <= 1e-9 && comparePreferredPairEntries(entry, best) < 0)
             ) {
-                bestBenefit = score.benefit;
-                bestPressure = score.pressure;
-                bestIdx = i;
-            }
-        }
-        return bestIdx;
-    };
-
-    const bestSingleIndex = (predicate) => {
-        let bestIdx = -1;
-        let bestBenefit = -Infinity;
-        let bestPressure = -Infinity;
-        for (let i = 0; i < cornerCount; i++) {
-            if (typeof predicate === 'function' && !predicate(i)) continue;
-            const score = singleAllocationBenefit(intervalsBack, counts, i, targetGapFt);
-            if (
-                score.benefit > bestBenefit + 1e-9 ||
-                (Math.abs(score.benefit - bestBenefit) <= 1e-9 && score.pressure > bestPressure + 1e-9)
-            ) {
-                bestBenefit = score.benefit;
-                bestPressure = score.pressure;
-                bestIdx = i;
-            }
-        }
-        return bestIdx;
-    };
-
-    while (remaining > 0) {
-        let allocated = false;
-
-        if (cornerCount % 2 === 0 && remaining >= 2) {
-            const straightPair = bestPairIndex((i, j) => !isChamferInterval(i) && !isChamferInterval(j));
-            const straightPressure = averagePressure(straightIndices);
-            const chamferPressure = averagePressure(chamferIndices);
-            const chamferRingReady =
-                canAddChamferRing() &&
-                Number.isFinite(straightPressure) &&
-                Number.isFinite(chamferPressure) &&
-                straightPressure <= chamferPressure + 1e-9;
-
-            if (straightPair >= 0 && !chamferRingReady) {
-                const half = cornerCount / 2;
-                counts[straightPair] += 1;
-                counts[straightPair + half] += 1;
-                remaining -= 2;
-                allocated = true;
-            } else if (chamferRingReady) {
-                for (let i = 0; i < chamferIndices.length; i++) {
-                    counts[chamferIndices[i]] += 1;
-                }
-                remaining -= chamferIndices.length;
-                allocated = true;
-            } else {
-                // Fallback: if no straight pair is available, keep filling evenly.
-                const anyPair = bestPairIndex((i, j) => !(isChamferInterval(i) && isChamferInterval(j)));
-                if (anyPair >= 0) {
-                    const half = cornerCount / 2;
-                    counts[anyPair] += 1;
-                    counts[anyPair + half] += 1;
-                    remaining -= 2;
-                    allocated = true;
-                }
+                best = entry;
+                bestPressure = pressure;
             }
         }
 
-        if (allocated) continue;
-
-        // Single-aisle remainder (odd target): prefer straights first.
-        const straightSingle = bestSingleIndex(i => !isChamferInterval(i));
-        if (straightSingle >= 0) {
-            counts[straightSingle] += 1;
-            remaining -= 1;
-            continue;
-        }
-
-        // Do not place a one-off aisle in a chamfer interval; that breaks
-        // corner parity. If no straight interval can accept the remainder, stop.
-        break;
+        if (!best) break;
+        allocationState.counts[best.pathIndex][best.interval.index] += 1;
+        allocationState.counts[best.pathIndex][best.opposite.index] += 1;
+        left -= 2;
     }
 
-    for (let i = 0; i < cornerCount; i++) {
-        const count = counts[i];
-        if (count <= 0) continue;
-        const intervalFront = intervalsFront[i];
-        const intervalBack = intervalsBack[i];
-        const ts = distributeIntervalTs(intervalBack, count, axisExclusionFt, cornerClearanceFt);
+    return left;
+}
 
-        for (let k = 0; k < ts.length; k++) {
-            const t = clamp01(ts[k]);
-            const u = interpolateWrappedU(intervalFront.startU, intervalFront.endU, t);
-            addStationRecord(path, list, {
+function allocateSingleOddRemainder(perimeterModel, allocationState) {
+    const straightEntries = getPerimeterIntervalEntries(perimeterModel, ({ pathRecord, interval }) =>
+        isSymmetricClosedPathRecord(pathRecord) && interval?.family === 'straight'
+    );
+    if (!straightEntries.length) return 1;
+
+    const best = straightEntries
+        .slice()
+        .sort(comparePreferredIntervalEntries)[0];
+    if (!best) return 1;
+
+    allocationState.counts[best.pathIndex][best.interval.index] += 1;
+    return 0;
+}
+
+function allocateDeterministicCounts(perimeterModel, requestedDistributedCount, requiredCounts, options) {
+    void options;
+
+    const counts = createPerimeterCountMatrix(perimeterModel, requiredCounts);
+    const requestedDistributed = Math.max(0, Math.round(Number(requestedDistributedCount) || 0));
+    const requiredDistributed = sumIntervalCounts(counts);
+    let remaining = Math.max(0, Math.max(requestedDistributed, requiredDistributed) - requiredDistributed);
+    const allocationState = { counts };
+
+    const straightEntries = getPerimeterIntervalEntries(perimeterModel, ({ interval }) => interval?.family === 'straight');
+    const hasSymmetricStraightPairs = getStraightPairEntries(perimeterModel).length > 0;
+
+    if (hasSymmetricStraightPairs) {
+        remaining = allocateStraightPairs(perimeterModel, allocationState, remaining);
+        if (remaining === 1) remaining = allocateSingleOddRemainder(perimeterModel, allocationState);
+        else if (remaining > 0) remaining = allocateSingleEntries(straightEntries, allocationState, remaining);
+    } else {
+        remaining = allocateSingleEntries(straightEntries, allocationState, remaining);
+    }
+
+    if (remaining > 0) {
+        const chamferEntries = getPerimeterIntervalEntries(perimeterModel, ({ interval }) => interval?.family !== 'straight');
+        remaining = allocateSingleEntries(chamferEntries, allocationState, remaining);
+    }
+
+    return counts;
+}
+
+function materializeDistributedAisles(perimeterModel, intervalCounts, bowlConfig, options) {
+    const axisExclusionFt = Math.max(0, Number(options?.axisExclusionFt) || 0);
+    const endpointBufferFt = Math.max(0, Number(options?.endpointBufferFt) || 0);
+    const pathRecords = Array.isArray(perimeterModel?.paths) ? perimeterModel.paths : [];
+    const stationsByPath = pathRecords.map(() => []);
+
+    getPerimeterIntervalEntries(perimeterModel).forEach(({ pathIndex, pathRecord, interval }) => {
+        const count = Math.max(0, Math.floor(Number(intervalCounts?.[pathIndex]?.[interval.index]) || 0));
+        if (count <= 0) return;
+
+        const path = pathRecord.frontPath || pathRecord.backPath;
+        const frontSide = interval.front || interval.back;
+        const backSide = interval.back || interval.front;
+        if (!path || !frontSide || !backSide) return;
+
+        const ts = distributeIntervalTs(backSide, count, axisExclusionFt, endpointBufferFt);
+        for (let i = 0; i < ts.length; i++) {
+            const t = clamp01(ts[i]);
+            const u = interpolatePathIntervalU(path, frontSide.startU, frontSide.endU, t);
+            addStationRecord(path, stationsByPath[pathIndex], {
                 u,
                 forced: false,
                 anchorType: 'segment_fraction',
-                segmentIndex: i,
-                segmentT: t
-            }, Math.max(1e-3, minSpacingFt * 0.2));
+                segmentIndex: interval.index,
+                segmentT: t,
+                alignmentMode: selectAlignmentModeForFamily(interval.family, bowlConfig)
+            }, 1e-3);
+        }
+    });
+
+    const out = [];
+    for (let pathIndex = 0; pathIndex < stationsByPath.length; pathIndex++) {
+        const path = pathRecords[pathIndex]?.frontPath || pathRecords[pathIndex]?.backPath;
+        const records = stationsByPath[pathIndex]
+            .slice()
+            .sort((a, b) => a.u - b.u);
+
+        for (let i = 0; i < records.length; i++) {
+            const record = records[i];
+            out.push({
+                pathIndex,
+                u: path?.closed ? normalizeUnit(record.u) : clamp01(record.u),
+                forced: false,
+                anchorType: record.anchorType || 'segment_fraction',
+                segmentIndex: Number.isFinite(record.segmentIndex) ? Math.max(0, Math.floor(record.segmentIndex)) : undefined,
+                segmentT: Number.isFinite(record.segmentT) ? clamp01(record.segmentT) : undefined,
+                alignmentMode: normalizeAlignmentMode(record.alignmentMode)
+            });
         }
     }
 
-    const desiredTotal = forcedCount + desiredDistributed;
-    if (list.length < desiredTotal) {
-        const keepStations = list
-            .map(rec => ({
-            pathIndex,
-            u: rec.u,
-            forced: true,
-            anchorType: rec.anchorType,
-            cornerOrdinal: rec.cornerOrdinal,
-            segmentIndex: rec.segmentIndex,
-            segmentT: rec.segmentT
-            }));
+    return out.sort(compareAislesByPathAndStation);
+}
 
-        return computeAisleStations(paths, desiredTotal, {
-            ...options,
-            forcedStations: keepStations,
-            allowOppositePairs: true,
-            // Preserve chamfer parity by preventing generic fallback from
-            // adding one-off diagonal (chamfer) stations.
-            axisOnlyCandidates: hasChamferRing ? true : false
-        });
+function validateSeatCap(perimeterModel, aisles, options) {
+    const maxSeatsBetweenAisles = Number(options?.maxSeatsBetweenAisles);
+    if (!(Number.isFinite(maxSeatsBetweenAisles) && maxSeatsBetweenAisles > 0)) return true;
+
+    const seatWidthIn = Math.max(1, Number(options?.seatWidthIn) || 20);
+    const aisleWidthFt = Math.max(0, Number(options?.aisleWidthFt) || 0);
+    const axisExclusionFt = Math.max(0, Number(options?.axisExclusionFt) || 0);
+    const endpointBufferFt = Math.max(0, Number(options?.endpointBufferFt) || 0);
+    const counts = createPerimeterCountMatrix(perimeterModel);
+
+    for (let i = 0; i < (Array.isArray(aisles) ? aisles.length : 0); i++) {
+        const aisle = aisles[i];
+        if (!aisle || aisle.forced || !Number.isFinite(aisle.segmentIndex)) continue;
+
+        const pathIndex = Math.max(0, Math.floor(Number(aisle.pathIndex) || 0));
+        const intervalIndex = Math.max(0, Math.floor(Number(aisle.segmentIndex) || 0));
+        if (!counts[pathIndex] || intervalIndex >= counts[pathIndex].length) continue;
+        counts[pathIndex][intervalIndex] += 1;
     }
 
-    return list
-        .slice()
-        .sort((a, b) => a.u - b.u)
-        .map(rec => {
-            const aisle = {
-                pathIndex,
-                u: path.closed ? normalizeUnit(rec.u) : clamp01(rec.u),
-                forced: !!rec.forced,
-                anchorType: rec.anchorType || (rec.forced ? 'forced' : 'distributed')
+    const entries = getPerimeterIntervalEntries(perimeterModel);
+    for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        const intervalSide = entry.interval.back || entry.interval.front;
+        if (!intervalSide || intervalSide.length <= EPS) continue;
+
+        const count = Math.max(0, Math.floor(Number(counts?.[entry.pathIndex]?.[entry.interval.index]) || 0));
+        const worst = estimateWorstSeatsInInterval(
+            intervalSide,
+            count,
+            seatWidthIn,
+            aisleWidthFt,
+            axisExclusionFt,
+            endpointBufferFt
+        );
+        if (worst > maxSeatsBetweenAisles) return false;
+    }
+
+    return true;
+}
+
+function getPerimeterPathRecord(perimeterModel, pathIndex) {
+    if (!perimeterModel || !Array.isArray(perimeterModel.paths)) return null;
+    const index = Math.max(0, Math.floor(Number(pathIndex) || 0));
+    return perimeterModel.paths[index] || null;
+}
+
+function getPerimeterIntervalFromRecord(pathRecord, aisle) {
+    if (!pathRecord || !Array.isArray(pathRecord.intervals) || !pathRecord.intervals.length) return null;
+    if (!aisle || !Number.isFinite(aisle.segmentIndex)) return null;
+
+    let index = Math.max(0, Math.floor(Number(aisle.segmentIndex) || 0));
+    if (pathRecord.closed) index %= pathRecord.intervals.length;
+    else index = Math.min(pathRecord.intervals.length - 1, index);
+    return pathRecord.intervals[index] || null;
+}
+
+function inferAisleIntervalFamily(path, aisle) {
+    const sampleU = Number.isFinite(aisle && aisle.uFront)
+        ? aisle.uFront
+        : (Number.isFinite(aisle && aisle.u) ? aisle.u : NaN);
+    if (!path || !Number.isFinite(sampleU)) return 'straight';
+
+    const pt = samplePathPointByRatio(path, sampleU);
+    return classifyAxisDirection(pt) ? 'straight' : 'chamfer';
+}
+
+function selectAlignmentModeForFamily(family, bowlConfig) {
+    const rawMode = family === 'straight'
+        ? bowlConfig && bowlConfig.straightAisleMode
+        : bowlConfig && bowlConfig.chamferAisleMode;
+    return normalizeAlignmentMode(rawMode);
+}
+
+function stampDistributedAlignmentModes(aisles, perimeterModel, bowlConfig) {
+    if (!Array.isArray(aisles) || !aisles.length) return [];
+
+    return aisles.map((aisle) => {
+        if (!aisle) return aisle;
+        if (aisle.forced) return aisle;
+
+        const explicitMode = String(aisle.alignmentMode || '').toLowerCase();
+        if (explicitMode === 'radial' || explicitMode === 'perpendicular') {
+            return {
+                ...aisle,
+                alignmentMode: normalizeAlignmentMode(explicitMode)
             };
-            if (Number.isFinite(rec.cornerOrdinal)) aisle.cornerOrdinal = rec.cornerOrdinal;
-            if (Number.isFinite(rec.segmentIndex)) aisle.segmentIndex = rec.segmentIndex;
-            if (Number.isFinite(rec.segmentT)) aisle.segmentT = rec.segmentT;
-            return aisle;
-        });
+        }
+
+        const pathRecord = getPerimeterPathRecord(perimeterModel, aisle.pathIndex);
+        const interval = getPerimeterIntervalFromRecord(pathRecord, aisle);
+        const family = interval?.family || inferAisleIntervalFamily(pathRecord?.frontPath, aisle);
+
+        return {
+            ...aisle,
+            alignmentMode: selectAlignmentModeForFamily(family, bowlConfig)
+        };
+    });
 }
 
 function buildSectionBoundaries(paths, aisles) {
@@ -1497,28 +1566,13 @@ export function buildTierAisleLayout(params) {
         };
     }
 
-    const forceChamfer = String(bowlConfig && bowlConfig.corner ? bowlConfig.corner : '').toLowerCase() === 'chamfer';
-    const forcedStations = [];
-
-    if (forceChamfer) {
-        for (let i = 0; i < paths.length; i++) {
-            const corners = findChamferCornerAnchors(paths[i]);
-            for (let c = 0; c < corners.length; c++) {
-                forcedStations.push({
-                    pathIndex: i,
-                    u: corners[c].u,
-                    forced: true,
-                    anchorType: 'forced_chamfer',
-                    cornerOrdinal: corners[c].ordinal
-                });
-            }
-        }
-    }
-
+    const perimeterModel = buildPerimeterModel(paths, backPaths, bowlConfig);
     const safeTarget = Math.max(0, Math.round(Number(targetAisles) || 0));
     const widthFt = Math.max(0, Number(aisleWidthFt) || 0);
     const minSpacingFt = Math.max(widthFt * 1.05, 1.25);
     const axisExclusionFt = Math.max(0.5, Number(axisToleranceFt) || 2, widthFt * 0.5 + 0.25);
+    const endpointBufferFt = Math.max(2.0, widthFt * 1.0, minSpacingFt * 0.5);
+    const forcedAisles = buildForcedTransitionAisles(perimeterModel);
 
     let aisles = [];
     const bowlType = String(bowlConfig && bowlConfig.type ? bowlConfig.type : '').toLowerCase();
@@ -1526,12 +1580,20 @@ export function buildTierAisleLayout(params) {
         bowlType === 'sides' &&
         paths.length >= 2 &&
         paths.every(p => p && !p.closed && p.length > EPS) &&
-        forcedStations.length === 0;
+        forcedAisles.length === 0;
     const useEvenOpenPathDistribution =
         paths.length === 1 &&
         !!paths[0] &&
         !paths[0].closed &&
-        forcedStations.length === 0;
+        forcedAisles.length === 0;
+    const useDeterministicPerimeterAllocation =
+        forcedAisles.length > 0 &&
+        getPerimeterIntervalEntries(perimeterModel).length > 0;
+    const useClosedEvenPathDistribution =
+        paths.length === 1 &&
+        !!paths[0] &&
+        paths[0].closed &&
+        forcedAisles.length === 0;
 
     if (useIndependentSidesOpenDistribution) {
         // "Sides" mode is two independent linear runs with mirrored egress.
@@ -1540,32 +1602,53 @@ export function buildTierAisleLayout(params) {
         // Linear/sliced open runs treat aisle lines as edge-to-edge boundaries.
         // Rebuild the full set every time so added aisles re-space evenly.
         aisles = computeEvenOpenPathAisleStations(paths, safeTarget, widthFt);
-    } else if (forceChamfer && paths.length === 1 && paths[0].closed) {
-        aisles = buildChamferSymmetricStations(paths, safeTarget, {
-            pathIndex: 0,
-            backPath: backPaths[0] || paths[0],
-            forcedStations,
+    } else if (useDeterministicPerimeterAllocation) {
+        const requiredCounts = normalizeRequiredCountsForSymmetry(
+            perimeterModel,
+            computeRequiredSegmentCounts(perimeterModel, {
+                aisleWidthFt: widthFt,
+                axisExclusionFt,
+                endpointBufferFt,
+                maxSeatsBetweenAisles,
+                seatWidthIn
+            })
+        );
+        const intervalCounts = allocateDeterministicCounts(
+            perimeterModel,
+            Math.max(0, safeTarget - forcedAisles.length),
+            requiredCounts,
+            {
+                aisleWidthFt: widthFt,
+                axisExclusionFt,
+                endpointBufferFt,
+                maxSeatsBetweenAisles,
+                seatWidthIn
+            }
+        );
+        aisles = [
+            ...forcedAisles,
+            ...materializeDistributedAisles(perimeterModel, intervalCounts, bowlConfig, {
+                axisExclusionFt,
+                endpointBufferFt
+            })
+        ].sort(compareAislesByPathAndStation);
+
+        if (!validateSeatCap(perimeterModel, aisles, {
             aisleWidthFt: widthFt,
-            minSpacingFt,
-            avoidCenterAxes: true,
-            axisToleranceFt: Math.max(0.5, Number(axisToleranceFt) || 2),
             axisExclusionFt,
-            allowOppositePairs: true,
-            axisOnlyCandidates: true,
+            endpointBufferFt,
             maxSeatsBetweenAisles,
             seatWidthIn
-        });
+        })) {
+            throw new Error('Deterministic aisle allocation violated maxSeatsBetweenAisles.');
+        }
+    } else if (useClosedEvenPathDistribution) {
+        aisles = computeEvenClosedPathAisleStations(paths, safeTarget);
     } else {
-        aisles = computeAisleStations(paths, safeTarget, {
-            forcedStations,
-            minSpacingFt,
-            avoidCenterAxes: true,
-            axisToleranceFt: Math.max(0.5, Number(axisToleranceFt) || 2),
-            axisExclusionFt,
-            allowOppositePairs: true,
-            axisOnlyCandidates: forceChamfer
-        });
+        aisles = [];
     }
+
+    aisles = stampDistributedAlignmentModes(aisles, perimeterModel, bowlConfig);
 
     return {
         aisles,
