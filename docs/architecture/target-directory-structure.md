@@ -9,11 +9,11 @@ The goal of this file is to describe the codebase as it exists during the phased
 1. `index.html` is a redirect shell. It forwards the browser to the configurator route while preserving the current query string and hash.
 2. The configurator page shell loads the approved root bootstrap `app.js`.
 3. Root `app.js` reads `data-page`, creates the auth and project services, and boots the configurator flow.
-4. The configurator flow runs through `ui/app.js`, which owns the single live `AppState`, initializes UI controllers, hydrates defaults or loaded project JSON, and coordinates all solve/render/export work.
+4. The configurator flow runs through `ui/app.js`, which owns the single live `AppState`, initializes UI controllers, hydrates defaults or loaded project JSON, and coordinates the top-level solve/render/export lifecycle.
 5. Root `app.js` also owns direct-entry session bootstrap, automatic untitled project creation when no `project` query exists, and the injected project action port used by the configurator shell.
 6. Control changes go through `ui/editor-controls.js`, which writes directly into `AppState` and asks `ui/app.js` to re-run the update loop.
-7. The update loop in `ui/app.js` calls `core/profile-solver.js`, computes tier and bowl artifacts, then pushes precomputed data into `viz/*`, `ui/stats-panel.js`, and `ui/editor-export-controller.js`.
-8. Export requests travel from `ui/editor-shell.js` to `ui/editor-export-controller.js`, which assembles plain arguments for `export/*`.
+7. The update loop in `ui/app.js` delegates solve/runtime snapshot assembly to `ui/render-runtime.js`, then pushes precomputed data into `viz/*`, `ui/stats-panel.js`, and `ui/editor-export-controller.js`.
+8. Export requests originate in `ui/project-chrome-shell.js`, pass through the stable `ui/editor-shell.js` facade, and end at `ui/editor-export-controller.js`, which assembles plain arguments for `export/*`.
 9. Save and load requests travel through `state/project.js` DTO helpers and `services/project-api.js`; services only exchange plain JSON payloads.
 
 ## Layer Summary
@@ -24,7 +24,7 @@ The goal of this file is to describe the codebase as it exists during the phased
 | `pages/` | Route HTML/CSS shells and shared shell styling | `pages/configurator/*`, `pages/styles-shared.css` | The only live route shell is the configurator. |
 | `core/` | Protected solver and geometry math | `profile-solver.js`, `sightline-calc.js`, `aisle-layout.js`, `sports-templates.js`, `default-starting-profile.js` | No DOM, no persistence, no UI orchestration. |
 | `state/` | Single source of truth for serializable app state and DTO helpers | `app-state.js`, `project.js` | `AppState` is the one live state object used by the configurator. |
-| `ui/` | Configurator orchestration/controllers | `ui/app.js`, `editor-controls.js`, `editor-shell.js`, `editor-export-controller.js`, `stats-panel.js`, `camera-bookmarks.js` | This is the operational center of the app. |
+| `ui/` | Configurator orchestration/controllers and shell/runtime adapters | `ui/app.js`, `editor-shell.js`, `project-chrome-shell.js`, `workspace-shell.js`, `render-runtime.js`, `project-shell-controller.js`, `scene3d-controller.js`, `editor-controls.js`, `editor-export-controller.js`, `stats-view-model.js`, `stats-panel.js`, `camera-bookmarks.js` | `ui/app.js` is the composition root; `editor-shell.js` is now a thin facade over focused shell owners. |
 | `viz/` | 2D and 3D rendering from precomputed inputs | `field-renderer.js`, `profile-renderer.js`, `scene3d.js` | Renderers consume solver output and runtime artifacts; they do not own app state. |
 | `export/` | Export descriptor and file-content builders | `dxf-exporter.js`, `obj-csv-exporter.js`, `rhino/*` | Exporters work from arguments supplied by `ui/editor-export-controller.js`. |
 | `services/` | Auth and project persistence adapters | `auth-service.js`, `project-api.js` | API mode is strict fetch-based; local mode is explicit and browser-storage-backed. |
@@ -67,9 +67,15 @@ Repository/
 |-- ui/                                        # UI orchestration/controllers; no protected solver duplication.
 |   |-- app.js                                 # Main configurator orchestrator and update loop owner.
 |   |-- editor-controls.js                     # DOM control bindings that sync form inputs <-> AppState.
-|   |-- editor-shell.js                        # Tab, theme, sidebar, import/export, download, and shell chrome behavior.
+|   |-- editor-shell.js                        # Thin facade that composes project-chrome and workspace shell owners.
 |   |-- editor-export-controller.js            # Bridges solved/runtime artifacts into export descriptors.
-|   |-- stats-panel.js                         # Builds stats/detail view models and renders right-side results panels.
+|   |-- project-chrome-shell.js                # Project toolbar, menu, picker, option-manager, and save/status shell DOM.
+|   |-- project-shell-controller.js            # Pure project chrome/status snapshot and save-request shaping helpers.
+|   |-- render-runtime.js                      # Solve/runtime DTO owner for renderers, stats, exports, and scene updates.
+|   |-- scene3d-controller.js                  # Scene3D lifecycle/controller seam used by the app runtime.
+|   |-- stats-view-model.js                    # Pure stats/detail view-model builders used by the stats renderer.
+|   |-- stats-panel.js                         # Renders right-side stats/detail panels from a prebuilt view-model DTO.
+|   |-- workspace-shell.js                     # Theme, tabs, layout, resize, tooltip, and generic workspace shell DOM.
 |   |-- camera-bookmarks.js                    # Saves/restores 3D camera views and exports bookmark screenshots.
 |
 |-- viz/                                       # Rendering layer; consumes precomputed inputs.
@@ -123,10 +129,17 @@ Repository/
 |   |-- state/
 |   |   `-- app-state.test.js                  # AppState normalization, migration, and single-state-source verification.
 |   `-- ui/
-|       |-- app-shell-callbacks.test.js        # Root bootstrap and configurator callback wiring verification.
+|       |-- app-shell-callbacks.test.js        # Root bootstrap, SeatingBowlApp facade, and app-to-shell seam verification.
 |       |-- camera-bookmarks.test.js           # Bookmark capture/restore/export/delete behavior verification.
 |       |-- editor-controls.test.js            # DOM control binding -> AppState mutation verification.
-|       `-- stats-panel.test.js                # Stats/detail view model and panel rendering verification.
+|       |-- editor-export-controller.test.js   # Export-controller argument shaping and descriptor routing verification.
+|       |-- project-chrome-shell.test.js       # Project menu, option manager, picker, and shell inert-lock characterization.
+|       |-- project-shell-controller.test.js   # Project chrome/status snapshot DTO and save-request shaping verification.
+|       |-- render-runtime.test.js             # Solve/runtime DTO assembly and render snapshot verification.
+|       |-- scene3d-controller.test.js         # Scene3D controller lifecycle and geometry-port verification.
+|       |-- stats-panel.test.js                # Stats/detail panel rendering verification.
+|       |-- stats-view-model.test.js           # Stats/detail view-model shaping verification.
+|       `-- workspace-shell.test.js            # Theme, tabs, canvas hookup, resize, and workspace chrome characterization.
 |
 |-- docs/                                      # Architecture, audits, and phased refactor plans.
 |   |-- architecture/
@@ -142,10 +155,16 @@ Repository/
 |   |       `-- 2026-03-12-architecture-review-and-refactoring-roadmap.docx
 |   |                                               # Word version of the same active architecture audit.
 |   `-- refactors/
-|       |-- active/
-|       |   `-- 2026-03-14-full-alignment-implementation-plan.md
-|       |                                           # Current active implementation plan for roadmap alignment.
+|       |-- active/                              # Empty when no refactor sequence is currently executing.
 |       `-- archive/
+|           |-- 2026-03-18-complete-refactor-plan.md
+|           |-- 2026-03-18-phase-1-shell-characterization-and-doc-sync-plan.md
+|           |-- 2026-03-18-phase-2-project-chrome-shell-extraction-plan.md
+|           |-- 2026-03-18-phase-3-workspace-shell-extraction-plan.md
+|           |-- 2026-03-18-phase-5-editor-controls-purity-cleanup-plan.md
+|           |-- 2026-03-18-phase-6-root-app-bootstrap-reaudit-plan.md
+|           |-- 2026-03-18-phase-7-final-doc-and-test-alignment-plan.md
+|           |-- 2026-03-18-remaining-refactor-implementation-overview.md
 |           |-- 2026-03-14-remaining-roadmap-alignment-overview.md
 |           |-- phase-1-export-extraction-plan.md
 |           |-- phase-2-plan.md
@@ -190,22 +209,27 @@ Repository/
 ### 3. Configurator State, Solve, and Render Loop
 
 - `ui/app.js` creates and owns the single live `AppState` object from `state/app-state.js`.
-- `ui/editor-shell.js` owns shell chrome behavior: theme, tabs, sidebars, imports, export button dispatch, and file downloads.
+- `ui/render-runtime.js` owns active solver construction plus the render/stats/export snapshot DTOs consumed by downstream modules.
+- `ui/project-shell-controller.js` owns pure project chrome/status snapshots and save-request shaping used by the shell and bootstrap.
+- `ui/editor-shell.js` now stays as a thin facade so `ui/app.js` can talk to one shell API while focused DOM ownership lives below it.
+- `ui/project-chrome-shell.js` owns project toolbar/menu/picker/option-manager shell DOM and export-trigger UI.
+- `ui/workspace-shell.js` owns theme, tabs, canvas hookup, sidebar resize, tooltip, and workspace layout shell DOM.
 - `ui/editor-controls.js` binds form controls to `AppState` paths. It does not calculate bowl geometry itself.
 - On every relevant change, `ui/editor-controls.js` calls back into `ui/app.js`, which debounces and runs `update()`.
-- `ui/app.js.update()` resolves the active sport template, derives focal point and bowl config, and solves each enabled tier with `core/profile-solver.js`.
+- `ui/app.js.update()` delegates the heavy solve/runtime snapshot work to `ui/render-runtime.js`, which resolves the active sport template, derives focal point and bowl config, solves each enabled tier with `core/profile-solver.js`, and returns the precomputed runtime data.
 - The solved tier data then fans out to:
   - `viz/field-renderer.js` for 2D plan rendering plus aisle/layout overlay artifacts.
   - `viz/profile-renderer.js` for section rendering and sightline overlays.
-  - `viz/scene3d.js` for bowl/seat/aisle meshes and 3D field rendering.
-  - `ui/stats-panel.js` for stats/detail panels derived from solver output and aisle metrics.
-- `viz/scene3d.js` is lazy-loaded only when the 3D tab is activated.
+  - `ui/scene3d-controller.js` and `viz/scene3d.js` for bowl/seat/aisle meshes and 3D field rendering.
+  - `ui/stats-view-model.js` plus `ui/stats-panel.js` for stats/detail panels derived from solver output and aisle metrics.
+- `viz/scene3d.js` is lazy-loaded by `ui/scene3d-controller.js` only when the 3D tab is activated.
 
 ### 4. Export Flow
 
-- Export starts in `ui/editor-shell.js` when a user clicks an export action.
+- Export starts in `ui/project-chrome-shell.js` when a user clicks an export action.
+- `ui/project-chrome-shell.js` routes that request through the stable `ui/editor-shell.js` facade.
 - `ui/editor-shell.js` asks `ui/editor-export-controller.js` for an export descriptor.
-- `ui/editor-export-controller.js` gathers the already-solved runtime data from `ui/app.js` callbacks and converts it into plain arguments for exporters.
+- `ui/editor-export-controller.js` gathers the already-solved runtime data from `ui/render-runtime.js`, `ui/scene3d-controller.js`, and `ui/app.js`-owned collaborators, then converts it into plain arguments for exporters.
 - `export/dxf-exporter.js` produces profile-plan DXF content.
 - `export/obj-csv-exporter.js` produces study JSON, OBJ, CSV, and config export descriptors.
 - `export/rhino/rhino-exporter.js` orchestrates Rhino export and uses `rhino-geometry.js` plus `rhino-layers.js` for implementation details.
@@ -214,7 +238,7 @@ Repository/
 ### 5. Persistence Flow
 
 - When the configurator loads, root `app.js` fetches the selected project from `services/project-api.js` and passes it to `ui/app.js.loadProject()`.
-- `ui/app.js.loadProject()` normalizes metadata, hydrates `AppState` from JSON, re-syncs the DOM through `ui/editor-controls.js`, and triggers a fresh solve/render cycle.
+- `ui/app.js.loadProject()` normalizes metadata, hydrates `AppState` from JSON, re-syncs the DOM through `ui/editor-controls.js`, refreshes shell snapshots through `ui/project-shell-controller.js`, and triggers a fresh solve/render cycle.
 - When the user saves, root `app.js` asks `ui/app.js` for `getProjectSaveRequest()`.
 - `state/project.js` and `state/app-state.js` ensure the saved payload is plain JSON, not a live class instance graph.
 - `services/project-api.js` sends and receives only DTOs; in explicit local mode it persists those DTOs to browser storage.
@@ -224,7 +248,12 @@ Repository/
 
 - `core/` remains the protected source of truth for solver and calculation logic.
 - `state/app-state.js` remains the single state source for application parameters; no parallel AppState cache exists in the current source tree.
-- `ui/app.js` is still the central configurator orchestrator. The refactor has extracted supporting controllers, but the solve/render update loop still lives there.
+- `ui/app.js` remains the central configurator orchestrator, but runtime DTO assembly now lives in `ui/render-runtime.js` and should stay there.
+- `ui/stats-view-model.js` now owns pure stats/detail shaping, and `ui/stats-panel.js` is renderer-focused.
+- `ui/project-shell-controller.js` remains the pure project chrome/status DTO owner; it is not a DOM shell controller.
+- `ui/editor-shell.js` remains intentionally present as a thin facade/composition shell so `ui/app.js` keeps one narrow shell dependency.
+- `ui/project-chrome-shell.js` and `ui/workspace-shell.js` now hold the split shell DOM ownership that previously lived together in `ui/editor-shell.js`.
+- `ui/editor-controls.js` remains the DOM binding owner only; pure tier-initialization state inspection now lives in `state/app-state.js`.
 - `pages/configurator/` intentionally has no page controller file. The route shell is HTML/CSS, and the approved root `app.js` handles bootstrapping.
 - The legacy dashboard route artifacts have been removed from the live runtime; `/` and `/pages/configurator/index.html` are the supported browser entry paths.
 - `dist/`, `output/`, `.playwright-cli/`, and `node_modules/` are generated or external-support areas. They matter operationally but are not the architecture source of truth.

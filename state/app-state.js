@@ -181,6 +181,20 @@ function createDefaultAppStateData() {
     return createDefaultStateData();
 }
 
+const TIER_INITIALIZATION_KEYS = [
+    'profileType',
+    'cValue',
+    'numRows',
+    'firstRowDist',
+    'firstRowElev',
+    'treadDepth',
+    'riserHeight',
+    'eyeHeight',
+    'eyeSetback'
+];
+
+const DEFAULT_TIER_STATE_TEMPLATE = createDefaultStateData().tiers;
+
 function parseNumber(value, fallback) {
     const numeric = Number(value);
     return Number.isFinite(numeric) ? numeric : fallback;
@@ -442,6 +456,13 @@ function getPrimaryTier(state) {
         : {};
 }
 
+function tierMatchesDefaultState(tierState, defaultTierState) {
+    if (!tierState || typeof tierState !== 'object') return false;
+    if (!defaultTierState || typeof defaultTierState !== 'object') return false;
+
+    return TIER_INITIALIZATION_KEYS.every((key) => tierState[key] === defaultTierState[key]);
+}
+
 export function getCustomRunoff(state) {
     const setup = getStateSetup(state);
     return setup.customRunoff ?? null;
@@ -575,6 +596,24 @@ export function buildTierRowCountControlConfigs(state) {
         ? state.tiers
         : createDefaultStateData().tiers;
     return tiers.map((_tier, tierIndex) => buildTierRowCountControlConfig(state, tierIndex));
+}
+
+export function buildTierInitializationFlags(state) {
+    const isTierStateInitialized = (tierNum) => {
+        if (!Number.isInteger(tierNum) || tierNum <= 1) return true;
+
+        const tierIndex = tierNum - 1;
+        const tierState = state?.tiers?.[tierIndex];
+        if (!tierState || typeof tierState !== 'object') return false;
+        if (tierState.enabled) return true;
+
+        return !tierMatchesDefaultState(tierState, DEFAULT_TIER_STATE_TEMPLATE[tierIndex]);
+    };
+
+    return {
+        tier2Initialized: isTierStateInitialized(2),
+        tier3Initialized: isTierStateInitialized(3)
+    };
 }
 
 export function buildProfileRenderOptions(state, structuralDepth = 0) {

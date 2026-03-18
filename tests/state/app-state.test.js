@@ -11,6 +11,7 @@ import {
     buildProfileRenderOptions,
     buildPrimaryTierParameters,
     buildSceneSeatPreviewOptions,
+    buildTierInitializationFlags,
     buildTierRowCountControlConfigs,
     createDefaultAppStateData,
     getCustomRunoff,
@@ -346,5 +347,23 @@ describe('AppState', () => {
         expect(AppState.toJSON().bowl.structuralProfileMode).toBe('sloped');
         expect(AppState.toJSON().bowl.straightAisleMode).toBe('perpendicular');
         expect(AppState.toJSON().bowl.chamferAisleMode).toBe('perpendicular');
+    });
+
+    test('builds pure tier initialization flags from canonical state without UI ownership', () => {
+        const state = createDefaultAppStateData();
+
+        expect(buildTierInitializationFlags(state)).toEqual({
+            tier2Initialized: false,
+            tier3Initialized: false
+        });
+
+        state.tiers[1].firstRowDist = 84;
+        state.tiers[1].firstRowElev = 52;
+        state.tiers[2].enabled = true;
+
+        expect(buildTierInitializationFlags(state)).toEqual({
+            tier2Initialized: true,
+            tier3Initialized: true
+        });
     });
 });

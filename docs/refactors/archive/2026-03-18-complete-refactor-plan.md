@@ -2,7 +2,8 @@
 
 ## Status
 
-- Status: Proposed active plan
+- Status: Completed and archived
+- Completed on: 2026-03-18
 - Planned on: 2026-03-18
 - Scope: current repository state after the `2026-03-17` aisle and egress ownership work
 - Goal: finish the remaining architectural cleanup without reopening already-stabilized `core/`, `viz/`, or the newly-thinned `ui/app.js`
