@@ -10,6 +10,43 @@ function createCanvas(id) {
     };
 }
 
+function createTierLayout(tierIndex = 0) {
+    return {
+        tierIndex,
+        aisleWidthFt: 4,
+        seatWidthIn: 20,
+        aisles: [
+            {
+                pathIndex: 0,
+                forced: false,
+                anchorType: 'segment_fraction',
+                segmentIndex: 1,
+                segmentT: 0.5,
+                alignmentMode: 'perpendicular'
+            }
+        ],
+        targetAisles: 3,
+        forcedCount: 1,
+        sectionBoundaries: [[
+            {
+                aisleIndex: 0,
+                u: 0.25,
+                forced: false
+            }
+        ]],
+        axisExclusionFt: 2.25,
+        sectionSummary: {
+            actualAisles: 1,
+            actualSections: 1,
+            allSectionPathsClosed: true,
+            backRowSectionSeatCounts: [18],
+            avgBackRowSeatsPerSection: 18,
+            maxBackRowSeatsPerSection: 18,
+            minBackRowSeatsPerSection: 18
+        }
+    };
+}
+
 afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
@@ -124,16 +161,7 @@ describe('SeatingBowlApp runtime seams', () => {
         const renderProfile = vi.fn();
         const updateStats = vi.fn();
         const getOffsetCorrection = vi.fn(() => 7);
-        const buildTierAisleLayouts = vi.fn(() => ([
-            {
-                tierIndex: 0,
-                aisles: [],
-                sectionSummary: {
-                    actualAisles: 0,
-                    actualSections: 0
-                }
-            }
-        ]));
+        const buildTierAisleLayouts = vi.fn(() => ([createTierLayout(0)]));
         const geometryPort = {
             getOffsetCorrection,
             getVisualFocalY: vi.fn(() => 123),
@@ -174,6 +202,19 @@ describe('SeatingBowlApp runtime seams', () => {
 
         expect(snapshot?.template).toBe(getTemplate('Football'));
         expect(snapshot?.solvers.length).toBeGreaterThan(0);
+        expect(snapshot?.tierAisleLayouts[0]).toEqual(expect.objectContaining({
+            tierIndex: 0,
+            aisleWidthFt: 4,
+            seatWidthIn: 20,
+            targetAisles: 3,
+            forcedCount: 1,
+            axisExclusionFt: 2.25,
+            sectionSummary: expect.objectContaining({
+                actualAisles: 1,
+                actualSections: 1,
+                allSectionPathsClosed: true
+            })
+        }));
         expect(renderField).toHaveBeenCalledTimes(1);
         expect(renderField).toHaveBeenCalledWith(
             snapshot?.template,

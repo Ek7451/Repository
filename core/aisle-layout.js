@@ -837,6 +837,51 @@ export function resolveAisleStationRatios(pathFront, pathBack, aisle, chamferCac
         : resolveRadialStationRatios(pathFront, pathBack, aisle, chamferCache);
 }
 
+/**
+ * Resolve perpendicular aisle stations for arbitrary tier paths by projecting
+ * from one stable reference path/station instead of re-solving locally.
+ * @param {Object} pathFront
+ * @param {Object} pathBack
+ * @param {Object} aisle
+ * @param {Object} referencePath
+ * @param {number} referenceU
+ * @param {Map} [chamferCache]
+ * @returns {{uFront:number,uBack:number}|null}
+ */
+export function resolvePerpendicularAisleStationRatiosFromReference(
+    pathFront,
+    pathBack,
+    aisle,
+    referencePath,
+    referenceU,
+    chamferCache = null
+) {
+    if (!aisle || !referencePath || !Number.isFinite(referenceU)) return null;
+
+    const uFront = !pathFront
+        ? NaN
+        : (pathFront === referencePath
+            ? referenceU
+            : projectPerpendicularStationToCounterpart(
+                referencePath,
+                pathFront,
+                getPerimeterIntervalByIndex(referencePath, pathFront, aisle, chamferCache),
+                referenceU
+            ));
+    const uBack = !pathBack
+        ? NaN
+        : (pathBack === referencePath
+            ? referenceU
+            : projectPerpendicularStationToCounterpart(
+                referencePath,
+                pathBack,
+                getPerimeterIntervalByIndex(referencePath, pathBack, aisle, chamferCache),
+                referenceU
+            ));
+
+    return normalizeResolvedStationRatios(pathFront, pathBack, uFront, uBack);
+}
+
 function computeEvenOpenPathAisleStations(paths, targetAisles, aisleWidthFt = 0) {
     if (!Array.isArray(paths) || paths.length !== 1) return [];
     const path = paths[0];

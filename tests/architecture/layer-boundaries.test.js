@@ -401,6 +401,19 @@ describe('entry routing and bootstrap', () => {
         expect(editorShellSource).not.toContain('.export-menu-header');
     });
 
+    it('exposes every supported rectangular bowl family in the configurator bowl type picker', () => {
+        const configuratorMarkup = fs.readFileSync(
+            path.join(repoRoot, 'pages/configurator/index.html'),
+            'utf8'
+        );
+
+        expect(configuratorMarkup).toContain('option value="Full"');
+        expect(configuratorMarkup).toContain('option value="U-End1"');
+        expect(configuratorMarkup).toContain('option value="U-End2"');
+        expect(configuratorMarkup).toContain('option value="Sides"');
+        expect(configuratorMarkup).toContain('option value="Side1"');
+    });
+
     it('injects project actions that save, rename, and duplicate through project-document DTOs', async () => {
         const location = createLocation(
             'http://localhost/pages/configurator/index.html?project=project-1&devBackend=local'

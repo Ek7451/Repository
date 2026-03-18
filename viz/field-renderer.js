@@ -11,7 +11,8 @@ import {
     sampleAisleBand,
     samplePathPointByRatio,
     buildTierAisleLayout,
-    resolveAisleStationRatios
+    resolveAisleStationRatios,
+    resolvePerpendicularAisleStationRatiosFromReference
 } from '../core/aisle-layout.js';
 
 const FIELD_THEME_COLORS = {
@@ -1020,7 +1021,21 @@ export class FieldRenderer {
         if (!backPaths.length) return null;
 
         const chamferCache = new Map();
-        const backAisleRatios = this._buildResolvedAisleRatioMap(backPaths, backPaths, tierLayout, chamferCache);
+        const aisleReferenceMap = this._buildTierAisleReferenceMap(
+            solver,
+            bowlConfig,
+            tierLayout,
+            offsetCorrection,
+            (offset) => buildGeometryPaths(this._getBowlGeometry(bowlConfig, offset)),
+            chamferCache
+        );
+        const backAisleRatios = this._buildResolvedAisleRatioMap(
+            backPaths,
+            backPaths,
+            tierLayout,
+            chamferCache,
+            aisleReferenceMap
+        );
 
         let actualAisles = 0;
         let actualSections = 0;
@@ -1122,7 +1137,73 @@ export class FieldRenderer {
         ctx.restore();
     }
 
-    _buildResolvedAisleRatioMap(pathA, pathB, tierLayout, chamferCache) {
+    _buildTierAisleReferenceMap(
+        solver,
+        _bowlConfig,
+        tierLayout,
+        offsetCorrection,
+        getPathsForOffset,
+        chamferCache
+    ) {
+        const byAisle = new Map();
+        if (!solver || !Array.isArray(solver.rows) || solver.rows.length === 0) return byAisle;
+        if (!tierLayout || !Array.isArray(tierLayout.aisles) || tierLayout.aisles.length === 0) return byAisle;
+
+        const firstRow = solver.rows[0];
+        const lastRow = solver.rows[solver.rows.length - 1];
+        if (!firstRow || !lastRow || typeof getPathsForOffset !== 'function') return byAisle;
+        void _bowlConfig;
+
+        const referenceFrontPaths = getPathsForOffset((firstRow.x - firstRow.tread_depth) - offsetCorrection);
+        const referenceBackPaths = getPathsForOffset(lastRow.x - offsetCorrection);
+        if (!referenceFrontPaths.length || !referenceBackPaths.length) return byAisle;
+
+        for (let i = 0; i < tierLayout.aisles.length; i++) {
+            const aisle = tierLayout.aisles[i];
+            if (String(aisle?.alignmentMode || '').toLowerCase() !== 'perpendicular') continue;
+
+            const pathIndex = Math.max(0, Math.floor(Number(aisle.pathIndex) || 0));
+            const referenceFront = referenceFrontPaths[pathIndex];
+            const referenceBack = referenceBackPaths[pathIndex];
+            if (!referenceFront || !referenceBack) continue;
+
+            const referenceRatios = resolveAisleStationRatios(referenceFront, referenceBack, aisle, chamferCache);
+            if (!referenceRatios) continue;
+
+            const frontPoint = samplePathPointByRatio(referenceFront, referenceRatios.uFront);
+            const backPoint = samplePathPointByRatio(referenceBack, referenceRatios.uBack);
+            const isAxisAligned =
+                Math.abs((frontPoint?.x ?? NaN) - (backPoint?.x ?? NaN)) <= 1e-4 ||
+                Math.abs((frontPoint?.y ?? NaN) - (backPoint?.y ?? NaN)) <= 1e-4;
+
+            if (!isAxisAligned) continue;
+            byAisle.set(i, {
+                referencePath: referenceBack,
+                referenceU: referenceRatios.uBack
+            });
+        }
+
+        return byAisle;
+    }
+
+    _resolveTierAisleStationRatios(pathFront, pathBack, aisle, aisleIndex, chamferCache, aisleReferenceMap = null) {
+        const stableReference = aisleReferenceMap?.get?.(aisleIndex) || null;
+        if (stableReference?.referencePath && Number.isFinite(stableReference.referenceU)) {
+            const resolvedFromReference = resolvePerpendicularAisleStationRatiosFromReference(
+                pathFront,
+                pathBack,
+                aisle,
+                stableReference.referencePath,
+                stableReference.referenceU,
+                chamferCache
+            );
+            if (resolvedFromReference) return resolvedFromReference;
+        }
+
+        return resolveAisleStationRatios(pathFront, pathBack, aisle, chamferCache);
+    }
+
+    _buildResolvedAisleRatioMap(pathA, pathB, tierLayout, chamferCache, aisleReferenceMap = null) {
         const byPath = new Map();
         if (!tierLayout || !Array.isArray(tierLayout.aisles)) return byPath;
 
@@ -1132,7 +1213,14 @@ export class FieldRenderer {
             const pA = pathA[pathIndex];
             const pB = pathB[pathIndex];
             if (!pA || !pB) continue;
-            const ratios = resolveAisleStationRatios(pA, pB, aisle, chamferCache);
+            const ratios = this._resolveTierAisleStationRatios(
+                pA,
+                pB,
+                aisle,
+                i,
+                chamferCache,
+                aisleReferenceMap
+            );
             if (!ratios || !Number.isFinite(ratios.uFront)) continue;
             if (!byPath.has(pathIndex)) byPath.set(pathIndex, new Map());
             byPath.get(pathIndex).set(i, normalizePathU(pA, ratios.uFront));
@@ -1140,7 +1228,7 @@ export class FieldRenderer {
         return byPath;
     }
 
-    _pickBestRowLabelSampling(centerOffset, getPathsForOffset, tierLayout, chamferCache) {
+    _pickBestRowLabelSampling(centerOffset, getPathsForOffset, tierLayout, chamferCache, aisleReferenceMap = null) {
         const baseOffset = Number(centerOffset) || 0;
         // Small perturbations avoid pathological centerline sampling exactly on a corner/chamfer vertex.
         const offsetsToTry = [0, 0.02, -0.02, 0.05, -0.05];
@@ -1150,7 +1238,13 @@ export class FieldRenderer {
             const testOffset = baseOffset + offsetsToTry[i];
             const paths = getPathsForOffset(testOffset);
             if (!paths || !paths.length) continue;
-            const aisleRatiosByPath = this._buildResolvedAisleRatioMap(paths, paths, tierLayout, chamferCache);
+            const aisleRatiosByPath = this._buildResolvedAisleRatioMap(
+                paths,
+                paths,
+                tierLayout,
+                chamferCache,
+                aisleReferenceMap
+            );
 
             let score = 0;
             aisleRatiosByPath.forEach(m => { score += m?.size || 0; });
@@ -1281,6 +1375,14 @@ export class FieldRenderer {
         const templateOffset = (templateRow.x - (templateRow.tread_depth * 0.5)) - offsetCorrection;
         const labelPaths = getPathsForOffset(templateOffset);
         const chamferCache = new Map();
+        const aisleReferenceMap = this._buildTierAisleReferenceMap(
+            solver,
+            bowlConfig,
+            tierLayout,
+            offsetCorrection,
+            getPathsForOffset,
+            chamferCache
+        );
 
         const sectionTemplates = this._buildTierSectionTemplates(labelPaths, tierLayout, sectionBase);
         if (!sectionTemplates.size) return;
@@ -1291,7 +1393,13 @@ export class FieldRenderer {
             for (let r = 0; r < solver.rows.length; r++) {
                 const row = solver.rows[r];
                 const centerOffset = (row.x - (row.tread_depth * 0.5)) - offsetCorrection;
-                const sampledRow = this._pickBestRowLabelSampling(centerOffset, getPathsForOffset, tierLayout, chamferCache);
+                const sampledRow = this._pickBestRowLabelSampling(
+                    centerOffset,
+                    getPathsForOffset,
+                    tierLayout,
+                    chamferCache,
+                    aisleReferenceMap
+                );
                 const centerPaths = sampledRow.paths;
                 if (!centerPaths.length) continue;
 
@@ -1362,8 +1470,20 @@ export class FieldRenderer {
             const lastOffset = (lastRow.x - (lastRow.tread_depth * 0.5)) - offsetCorrection;
             const firstPaths = getPathsForOffset(firstOffset);
             const lastPaths = getPathsForOffset(lastOffset);
-            const firstAisleRatios = this._buildResolvedAisleRatioMap(firstPaths, firstPaths, tierLayout, chamferCache);
-            const lastAisleRatios = this._buildResolvedAisleRatioMap(lastPaths, lastPaths, tierLayout, chamferCache);
+            const firstAisleRatios = this._buildResolvedAisleRatioMap(
+                firstPaths,
+                firstPaths,
+                tierLayout,
+                chamferCache,
+                aisleReferenceMap
+            );
+            const lastAisleRatios = this._buildResolvedAisleRatioMap(
+                lastPaths,
+                lastPaths,
+                tierLayout,
+                chamferCache,
+                aisleReferenceMap
+            );
 
             ctx.save();
             ctx.translate(fx, fy);
@@ -1452,6 +1572,14 @@ export class FieldRenderer {
         };
 
         const chamferCache = new Map();
+        const aisleReferenceMap = this._buildTierAisleReferenceMap(
+            solver,
+            bowlConfig,
+            tierLayout,
+            offsetCorrection,
+            getPathsForOffset,
+            chamferCache
+        );
         for (let r = 0; r < solver.rows.length; r++) {
             const row = solver.rows[r];
             const frontOffset = (row.x - row.tread_depth) - offsetCorrection;
@@ -1468,7 +1596,14 @@ export class FieldRenderer {
                 const pathBack = backPaths[pathIndex];
                 if (!pathFront || !pathBack) continue;
 
-                const ratios = resolveAisleStationRatios(pathFront, pathBack, aisle, chamferCache);
+                const ratios = this._resolveTierAisleStationRatios(
+                    pathFront,
+                    pathBack,
+                    aisle,
+                    i,
+                    chamferCache,
+                    aisleReferenceMap
+                );
                 if (!ratios) continue;
 
                 const bandFront = sampleAisleBand(pathFront, ratios.uFront, widthFt);
@@ -1523,6 +1658,14 @@ export class FieldRenderer {
         const templateOffset = (templateRow.x - (templateRow.tread_depth * 0.5)) - offsetCorrection;
         const labelPaths = getPathsForOffset(templateOffset);
         const chamferCache = new Map();
+        const aisleReferenceMap = this._buildTierAisleReferenceMap(
+            solver,
+            bowlConfig,
+            tierLayout,
+            offsetCorrection,
+            getPathsForOffset,
+            chamferCache
+        );
         const sectionTemplates = this._buildTierSectionTemplates(labelPaths, tierLayout, sectionBase);
         if (!sectionTemplates.size) return { sectionLabels: [], rowSeatLabels: [] };
 
@@ -1531,7 +1674,13 @@ export class FieldRenderer {
         for (let r = 0; r < solver.rows.length; r++) {
             const row = solver.rows[r];
             const centerOffset = (row.x - (row.tread_depth * 0.5)) - offsetCorrection;
-            const sampledRow = this._pickBestRowLabelSampling(centerOffset, getPathsForOffset, tierLayout, chamferCache);
+            const sampledRow = this._pickBestRowLabelSampling(
+                centerOffset,
+                getPathsForOffset,
+                tierLayout,
+                chamferCache,
+                aisleReferenceMap
+            );
             const centerPaths = sampledRow.paths;
             if (!centerPaths.length) continue;
 
@@ -1596,8 +1745,20 @@ export class FieldRenderer {
         const lastOffset = (lastRow.x - (lastRow.tread_depth * 0.5)) - offsetCorrection;
         const firstPaths = getPathsForOffset(firstOffset);
         const lastPaths = getPathsForOffset(lastOffset);
-        const firstAisleRatios = this._buildResolvedAisleRatioMap(firstPaths, firstPaths, tierLayout, chamferCache);
-        const lastAisleRatios = this._buildResolvedAisleRatioMap(lastPaths, lastPaths, tierLayout, chamferCache);
+        const firstAisleRatios = this._buildResolvedAisleRatioMap(
+            firstPaths,
+            firstPaths,
+            tierLayout,
+            chamferCache,
+            aisleReferenceMap
+        );
+        const lastAisleRatios = this._buildResolvedAisleRatioMap(
+            lastPaths,
+            lastPaths,
+            tierLayout,
+            chamferCache,
+            aisleReferenceMap
+        );
 
         sectionTemplates.forEach((slots, pathIndex) => {
             const path = labelPaths[pathIndex];
@@ -1671,9 +1832,17 @@ export class FieldRenderer {
         ctx.translate(fx, fy);
         ctx.fillStyle = BRAND_FIELD_COLORS.aislesFill;
         const chamferCache = new Map();
+        const aisleReferenceMap = this._buildTierAisleReferenceMap(
+            solver,
+            bowlConfig,
+            tierLayout,
+            offsetCorrection,
+            getPathsForOffset,
+            chamferCache
+        );
 
-        // Match 3D aisle logic by sampling front/back paths per seating row.
-        // This creates the same radiating aisle behavior in Field Plan.
+        // Resolve row quads from tier-stable straight perpendicular references
+        // while keeping radial and chamfer sampling on the existing per-row path pair.
         for (let r = 0; r < solver.rows.length; r++) {
             const row = solver.rows[r];
             const frontOffset = (row.x - row.tread_depth) - offsetCorrection;
@@ -1690,7 +1859,14 @@ export class FieldRenderer {
                 const pathBack = backPaths[pathIndex];
                 if (!pathFront || !pathBack) continue;
 
-                const ratios = resolveAisleStationRatios(pathFront, pathBack, aisle, chamferCache);
+                const ratios = this._resolveTierAisleStationRatios(
+                    pathFront,
+                    pathBack,
+                    aisle,
+                    i,
+                    chamferCache,
+                    aisleReferenceMap
+                );
                 if (!ratios) continue;
 
                 const bandFront = sampleAisleBand(pathFront, ratios.uFront, widthFt);

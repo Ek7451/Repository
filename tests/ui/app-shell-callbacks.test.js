@@ -974,6 +974,7 @@ describe('SeatingBowlApp shell callbacks', () => {
             renderProjectChrome: vi.fn(),
             renderOptionChrome: vi.fn(),
             renderProjectStatus: vi.fn(),
+            isScene3DActive: vi.fn(() => false),
             getViewCanvases: vi.fn(() => ({
                 fieldCanvas: null,
                 profileCanvas: null
@@ -984,7 +985,8 @@ describe('SeatingBowlApp shell callbacks', () => {
         });
         app.scene3DController = /** @type {any} */ ({
             activate: vi.fn().mockResolvedValue(),
-            renderBookmarks: vi.fn()
+            renderBookmarks: vi.fn(),
+            update: vi.fn()
         });
 
         app.loadState({

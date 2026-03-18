@@ -4,19 +4,49 @@ import { getTemplate } from '../../core/sports-templates.js';
 import { AppState } from '../../state/app-state.js';
 import { RenderRuntime } from '../../ui/render-runtime.js';
 
+function createTierLayout(tierIndex) {
+    return {
+        tierIndex,
+        aisleWidthFt: 4,
+        seatWidthIn: 20,
+        aisles: [
+            {
+                pathIndex: 0,
+                forced: false,
+                anchorType: 'segment_fraction',
+                segmentIndex: tierIndex,
+                segmentT: 0.5,
+                alignmentMode: 'perpendicular'
+            }
+        ],
+        targetAisles: 3,
+        forcedCount: 1,
+        sectionBoundaries: [[
+            {
+                aisleIndex: 0,
+                u: 0.25,
+                forced: false
+            }
+        ]],
+        axisExclusionFt: 2.25,
+        sectionSummary: {
+            actualAisles: 1,
+            actualSections: 1,
+            allSectionPathsClosed: true,
+            backRowSectionSeatCounts: [18],
+            avgBackRowSeatsPerSection: 18,
+            maxBackRowSeatsPerSection: 18,
+            minBackRowSeatsPerSection: 18
+        }
+    };
+}
+
 function createFieldGeometryPort() {
     return {
         getOffsetCorrection: vi.fn(() => 6),
         getVisualFocalY: vi.fn(() => 120),
         calculateRowLength: vi.fn(() => 140),
-        buildTierAisleLayouts: vi.fn((solvers) => solvers.map((solver, index) => ({
-            tierIndex: solver.tierIndex ?? index,
-            aisles: [],
-            sectionSummary: {
-                actualAisles: 2,
-                actualSections: 2
-            }
-        })))
+        buildTierAisleLayouts: vi.fn((solvers) => solvers.map((solver, index) => createTierLayout(solver.tierIndex ?? index)))
     };
 }
 
@@ -61,6 +91,26 @@ describe('RenderRuntime', () => {
         expect(snapshot.offsetCorrection).toBe(6);
         expect(snapshot.tierMetricsByIndex).toBeInstanceOf(Map);
         expect(snapshot.tierAisleLayouts).toHaveLength(2);
+        expect(snapshot.tierAisleLayouts[0]).toEqual(expect.objectContaining({
+            tierIndex: 0,
+            aisleWidthFt: 4,
+            seatWidthIn: 20,
+            targetAisles: 3,
+            forcedCount: 1,
+            axisExclusionFt: 2.25,
+            sectionBoundaries: [[
+                {
+                    aisleIndex: 0,
+                    u: 0.25,
+                    forced: false
+                }
+            ]],
+            sectionSummary: expect.objectContaining({
+                actualAisles: 1,
+                actualSections: 1,
+                allSectionPathsClosed: true
+            })
+        }));
         expect(snapshot.fieldRenderInput).toEqual(expect.objectContaining({
             template: snapshot.template,
             customRunoff: 30,
