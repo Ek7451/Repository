@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     buildGeometryPaths,
+    buildPerpendicularAisleReferenceMap,
     buildTierAisleLayout,
     resolveAisleStationRatios,
     sampleAisleBand,
@@ -227,6 +228,64 @@ describe('aisle layout geometry seam', () => {
         expectPointClose(samplePathPointByRatio(pathBack, resolved.uBack), { x: 12, y: 8 });
     });
 
+    it('supports perpendicular chamfer-interval resolution as a distinct mode', () => {
+        const fixture = buildRendererBowlFixture('Full', {
+            frontOffset: 21,
+            backOffset: 33,
+            straightAisleMode: 'radial',
+            chamferAisleMode: 'perpendicular'
+        });
+        const [pathFront] = fixture.frontPaths;
+        const [pathBack] = fixture.backPaths;
+        const layout = buildTierAisleLayout({
+            frontSegments: fixture.frontSegments,
+            backSegments: fixture.backSegments,
+            targetAisles: 8,
+            aisleWidthFt: 4,
+            bowlConfig: fixture.bowlConfig,
+            maxSeatsBetweenAisles: 12,
+            seatWidthIn: 20
+        });
+        const targetAisle = layout.aisles.find((aisle) => (
+            !aisle.forced &&
+            aisle.segmentIndex === 0 &&
+            aisle.segmentT < 0.5
+        ));
+
+        expect(targetAisle).toBeTruthy();
+
+        const radial = resolveAisleStationRatios(pathFront, pathBack, {
+            ...targetAisle,
+            alignmentMode: 'radial'
+        });
+        const perpendicular = resolveAisleStationRatios(pathFront, pathBack, {
+            ...targetAisle
+        });
+
+        expect(radial).not.toBeNull();
+        expect(perpendicular).not.toBeNull();
+
+        const radialFront = samplePathPointByRatio(pathFront, radial.uFront);
+        const radialBack = samplePathPointByRatio(pathBack, radial.uBack);
+        const perpendicularFront = samplePathPointByRatio(pathFront, perpendicular.uFront);
+        const perpendicularBack = samplePathPointByRatio(pathBack, perpendicular.uBack);
+        const radialDot =
+            ((radialBack.x - radialFront.x) * radialFront.tx) +
+            ((radialBack.y - radialFront.y) * radialFront.ty);
+        const perpendicularDot =
+            ((perpendicularBack.x - perpendicularFront.x) * perpendicularFront.tx) +
+            ((perpendicularBack.y - perpendicularFront.y) * perpendicularFront.ty);
+
+        expect(Math.abs(radialDot)).toBeGreaterThan(0.5);
+        expect(Math.abs(perpendicularDot)).toBeLessThan(1e-3);
+        expect(
+            Math.abs(perpendicularFront.x - radialFront.x) > 0.5 ||
+            Math.abs(perpendicularFront.y - radialFront.y) > 0.5 ||
+            Math.abs(perpendicularBack.x - radialBack.x) > 0.5 ||
+            Math.abs(perpendicularBack.y - radialBack.y) > 0.5
+        ).toBe(true);
+    });
+
     it('defaults widening straight-interval resolution to radial interpolation', () => {
         const [pathFront] = buildGeometryPaths(buildChamferRectangleSegments({
             width: 20,
@@ -414,6 +473,71 @@ describe('aisle layout geometry seam', () => {
         expect(chamferDistributed.length).toBeGreaterThan(0);
         expect(straightDistributed.every((aisle) => aisle.alignmentMode === 'perpendicular')).toBe(true);
         expect(chamferDistributed.every((aisle) => aisle.alignmentMode === 'radial')).toBe(true);
+    });
+
+    it('keeps forced chamfer edge aisles on the fixed corner contract', () => {
+        const fixture = buildRendererBowlFixture('Full', {
+            straightAisleMode: 'radial',
+            chamferAisleMode: 'perpendicular'
+        });
+        const layout = buildTierAisleLayout({
+            frontSegments: fixture.frontSegments,
+            backSegments: fixture.backSegments,
+            targetAisles: 8,
+            aisleWidthFt: 4,
+            bowlConfig: fixture.bowlConfig
+        });
+
+        const forcedChamferAisles = layout.aisles.filter((aisle) => aisle.forced);
+        expect(forcedChamferAisles).toHaveLength(layout.forcedCount);
+        expect(forcedChamferAisles.length).toBeGreaterThan(0);
+        expect(forcedChamferAisles.every((aisle) => aisle.alignmentMode === undefined)).toBe(true);
+    });
+
+    it('builds tier-stable perpendicular references for distributed aisles only', () => {
+        const fixture = buildRendererBowlFixture('Full', {
+            straightAisleMode: 'perpendicular',
+            chamferAisleMode: 'perpendicular'
+        });
+        const layout = buildTierAisleLayout({
+            frontSegments: fixture.frontSegments,
+            backSegments: fixture.backSegments,
+            targetAisles: 8,
+            aisleWidthFt: 4,
+            bowlConfig: fixture.bowlConfig,
+            maxSeatsBetweenAisles: 12,
+            seatWidthIn: 20
+        });
+        const references = buildPerpendicularAisleReferenceMap(
+            fixture.frontPaths,
+            fixture.backPaths,
+            layout.aisles,
+            new Map()
+        );
+        const expectedCount = layout.aisles.filter((aisle) => (
+            !aisle.forced && aisle.alignmentMode === 'perpendicular'
+        )).length;
+        const straightIndex = layout.aisles.findIndex((aisle) => (
+            !aisle.forced && [1, 3, 5, 7].includes(aisle.segmentIndex)
+        ));
+        const chamferIndex = layout.aisles.findIndex((aisle) => (
+            !aisle.forced && [0, 2, 4, 6].includes(aisle.segmentIndex)
+        ));
+        const forcedIndex = layout.aisles.findIndex((aisle) => aisle.forced);
+
+        expect(references.size).toBe(expectedCount);
+        expect(straightIndex).toBeGreaterThanOrEqual(0);
+        expect(chamferIndex).toBeGreaterThanOrEqual(0);
+        expect(forcedIndex).toBeGreaterThanOrEqual(0);
+        expect(references.get(straightIndex)).toEqual(expect.objectContaining({
+            referencePath: fixture.backPaths[0],
+            referenceU: expect.any(Number)
+        }));
+        expect(references.get(chamferIndex)).toEqual(expect.objectContaining({
+            referencePath: fixture.backPaths[0],
+            referenceU: expect.any(Number)
+        }));
+        expect(references.has(forcedIndex)).toBe(false);
     });
 
     it('keeps U-end discretionary extras on the straight interval before chamfer interiors', () => {

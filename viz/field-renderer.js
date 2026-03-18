@@ -11,6 +11,7 @@ import {
     sampleAisleBand,
     samplePathPointByRatio,
     buildTierAisleLayout,
+    buildPerpendicularAisleReferenceMap,
     resolveAisleStationRatios,
     resolvePerpendicularAisleStationRatiosFromReference
 } from '../core/aisle-layout.js';
@@ -1158,32 +1159,12 @@ export class FieldRenderer {
         const referenceBackPaths = getPathsForOffset(lastRow.x - offsetCorrection);
         if (!referenceFrontPaths.length || !referenceBackPaths.length) return byAisle;
 
-        for (let i = 0; i < tierLayout.aisles.length; i++) {
-            const aisle = tierLayout.aisles[i];
-            if (String(aisle?.alignmentMode || '').toLowerCase() !== 'perpendicular') continue;
-
-            const pathIndex = Math.max(0, Math.floor(Number(aisle.pathIndex) || 0));
-            const referenceFront = referenceFrontPaths[pathIndex];
-            const referenceBack = referenceBackPaths[pathIndex];
-            if (!referenceFront || !referenceBack) continue;
-
-            const referenceRatios = resolveAisleStationRatios(referenceFront, referenceBack, aisle, chamferCache);
-            if (!referenceRatios) continue;
-
-            const frontPoint = samplePathPointByRatio(referenceFront, referenceRatios.uFront);
-            const backPoint = samplePathPointByRatio(referenceBack, referenceRatios.uBack);
-            const isAxisAligned =
-                Math.abs((frontPoint?.x ?? NaN) - (backPoint?.x ?? NaN)) <= 1e-4 ||
-                Math.abs((frontPoint?.y ?? NaN) - (backPoint?.y ?? NaN)) <= 1e-4;
-
-            if (!isAxisAligned) continue;
-            byAisle.set(i, {
-                referencePath: referenceBack,
-                referenceU: referenceRatios.uBack
-            });
-        }
-
-        return byAisle;
+        return buildPerpendicularAisleReferenceMap(
+            referenceFrontPaths,
+            referenceBackPaths,
+            tierLayout.aisles,
+            chamferCache
+        );
     }
 
     _resolveTierAisleStationRatios(pathFront, pathBack, aisle, aisleIndex, chamferCache, aisleReferenceMap = null) {
@@ -1841,8 +1822,8 @@ export class FieldRenderer {
             chamferCache
         );
 
-        // Resolve row quads from tier-stable straight perpendicular references
-        // while keeping radial and chamfer sampling on the existing per-row path pair.
+        // Resolve row quads from tier-stable perpendicular references while
+        // keeping radial and forced-corner sampling on the existing per-row path pair.
         for (let r = 0; r < solver.rows.length; r++) {
             const row = solver.rows[r];
             const frontOffset = (row.x - row.tread_depth) - offsetCorrection;

@@ -740,6 +740,55 @@ function getIntervalSideForPath(intervalRecord, path) {
     return null;
 }
 
+function findPerpendicularIntersectionStation(pathTarget, sourcePt, preferU = NaN) {
+    if (!pathTarget || !Array.isArray(pathTarget.parts) || pathTarget.length <= EPS || !sourcePt) return NaN;
+
+    const dirX = Number(sourcePt.tx);
+    const dirY = Number(sourcePt.ty);
+    const dirMag = Math.hypot(dirX, dirY);
+    if (dirMag <= EPS) return NaN;
+
+    const nx = -dirY / dirMag;
+    const ny = dirX / dirMag;
+    let best = null;
+
+    for (let i = 0; i < pathTarget.parts.length; i++) {
+        const part = pathTarget.parts[i];
+        if (!part || part.type !== 'line' || part.length <= EPS) continue;
+
+        const vx = part.x2 - part.x1;
+        const vy = part.y2 - part.y1;
+        const denom = (nx * vy) - (ny * vx);
+        if (Math.abs(denom) <= 1e-6) continue;
+
+        const dx = part.x1 - sourcePt.x;
+        const dy = part.y1 - sourcePt.y;
+        const normalT = ((dx * vy) - (dy * vx)) / denom;
+        const segmentT = ((dx * ny) - (dy * nx)) / denom;
+        if (segmentT < -1e-4 || segmentT > 1 + 1e-4) continue;
+
+        const clampedSegmentT = clamp01(segmentT);
+        const dist = part.startDist + part.length * clampedSegmentT;
+        const u = pathTarget.closed
+            ? normalizeUnit(dist / pathTarget.length)
+            : clamp01(dist / pathTarget.length);
+        const dir = lineDirection(part);
+        const alignmentPenalty = 1 - Math.abs((dir.x * dirX) + (dir.y * dirY));
+        const prefErr = Number.isFinite(preferU)
+            ? stationDistance(
+                pathTarget,
+                u,
+                pathTarget.closed ? normalizeUnit(preferU) : clamp01(preferU)
+            )
+            : 0;
+        const score = (alignmentPenalty * 100) + prefErr + (Math.abs(normalT) * 0.001);
+
+        if (!best || score < best.score) best = { u, score };
+    }
+
+    return best ? best.u : NaN;
+}
+
 function projectPerpendicularStationToCounterpart(pathSource, pathTarget, intervalRecord, sourceU) {
     if (!pathSource || !pathTarget || !Number.isFinite(sourceU)) return NaN;
 
@@ -779,6 +828,9 @@ function projectPerpendicularStationToCounterpart(pathSource, pathTarget, interv
         );
         if (Number.isFinite(targetU)) return targetU;
     }
+
+    const projectedU = findPerpendicularIntersectionStation(pathTarget, sourcePt, fallbackU);
+    if (Number.isFinite(projectedU)) return projectedU;
 
     if (sourceSide && targetSide) {
         const t = resolvePathIntervalT(pathSource, sourceSide.startU, sourceSide.endU, sourceU);
@@ -835,6 +887,68 @@ export function resolveAisleStationRatios(pathFront, pathBack, aisle, chamferCac
     return alignmentMode === 'perpendicular'
         ? resolvePerpendicularStationRatios(pathFront, pathBack, aisle, chamferCache)
         : resolveRadialStationRatios(pathFront, pathBack, aisle, chamferCache);
+}
+
+/**
+ * Build tier-stable references for perpendicular aisles from one canonical
+ * front/back path pair. Forced corner-transition aisles are intentionally
+ * excluded so chamfer edge aisles stay pinned to their corner anchors.
+ * @param {Array} referenceFrontPaths
+ * @param {Array} referenceBackPaths
+ * @param {Array} aisles
+ * @param {Map} [chamferCache]
+ * @returns {Map<number, { referencePath: Object, referenceU: number }>}
+ */
+export function buildPerpendicularAisleReferenceMap(
+    referenceFrontPaths,
+    referenceBackPaths,
+    aisles,
+    chamferCache = null
+) {
+    const byAisle = new Map();
+    if (!Array.isArray(referenceFrontPaths) || !Array.isArray(referenceBackPaths)) return byAisle;
+    if (!Array.isArray(aisles) || !aisles.length) return byAisle;
+
+    for (let i = 0; i < aisles.length; i++) {
+        const aisle = aisles[i];
+        if (!aisle) continue;
+        if (aisle.forced || Number.isFinite(aisle.cornerOrdinal)) continue;
+        if (normalizeAlignmentMode(aisle.alignmentMode) !== 'perpendicular') continue;
+
+        const pathIndex = Math.max(0, Math.floor(Number(aisle.pathIndex) || 0));
+        const referenceFront = referenceFrontPaths[pathIndex];
+        const referenceBack = referenceBackPaths[pathIndex];
+        if (!referenceFront || !referenceBack) continue;
+
+        const referenceRatios = resolveAisleStationRatios(
+            referenceFront,
+            referenceBack,
+            aisle,
+            chamferCache
+        );
+        if (!referenceRatios) continue;
+
+        if (Number.isFinite(referenceRatios.uBack)) {
+            byAisle.set(i, {
+                referencePath: referenceBack,
+                referenceU: referenceBack.closed
+                    ? normalizeUnit(referenceRatios.uBack)
+                    : clamp01(referenceRatios.uBack)
+            });
+            continue;
+        }
+
+        if (Number.isFinite(referenceRatios.uFront)) {
+            byAisle.set(i, {
+                referencePath: referenceFront,
+                referenceU: referenceFront.closed
+                    ? normalizeUnit(referenceRatios.uFront)
+                    : clamp01(referenceRatios.uFront)
+            });
+        }
+    }
+
+    return byAisle;
 }
 
 /**

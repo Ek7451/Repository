@@ -7,6 +7,8 @@ import {
     samplePathPointByRatio
 } from '../../core/aisle-layout.js';
 
+vi.mock('three', async () => import('../../lib/three.module.js'));
+
 function createTierSolver({ tierIndex = 0 } = {}) {
     return {
         tierIndex,
@@ -241,5 +243,204 @@ describe('FieldRenderer helper delegation surface', () => {
             expect(Math.abs(referenceFrontPoint.y - referenceBackPoint.y)).toBeLessThanOrEqual(1e-4);
             expect(spreadY).toBeLessThan(1e-3);
         }
+    });
+
+    it('changes distributed chamfer plan-view polygons when the chamfer mode changes', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const solver = createTierSolver();
+        const egressParams = {
+            ...createEgressParams(),
+            seatsBetweenAisles: 12
+        };
+        const radialBowlConfig = createFullChamferBowlConfig({
+            straightAisleMode: 'radial',
+            chamferAisleMode: 'radial'
+        });
+        const bowlConfig = createFullChamferBowlConfig({
+            straightAisleMode: 'radial',
+            chamferAisleMode: 'perpendicular'
+        });
+        const radialLayout = renderer.generateTierAisleLayout(
+            solver,
+            radialBowlConfig,
+            createTierMetrics(),
+            0,
+            egressParams
+        );
+        const tierLayout = renderer.generateTierAisleLayout(
+            solver,
+            bowlConfig,
+            createTierMetrics(),
+            0,
+            egressParams
+        );
+        const radialAisleIndex = radialLayout.aisles.findIndex((aisle) => (
+            !aisle.forced &&
+            aisle.segmentIndex === 0 &&
+            aisle.segmentT < 0.5
+        ));
+        const radialAisle = radialLayout.aisles[radialAisleIndex];
+        const targetAisleIndex = tierLayout.aisles.findIndex((aisle) => (
+            !aisle.forced &&
+            aisle.segmentIndex === radialAisle?.segmentIndex &&
+            aisle.segmentT === radialAisle?.segmentT &&
+            aisle.alignmentMode === 'perpendicular'
+        ));
+
+        expect(radialAisleIndex).toBeGreaterThanOrEqual(0);
+        expect(targetAisleIndex).toBeGreaterThanOrEqual(0);
+
+        const targetAisle = tierLayout.aisles[targetAisleIndex];
+        const firstRow = solver.rows[0];
+        const lastRow = solver.rows[solver.rows.length - 1];
+        const referenceFrontPaths = buildGeometryPaths(
+            renderer._getBowlGeometry(bowlConfig, firstRow.x - firstRow.tread_depth)
+        );
+        const referenceBackPaths = buildGeometryPaths(
+            renderer._getBowlGeometry(bowlConfig, lastRow.x)
+        );
+        const pathIndex = Math.max(0, Math.floor(Number(targetAisle.pathIndex) || 0));
+        const referenceRatios = resolveAisleStationRatios(
+            referenceFrontPaths[pathIndex],
+            referenceBackPaths[pathIndex],
+            targetAisle,
+            new Map()
+        );
+
+        expect(referenceRatios).not.toBeNull();
+
+        const referenceFrontPoint = samplePathPointByRatio(referenceFrontPaths[pathIndex], referenceRatios.uFront);
+        const referenceBackPoint = samplePathPointByRatio(referenceBackPaths[pathIndex], referenceRatios.uBack);
+        const radialPolygons = renderer.getTierAisleBandPolygons(solver, radialBowlConfig, radialLayout, 0)
+            .filter((polygon) => polygon.aisleIndex === radialAisleIndex);
+        const polygons = renderer.getTierAisleBandPolygons(solver, bowlConfig, tierLayout, 0)
+            .filter((polygon) => polygon.aisleIndex === targetAisleIndex);
+
+        expect(radialPolygons).toHaveLength(solver.rows.length);
+        expect(polygons).toHaveLength(solver.rows.length);
+
+        const referenceDot =
+            ((referenceBackPoint.x - referenceFrontPoint.x) * referenceFrontPoint.tx) +
+            ((referenceBackPoint.y - referenceFrontPoint.y) * referenceFrontPoint.ty);
+        expect(Math.abs(referenceDot)).toBeLessThan(1e-3);
+
+        const centers = polygons.flatMap((polygon) => ([
+            {
+                x: (polygon.points[0].x + polygon.points[1].x) * 0.5,
+                y: (polygon.points[0].y + polygon.points[1].y) * 0.5
+            },
+            {
+                x: (polygon.points[2].x + polygon.points[3].x) * 0.5,
+                y: (polygon.points[2].y + polygon.points[3].y) * 0.5
+            }
+        ]));
+        const radialCenters = radialPolygons.flatMap((polygon) => ([
+            {
+                x: (polygon.points[0].x + polygon.points[1].x) * 0.5,
+                y: (polygon.points[0].y + polygon.points[1].y) * 0.5
+            },
+            {
+                x: (polygon.points[2].x + polygon.points[3].x) * 0.5,
+                y: (polygon.points[2].y + polygon.points[3].y) * 0.5
+            }
+        ]));
+        const maxCenterDelta = Math.max(...centers.map((point, index) => (
+            Math.hypot(
+                point.x - radialCenters[index].x,
+                point.y - radialCenters[index].y
+            )
+        )));
+
+        expect(maxCenterDelta).toBeGreaterThan(0.25);
+    });
+
+    it('matches scene3d tier-stable perpendicular resolution to the plan-view contract', async () => {
+        const fieldRenderer = Object.create(FieldRenderer.prototype);
+        const { Scene3D } = await import('../../viz/scene3d.js');
+        const scene = Object.create(Scene3D.prototype);
+        const solver = createTierSolver();
+        const cases = [
+            {
+                bowlConfig: createFullChamferBowlConfig(),
+                egressParams: createEgressParams(),
+                pickAisle: (aisle) => !aisle.forced && aisle.alignmentMode === 'perpendicular'
+            },
+            {
+                bowlConfig: createFullChamferBowlConfig({
+                    straightAisleMode: 'radial',
+                    chamferAisleMode: 'perpendicular'
+                }),
+                egressParams: {
+                    ...createEgressParams(),
+                    seatsBetweenAisles: 12
+                },
+                pickAisle: (aisle) => (
+                    !aisle.forced &&
+                    aisle.segmentIndex === 0 &&
+                    aisle.segmentT < 0.5 &&
+                    aisle.alignmentMode === 'perpendicular'
+                )
+            }
+        ];
+
+        cases.forEach(({ bowlConfig, egressParams, pickAisle }) => {
+            const tierLayout = fieldRenderer.generateTierAisleLayout(
+                solver,
+                bowlConfig,
+                createTierMetrics(),
+                0,
+                egressParams
+            );
+            const targetAisleIndex = tierLayout.aisles.findIndex(pickAisle);
+            expect(targetAisleIndex).toBeGreaterThanOrEqual(0);
+
+            const getPathsForOffset = (offset) => buildGeometryPaths(
+                scene._getBowlGeometrySegments(bowlConfig, offset)
+            );
+            const fieldChamferCache = new Map();
+            const sceneChamferCache = new Map();
+            const fieldReferenceMap = fieldRenderer._buildTierAisleReferenceMap(
+                solver,
+                bowlConfig,
+                tierLayout,
+                0,
+                getPathsForOffset,
+                fieldChamferCache
+            );
+            const sceneReferenceMap = scene._buildTierAisleReferenceMap(
+                solver,
+                tierLayout,
+                0,
+                getPathsForOffset,
+                sceneChamferCache
+            );
+
+            const row = solver.rows[1];
+            const pathIndex = Math.max(0, Math.floor(Number(tierLayout.aisles[targetAisleIndex].pathIndex) || 0));
+            const frontPaths = getPathsForOffset(row.x - row.tread_depth);
+            const backPaths = getPathsForOffset(row.x);
+            const fieldRatios = fieldRenderer._resolveTierAisleStationRatios(
+                frontPaths[pathIndex],
+                backPaths[pathIndex],
+                tierLayout.aisles[targetAisleIndex],
+                targetAisleIndex,
+                fieldChamferCache,
+                fieldReferenceMap
+            );
+            const sceneRatios = scene._resolveTierAisleStationRatios(
+                frontPaths[pathIndex],
+                backPaths[pathIndex],
+                tierLayout.aisles[targetAisleIndex],
+                targetAisleIndex,
+                sceneChamferCache,
+                sceneReferenceMap
+            );
+
+            expect(fieldReferenceMap.get(targetAisleIndex)).toEqual(sceneReferenceMap.get(targetAisleIndex));
+            expect(sceneRatios).not.toBeNull();
+            expect(fieldRatios).not.toBeNull();
+            expect(sceneRatios.uFront).toBeCloseTo(fieldRatios.uFront);
+            expect(sceneRatios.uBack).toBeCloseTo(fieldRatios.uBack);
+        });
     });
 });

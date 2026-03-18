@@ -5,7 +5,14 @@
 
 import * as THREE from '../lib/three.module.js';
 import { OrbitControls } from '../lib/OrbitControls.js';
-import { buildGeometryPaths, sampleAisleBand, resolveAisleStationRatios, samplePathPointByRatio } from '../core/aisle-layout.js';
+import {
+    buildGeometryPaths,
+    sampleAisleBand,
+    buildPerpendicularAisleReferenceMap,
+    resolveAisleStationRatios,
+    resolvePerpendicularAisleStationRatiosFromReference,
+    samplePathPointByRatio
+} from '../core/aisle-layout.js';
 import { buildStructuralProfileGeometry } from '../core/profile-solver.js';
 import { resolvePlanFocalYFt } from '../core/sports-templates.js';
 
@@ -700,6 +707,13 @@ export class Scene3D {
             }
             return pathCache.get(key);
         };
+        const aisleReferenceMap = this._buildTierAisleReferenceMap(
+            solver,
+            tierAisleLayout,
+            offsetCorrection,
+            getPathsForOffset,
+            chamferCache
+        );
 
         solver.rows.forEach(row => {
             const frontOffset = (row.x - row.tread_depth) - offsetCorrection;
@@ -711,13 +725,20 @@ export class Scene3D {
             const zTop = row.z + zOffset;
             const zBottom = (row.z - row.riser_height) + zOffset;
 
-            tierAisleLayout.aisles.forEach(aisle => {
+            tierAisleLayout.aisles.forEach((aisle, aisleIndex) => {
                 const pathIndex = Math.max(0, Math.floor(Number(aisle.pathIndex) || 0));
                 const pathFront = pathsFront[pathIndex];
                 const pathBack = pathsBack[pathIndex];
                 if (!pathFront || !pathBack) return;
 
-                const ratios = resolveAisleStationRatios(pathFront, pathBack, aisle, chamferCache);
+                const ratios = this._resolveTierAisleStationRatios(
+                    pathFront,
+                    pathBack,
+                    aisle,
+                    aisleIndex,
+                    chamferCache,
+                    aisleReferenceMap
+                );
                 if (!ratios) return;
 
                 const bandFront = sampleAisleBand(pathFront, ratios.uFront, widthFt);
@@ -745,6 +766,50 @@ export class Scene3D {
         geometry.setIndex(indices);
         geometry.computeVertexNormals();
         return geometry;
+    }
+
+    _buildTierAisleReferenceMap(
+        solver,
+        tierAisleLayout,
+        offsetCorrection,
+        getPathsForOffset,
+        chamferCache
+    ) {
+        const byAisle = new Map();
+        if (!solver || !Array.isArray(solver.rows) || solver.rows.length === 0) return byAisle;
+        if (!tierAisleLayout || !Array.isArray(tierAisleLayout.aisles) || !tierAisleLayout.aisles.length) return byAisle;
+
+        const firstRow = solver.rows[0];
+        const lastRow = solver.rows[solver.rows.length - 1];
+        if (!firstRow || !lastRow || typeof getPathsForOffset !== 'function') return byAisle;
+
+        const referenceFrontPaths = getPathsForOffset((firstRow.x - firstRow.tread_depth) - offsetCorrection);
+        const referenceBackPaths = getPathsForOffset(lastRow.x - offsetCorrection);
+        if (!referenceFrontPaths.length || !referenceBackPaths.length) return byAisle;
+
+        return buildPerpendicularAisleReferenceMap(
+            referenceFrontPaths,
+            referenceBackPaths,
+            tierAisleLayout.aisles,
+            chamferCache
+        );
+    }
+
+    _resolveTierAisleStationRatios(pathFront, pathBack, aisle, aisleIndex, chamferCache, aisleReferenceMap = null) {
+        const stableReference = aisleReferenceMap?.get?.(aisleIndex) || null;
+        if (stableReference?.referencePath && Number.isFinite(stableReference.referenceU)) {
+            const resolvedFromReference = resolvePerpendicularAisleStationRatiosFromReference(
+                pathFront,
+                pathBack,
+                aisle,
+                stableReference.referencePath,
+                stableReference.referenceU,
+                chamferCache
+            );
+            if (resolvedFromReference) return resolvedFromReference;
+        }
+
+        return resolveAisleStationRatios(pathFront, pathBack, aisle, chamferCache);
     }
 
     _createTierSeatPreviewMesh(
@@ -776,6 +841,13 @@ export class Scene3D {
             }
             return pathCache.get(key);
         };
+        const aisleReferenceMap = this._buildTierAisleReferenceMap(
+            solver,
+            tierAisleLayout,
+            offsetCorrection,
+            getPathsForOffset,
+            chamferCache
+        );
 
         solver.rows.forEach(row => {
             const centerOffset = (row.x - (row.tread_depth * 0.5)) - offsetCorrection;
@@ -791,7 +863,14 @@ export class Scene3D {
                     const path = centerPaths[pathIndex];
                     if (!path || !Number.isFinite(path.length) || path.length <= 1e-6) continue;
 
-                    const ratios = resolveAisleStationRatios(path, path, aisle, chamferCache);
+                    const ratios = this._resolveTierAisleStationRatios(
+                        path,
+                        path,
+                        aisle,
+                        i,
+                        chamferCache,
+                        aisleReferenceMap
+                    );
                     if (!ratios) continue;
                     const u = Number.isFinite(ratios.uFront) ? ratios.uFront : ratios.uBack;
                     if (!Number.isFinite(u)) continue;
