@@ -197,7 +197,11 @@ function buildTierExportRecord({
             return section;
         });
 
-    const totalOccupancy = sectionRecords.reduce((acc, section) => acc + (Number(section.occupancy) || 0), 0);
+    const totalOccupancy = Math.max(
+        0,
+        Number(estMetrics?.capacity)
+            || sectionRecords.reduce((acc, section) => acc + (Number(section.occupancy) || 0), 0)
+    );
     const rowTotals = rowRecords.map((row) => row.seatsInRowActual);
     const sectionTotals = sectionRecords.map((section) => section.occupancy);
     const sectionsPerRowCounts = rowRecords.map((row) => row.sectionsInRow);

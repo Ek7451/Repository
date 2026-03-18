@@ -50,6 +50,7 @@ describe('buildStudyResultsJsonPayload', () => {
         const tierArtifacts = [{
             tierIndex: 0,
             tierMetrics: {
+                capacity: 22,
                 requiredWidth: 48,
                 aisleWidth: 48,
                 numAisles: 2,

@@ -17,7 +17,7 @@ import {
     resolveSportName,
     resolveSportTemplate
 } from '../state/app-state.js';
-import { buildStatsViewModel } from './stats-panel.js';
+import { buildStatsViewModel } from './stats-view-model.js';
 
 function filterActiveSolvers(solvers = []) {
     return (solvers || []).filter((solver) => solver && Array.isArray(solver.rows) && solver.rows.length > 0);

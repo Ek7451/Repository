@@ -54,7 +54,9 @@ function createFieldRenderer() {
             targetAisles: 1,
             sectionSummary: {
                 actualAisles: 1,
-                actualSections: 1
+                actualSections: 1,
+                allSectionPathsClosed: true,
+                sectionOccupancyTotals: [60]
             }
         })),
         getBowlGeometrySegments: vi.fn(() => [
@@ -234,6 +236,9 @@ describe('EditorExportController', () => {
             actualLayout: {
                 sectionCount: 1
             }
+        });
+        expect(payload.tiers[0].egressEstimate).toMatchObject({
+            estimatedSeatsPerSectionAvg: 60
         });
 
         calculateTierMetrics.mockRestore();

@@ -1518,19 +1518,17 @@ function allocateDeterministicCounts(perimeterModel, requestedDistributedCount, 
     const allocationState = { counts };
 
     const straightEntries = getPerimeterIntervalEntries(perimeterModel, ({ interval }) => interval?.family === 'straight');
+    const chamferEntries = getPerimeterIntervalEntries(perimeterModel, ({ interval }) => interval?.family !== 'straight');
     const hasSymmetricStraightPairs = getStraightPairEntries(perimeterModel).length > 0;
 
     if (hasSymmetricStraightPairs) {
         remaining = allocateStraightPairs(perimeterModel, allocationState, remaining);
         if (remaining === 1) remaining = allocateSingleOddRemainder(perimeterModel, allocationState);
-        else if (remaining > 0) remaining = allocateSingleEntries(straightEntries, allocationState, remaining);
-    } else {
-        remaining = allocateSingleEntries(straightEntries, allocationState, remaining);
     }
 
     if (remaining > 0) {
-        const chamferEntries = getPerimeterIntervalEntries(perimeterModel, ({ interval }) => interval?.family !== 'straight');
-        remaining = allocateSingleEntries(chamferEntries, allocationState, remaining);
+        const combinedEntries = [...straightEntries, ...chamferEntries];
+        remaining = allocateSingleEntries(combinedEntries, allocationState, remaining);
     }
 
     return counts;

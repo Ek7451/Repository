@@ -1,0 +1,3680 @@
+{
+  "exportVersion": "phase6-multitier-metrics",
+  "exportedAt": "2026-03-18T18:20:44.928Z",
+  "sport": "Ice Hockey",
+  "profileType": "Parabolic",
+  "template": {
+    "name": null,
+    "shape": "rounded_rect",
+    "fieldLengthFt": 200,
+    "fieldWidthFt": 85,
+    "runoffDefaultFt": 10
+  },
+  "bowlConfig": {
+    "width": 85,
+    "length": 200,
+    "shape": "rounded_rect",
+    "type": "Full",
+    "corner": "Chamfer",
+    "radius": 16,
+    "sideLength": 200,
+    "structuralDepth": 12,
+    "structuralProfileMode": "stepped",
+    "straightAisleMode": "radial",
+    "chamferAisleMode": "radial"
+  },
+  "egressInputs": {
+    "seatWidthIn": 20,
+    "minAisleWidthIn": 48,
+    "maxAisleWidthIn": 72,
+    "maxSeatsPerRow": 50,
+    "egressFactor": 0.2
+  },
+  "totals": {
+    "enabledTierCount": 1,
+    "totalOccupancy": 5574,
+    "totalAisleCenterlines": 17,
+    "totalSections": 17
+  },
+  "parameters": {
+    "targetCValue": 3.5,
+    "firstRowDistance": 10,
+    "firstRowElevation": 3,
+    "treadDepth": 33,
+    "riserHeight": 12,
+    "numRows": 15,
+    "eyeHeight": 3.75,
+    "eyeSetback": 6,
+    "focalX": 0,
+    "focalZ": 3.5
+  },
+  "rows": [
+    {
+      "row": 1,
+      "x": 12.75,
+      "z": 3,
+      "riser_in": 12,
+      "c_value_in": 39,
+      "eye_x": 12.25,
+      "eye_z": 6.75
+    },
+    {
+      "row": 2,
+      "x": 15.5,
+      "z": 4.087,
+      "riser_in": 13.04,
+      "c_value_in": 3.5,
+      "eye_x": 15,
+      "eye_z": 7.837
+    },
+    {
+      "row": 3,
+      "x": 18.25,
+      "z": 5.227,
+      "riser_in": 13.68,
+      "c_value_in": 3.5,
+      "eye_x": 17.75,
+      "eye_z": 8.977
+    },
+    {
+      "row": 4,
+      "x": 21,
+      "z": 6.412,
+      "riser_in": 14.22,
+      "c_value_in": 3.5,
+      "eye_x": 20.5,
+      "eye_z": 10.162
+    },
+    {
+      "row": 5,
+      "x": 23.75,
+      "z": 7.637,
+      "riser_in": 14.69,
+      "c_value_in": 3.5,
+      "eye_x": 23.25,
+      "eye_z": 11.387
+    },
+    {
+      "row": 6,
+      "x": 26.5,
+      "z": 8.896,
+      "riser_in": 15.11,
+      "c_value_in": 3.5,
+      "eye_x": 26,
+      "eye_z": 12.646
+    },
+    {
+      "row": 7,
+      "x": 29.25,
+      "z": 10.186,
+      "riser_in": 15.48,
+      "c_value_in": 3.5,
+      "eye_x": 28.75,
+      "eye_z": 13.936
+    },
+    {
+      "row": 8,
+      "x": 32,
+      "z": 11.504,
+      "riser_in": 15.81,
+      "c_value_in": 3.5,
+      "eye_x": 31.5,
+      "eye_z": 15.254
+    },
+    {
+      "row": 9,
+      "x": 34.75,
+      "z": 12.847,
+      "riser_in": 16.12,
+      "c_value_in": 3.5,
+      "eye_x": 34.25,
+      "eye_z": 16.597
+    },
+    {
+      "row": 10,
+      "x": 37.5,
+      "z": 14.213,
+      "riser_in": 16.4,
+      "c_value_in": 3.5,
+      "eye_x": 37,
+      "eye_z": 17.963
+    },
+    {
+      "row": 11,
+      "x": 40.25,
+      "z": 15.602,
+      "riser_in": 16.66,
+      "c_value_in": 3.5,
+      "eye_x": 39.75,
+      "eye_z": 19.352
+    },
+    {
+      "row": 12,
+      "x": 43,
+      "z": 17.01,
+      "riser_in": 16.9,
+      "c_value_in": 3.5,
+      "eye_x": 42.5,
+      "eye_z": 20.76
+    },
+    {
+      "row": 13,
+      "x": 45.75,
+      "z": 18.438,
+      "riser_in": 17.13,
+      "c_value_in": 3.5,
+      "eye_x": 45.25,
+      "eye_z": 22.188
+    },
+    {
+      "row": 14,
+      "x": 48.5,
+      "z": 19.883,
+      "riser_in": 17.34,
+      "c_value_in": 3.5,
+      "eye_x": 48,
+      "eye_z": 23.633
+    },
+    {
+      "row": 15,
+      "x": 51.25,
+      "z": 21.345,
+      "riser_in": 17.54,
+      "c_value_in": 3.5,
+      "eye_x": 50.75,
+      "eye_z": 25.095
+    }
+  ],
+  "tiers": [
+    {
+      "tierIndex": 0,
+      "tierNumber": 1,
+      "name": "Tier 1",
+      "rowCount": 15,
+      "totalOccupancy": 5574,
+      "egressInputs": {
+        "seatWidthIn": 20,
+        "aisleWidthIn": 72,
+        "maxSeatsPerRow": 50,
+        "egressFactor": 0.2
+      },
+      "actualLayout": {
+        "aisleCenterlineCount": 17,
+        "aisleCountBySectionBoundaries": 17,
+        "sectionCount": 17,
+        "forcedAislesAdded": 8,
+        "targetAislesRequested": 17
+      },
+      "distributions": {
+        "seatsPerRowActual": {
+          "min": 292,
+          "avg": 371.6,
+          "max": 446
+        },
+        "seatsPerSection": {
+          "min": 257,
+          "avg": 327.88,
+          "max": 389
+        },
+        "sectionsPerRow": {
+          "min": 17,
+          "avg": 17,
+          "max": 17
+        },
+        "rowsPerSection": {
+          "min": 15,
+          "avg": 15,
+          "max": 15
+        }
+      },
+      "egressEstimate": {
+        "requiredWidthIn": null,
+        "aisleWidthIn": null,
+        "estimatedNumAisles": 17,
+        "estimatedNumSections": 17,
+        "estimatedSeatsPerRowAvg": 374,
+        "estimatedSeatsPerSectionAvg": 389
+      },
+      "rows": [
+        {
+          "rowIndex": 0,
+          "rowNumber": 1,
+          "xFt": 12.75,
+          "zFt": 3,
+          "treadDepthIn": 33,
+          "riserHeightIn": 12,
+          "cValueIn": 39,
+          "sightlineAngleDeg": 14.859,
+          "linearLengthFt": 598.784,
+          "estimatedLinearSeats": 298,
+          "seatsInRowActual": 292,
+          "sectionsInRow": 17,
+          "sectionSeatCounts": [
+            {
+              "sectionNumber": 100,
+              "pathIndex": 0,
+              "slotIndex": 1,
+              "seatCount": 16
+            },
+            {
+              "sectionNumber": 101,
+              "pathIndex": 0,
+              "slotIndex": 2,
+              "seatCount": 13
+            },
+            {
+              "sectionNumber": 102,
+              "pathIndex": 0,
+              "slotIndex": 3,
+              "seatCount": 15
+            },
+            {
+              "sectionNumber": 103,
+              "pathIndex": 0,
+              "slotIndex": 4,
+              "seatCount": 23
+            },
+            {
+              "sectionNumber": 104,
+              "pathIndex": 0,
+              "slotIndex": 5,
+              "seatCount": 23
+            },
+            {
+              "sectionNumber": 105,
+              "pathIndex": 0,
+              "slotIndex": 6,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 106,
+              "pathIndex": 0,
+              "slotIndex": 7,
+              "seatCount": 23
+            },
+            {
+              "sectionNumber": 107,
+              "pathIndex": 0,
+              "slotIndex": 8,
+              "seatCount": 15
+            },
+            {
+              "sectionNumber": 108,
+              "pathIndex": 0,
+              "slotIndex": 9,
+              "seatCount": 13
+            },
+            {
+              "sectionNumber": 109,
+              "pathIndex": 0,
+              "slotIndex": 10,
+              "seatCount": 16
+            },
+            {
+              "sectionNumber": 110,
+              "pathIndex": 0,
+              "slotIndex": 11,
+              "seatCount": 15
+            },
+            {
+              "sectionNumber": 111,
+              "pathIndex": 0,
+              "slotIndex": 12,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 112,
+              "pathIndex": 0,
+              "slotIndex": 13,
+              "seatCount": 15
+            },
+            {
+              "sectionNumber": 113,
+              "pathIndex": 0,
+              "slotIndex": 14,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 114,
+              "pathIndex": 0,
+              "slotIndex": 15,
+              "seatCount": 15
+            },
+            {
+              "sectionNumber": 115,
+              "pathIndex": 0,
+              "slotIndex": 16,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 116,
+              "pathIndex": 0,
+              "slotIndex": 0,
+              "seatCount": 15
+            }
+          ]
+        },
+        {
+          "rowIndex": 1,
+          "rowNumber": 2,
+          "xFt": 15.5,
+          "zFt": 4.087,
+          "treadDepthIn": 33,
+          "riserHeightIn": 13.04,
+          "cValueIn": 3.5,
+          "sightlineAngleDeg": 16.125,
+          "linearLengthFt": 617.009,
+          "estimatedLinearSeats": 309,
+          "seatsInRowActual": 307,
+          "sectionsInRow": 17,
+          "sectionSeatCounts": [
+            {
+              "sectionNumber": 100,
+              "pathIndex": 0,
+              "slotIndex": 1,
+              "seatCount": 17
+            },
+            {
+              "sectionNumber": 101,
+              "pathIndex": 0,
+              "slotIndex": 2,
+              "seatCount": 14
+            },
+            {
+              "sectionNumber": 102,
+              "pathIndex": 0,
+              "slotIndex": 3,
+              "seatCount": 16
+            },
+            {
+              "sectionNumber": 103,
+              "pathIndex": 0,
+              "slotIndex": 4,
+              "seatCount": 24
+            },
+            {
+              "sectionNumber": 104,
+              "pathIndex": 0,
+              "slotIndex": 5,
+              "seatCount": 24
+            },
+            {
+              "sectionNumber": 105,
+              "pathIndex": 0,
+              "slotIndex": 6,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 106,
+              "pathIndex": 0,
+              "slotIndex": 7,
+              "seatCount": 24
+            },
+            {
+              "sectionNumber": 107,
+              "pathIndex": 0,
+              "slotIndex": 8,
+              "seatCount": 16
+            },
+            {
+              "sectionNumber": 108,
+              "pathIndex": 0,
+              "slotIndex": 9,
+              "seatCount": 14
+            },
+            {
+              "sectionNumber": 109,
+              "pathIndex": 0,
+              "slotIndex": 10,
+              "seatCount": 17
+            },
+            {
+              "sectionNumber": 110,
+              "pathIndex": 0,
+              "slotIndex": 11,
+              "seatCount": 16
+            },
+            {
+              "sectionNumber": 111,
+              "pathIndex": 0,
+              "slotIndex": 12,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 112,
+              "pathIndex": 0,
+              "slotIndex": 13,
+              "seatCount": 16
+            },
+            {
+              "sectionNumber": 113,
+              "pathIndex": 0,
+              "slotIndex": 14,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 114,
+              "pathIndex": 0,
+              "slotIndex": 15,
+              "seatCount": 16
+            },
+            {
+              "sectionNumber": 115,
+              "pathIndex": 0,
+              "slotIndex": 16,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 116,
+              "pathIndex": 0,
+              "slotIndex": 0,
+              "seatCount": 16
+            }
+          ]
+        },
+        {
+          "rowIndex": 2,
+          "rowNumber": 3,
+          "xFt": 18.25,
+          "zFt": 5.227,
+          "treadDepthIn": 33,
+          "riserHeightIn": 13.68,
+          "cValueIn": 3.5,
+          "sightlineAngleDeg": 17.148,
+          "linearLengthFt": 635.234,
+          "estimatedLinearSeats": 319,
+          "seatsInRowActual": 318,
+          "sectionsInRow": 17,
+          "sectionSeatCounts": [
+            {
+              "sectionNumber": 100,
+              "pathIndex": 0,
+              "slotIndex": 1,
+              "seatCount": 17
+            },
+            {
+              "sectionNumber": 101,
+              "pathIndex": 0,
+              "slotIndex": 2,
+              "seatCount": 15
+            },
+            {
+              "sectionNumber": 102,
+              "pathIndex": 0,
+              "slotIndex": 3,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 103,
+              "pathIndex": 0,
+              "slotIndex": 4,
+              "seatCount": 24
+            },
+            {
+              "sectionNumber": 104,
+              "pathIndex": 0,
+              "slotIndex": 5,
+              "seatCount": 24
+            },
+            {
+              "sectionNumber": 105,
+              "pathIndex": 0,
+              "slotIndex": 6,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 106,
+              "pathIndex": 0,
+              "slotIndex": 7,
+              "seatCount": 24
+            },
+            {
+              "sectionNumber": 107,
+              "pathIndex": 0,
+              "slotIndex": 8,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 108,
+              "pathIndex": 0,
+              "slotIndex": 9,
+              "seatCount": 15
+            },
+            {
+              "sectionNumber": 109,
+              "pathIndex": 0,
+              "slotIndex": 10,
+              "seatCount": 17
+            },
+            {
+              "sectionNumber": 110,
+              "pathIndex": 0,
+              "slotIndex": 11,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 111,
+              "pathIndex": 0,
+              "slotIndex": 12,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 112,
+              "pathIndex": 0,
+              "slotIndex": 13,
+              "seatCount": 16
+            },
+            {
+              "sectionNumber": 113,
+              "pathIndex": 0,
+              "slotIndex": 14,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 114,
+              "pathIndex": 0,
+              "slotIndex": 15,
+              "seatCount": 16
+            },
+            {
+              "sectionNumber": 115,
+              "pathIndex": 0,
+              "slotIndex": 16,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 116,
+              "pathIndex": 0,
+              "slotIndex": 0,
+              "seatCount": 18
+            }
+          ]
+        },
+        {
+          "rowIndex": 3,
+          "rowNumber": 4,
+          "xFt": 21,
+          "zFt": 6.412,
+          "treadDepthIn": 33,
+          "riserHeightIn": 14.22,
+          "cValueIn": 3.5,
+          "sightlineAngleDeg": 18.004,
+          "linearLengthFt": 653.459,
+          "estimatedLinearSeats": 330,
+          "seatsInRowActual": 325,
+          "sectionsInRow": 17,
+          "sectionSeatCounts": [
+            {
+              "sectionNumber": 100,
+              "pathIndex": 0,
+              "slotIndex": 1,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 101,
+              "pathIndex": 0,
+              "slotIndex": 2,
+              "seatCount": 15
+            },
+            {
+              "sectionNumber": 102,
+              "pathIndex": 0,
+              "slotIndex": 3,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 103,
+              "pathIndex": 0,
+              "slotIndex": 4,
+              "seatCount": 24
+            },
+            {
+              "sectionNumber": 104,
+              "pathIndex": 0,
+              "slotIndex": 5,
+              "seatCount": 25
+            },
+            {
+              "sectionNumber": 105,
+              "pathIndex": 0,
+              "slotIndex": 6,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 106,
+              "pathIndex": 0,
+              "slotIndex": 7,
+              "seatCount": 24
+            },
+            {
+              "sectionNumber": 107,
+              "pathIndex": 0,
+              "slotIndex": 8,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 108,
+              "pathIndex": 0,
+              "slotIndex": 9,
+              "seatCount": 15
+            },
+            {
+              "sectionNumber": 109,
+              "pathIndex": 0,
+              "slotIndex": 10,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 110,
+              "pathIndex": 0,
+              "slotIndex": 11,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 111,
+              "pathIndex": 0,
+              "slotIndex": 12,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 112,
+              "pathIndex": 0,
+              "slotIndex": 13,
+              "seatCount": 16
+            },
+            {
+              "sectionNumber": 113,
+              "pathIndex": 0,
+              "slotIndex": 14,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 114,
+              "pathIndex": 0,
+              "slotIndex": 15,
+              "seatCount": 16
+            },
+            {
+              "sectionNumber": 115,
+              "pathIndex": 0,
+              "slotIndex": 16,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 116,
+              "pathIndex": 0,
+              "slotIndex": 0,
+              "seatCount": 19
+            }
+          ]
+        },
+        {
+          "rowIndex": 4,
+          "rowNumber": 5,
+          "xFt": 23.75,
+          "zFt": 7.637,
+          "treadDepthIn": 33,
+          "riserHeightIn": 14.69,
+          "cValueIn": 3.5,
+          "sightlineAngleDeg": 18.738,
+          "linearLengthFt": 671.685,
+          "estimatedLinearSeats": 341,
+          "seatsInRowActual": 342,
+          "sectionsInRow": 17,
+          "sectionSeatCounts": [
+            {
+              "sectionNumber": 100,
+              "pathIndex": 0,
+              "slotIndex": 1,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 101,
+              "pathIndex": 0,
+              "slotIndex": 2,
+              "seatCount": 16
+            },
+            {
+              "sectionNumber": 102,
+              "pathIndex": 0,
+              "slotIndex": 3,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 103,
+              "pathIndex": 0,
+              "slotIndex": 4,
+              "seatCount": 25
+            },
+            {
+              "sectionNumber": 104,
+              "pathIndex": 0,
+              "slotIndex": 5,
+              "seatCount": 25
+            },
+            {
+              "sectionNumber": 105,
+              "pathIndex": 0,
+              "slotIndex": 6,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 106,
+              "pathIndex": 0,
+              "slotIndex": 7,
+              "seatCount": 25
+            },
+            {
+              "sectionNumber": 107,
+              "pathIndex": 0,
+              "slotIndex": 8,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 108,
+              "pathIndex": 0,
+              "slotIndex": 9,
+              "seatCount": 16
+            },
+            {
+              "sectionNumber": 109,
+              "pathIndex": 0,
+              "slotIndex": 10,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 110,
+              "pathIndex": 0,
+              "slotIndex": 11,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 111,
+              "pathIndex": 0,
+              "slotIndex": 12,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 112,
+              "pathIndex": 0,
+              "slotIndex": 13,
+              "seatCount": 16
+            },
+            {
+              "sectionNumber": 113,
+              "pathIndex": 0,
+              "slotIndex": 14,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 114,
+              "pathIndex": 0,
+              "slotIndex": 15,
+              "seatCount": 16
+            },
+            {
+              "sectionNumber": 115,
+              "pathIndex": 0,
+              "slotIndex": 16,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 116,
+              "pathIndex": 0,
+              "slotIndex": 0,
+              "seatCount": 21
+            }
+          ]
+        },
+        {
+          "rowIndex": 5,
+          "rowNumber": 6,
+          "xFt": 26.5,
+          "zFt": 8.896,
+          "treadDepthIn": 33,
+          "riserHeightIn": 15.11,
+          "cValueIn": 3.5,
+          "sightlineAngleDeg": 19.38,
+          "linearLengthFt": 689.91,
+          "estimatedLinearSeats": 352,
+          "seatsInRowActual": 353,
+          "sectionsInRow": 17,
+          "sectionSeatCounts": [
+            {
+              "sectionNumber": 100,
+              "pathIndex": 0,
+              "slotIndex": 1,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 101,
+              "pathIndex": 0,
+              "slotIndex": 2,
+              "seatCount": 17
+            },
+            {
+              "sectionNumber": 102,
+              "pathIndex": 0,
+              "slotIndex": 3,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 103,
+              "pathIndex": 0,
+              "slotIndex": 4,
+              "seatCount": 25
+            },
+            {
+              "sectionNumber": 104,
+              "pathIndex": 0,
+              "slotIndex": 5,
+              "seatCount": 25
+            },
+            {
+              "sectionNumber": 105,
+              "pathIndex": 0,
+              "slotIndex": 6,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 106,
+              "pathIndex": 0,
+              "slotIndex": 7,
+              "seatCount": 25
+            },
+            {
+              "sectionNumber": 107,
+              "pathIndex": 0,
+              "slotIndex": 8,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 108,
+              "pathIndex": 0,
+              "slotIndex": 9,
+              "seatCount": 17
+            },
+            {
+              "sectionNumber": 109,
+              "pathIndex": 0,
+              "slotIndex": 10,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 110,
+              "pathIndex": 0,
+              "slotIndex": 11,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 111,
+              "pathIndex": 0,
+              "slotIndex": 12,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 112,
+              "pathIndex": 0,
+              "slotIndex": 13,
+              "seatCount": 17
+            },
+            {
+              "sectionNumber": 113,
+              "pathIndex": 0,
+              "slotIndex": 14,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 114,
+              "pathIndex": 0,
+              "slotIndex": 15,
+              "seatCount": 17
+            },
+            {
+              "sectionNumber": 115,
+              "pathIndex": 0,
+              "slotIndex": 16,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 116,
+              "pathIndex": 0,
+              "slotIndex": 0,
+              "seatCount": 22
+            }
+          ]
+        },
+        {
+          "rowIndex": 6,
+          "rowNumber": 7,
+          "xFt": 29.25,
+          "zFt": 10.186,
+          "treadDepthIn": 33,
+          "riserHeightIn": 15.48,
+          "cValueIn": 3.5,
+          "sightlineAngleDeg": 19.95,
+          "linearLengthFt": 708.135,
+          "estimatedLinearSeats": 363,
+          "seatsInRowActual": 358,
+          "sectionsInRow": 17,
+          "sectionSeatCounts": [
+            {
+              "sectionNumber": 100,
+              "pathIndex": 0,
+              "slotIndex": 1,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 101,
+              "pathIndex": 0,
+              "slotIndex": 2,
+              "seatCount": 17
+            },
+            {
+              "sectionNumber": 102,
+              "pathIndex": 0,
+              "slotIndex": 3,
+              "seatCount": 23
+            },
+            {
+              "sectionNumber": 103,
+              "pathIndex": 0,
+              "slotIndex": 4,
+              "seatCount": 25
+            },
+            {
+              "sectionNumber": 104,
+              "pathIndex": 0,
+              "slotIndex": 5,
+              "seatCount": 26
+            },
+            {
+              "sectionNumber": 105,
+              "pathIndex": 0,
+              "slotIndex": 6,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 106,
+              "pathIndex": 0,
+              "slotIndex": 7,
+              "seatCount": 25
+            },
+            {
+              "sectionNumber": 107,
+              "pathIndex": 0,
+              "slotIndex": 8,
+              "seatCount": 23
+            },
+            {
+              "sectionNumber": 108,
+              "pathIndex": 0,
+              "slotIndex": 9,
+              "seatCount": 17
+            },
+            {
+              "sectionNumber": 109,
+              "pathIndex": 0,
+              "slotIndex": 10,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 110,
+              "pathIndex": 0,
+              "slotIndex": 11,
+              "seatCount": 23
+            },
+            {
+              "sectionNumber": 111,
+              "pathIndex": 0,
+              "slotIndex": 12,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 112,
+              "pathIndex": 0,
+              "slotIndex": 13,
+              "seatCount": 17
+            },
+            {
+              "sectionNumber": 113,
+              "pathIndex": 0,
+              "slotIndex": 14,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 114,
+              "pathIndex": 0,
+              "slotIndex": 15,
+              "seatCount": 17
+            },
+            {
+              "sectionNumber": 115,
+              "pathIndex": 0,
+              "slotIndex": 16,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 116,
+              "pathIndex": 0,
+              "slotIndex": 0,
+              "seatCount": 23
+            }
+          ]
+        },
+        {
+          "rowIndex": 7,
+          "rowNumber": 8,
+          "xFt": 32,
+          "zFt": 11.504,
+          "treadDepthIn": 33,
+          "riserHeightIn": 15.81,
+          "cValueIn": 3.5,
+          "sightlineAngleDeg": 20.462,
+          "linearLengthFt": 726.361,
+          "estimatedLinearSeats": 374,
+          "seatsInRowActual": 373,
+          "sectionsInRow": 17,
+          "sectionSeatCounts": [
+            {
+              "sectionNumber": 100,
+              "pathIndex": 0,
+              "slotIndex": 1,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 101,
+              "pathIndex": 0,
+              "slotIndex": 2,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 102,
+              "pathIndex": 0,
+              "slotIndex": 3,
+              "seatCount": 25
+            },
+            {
+              "sectionNumber": 103,
+              "pathIndex": 0,
+              "slotIndex": 4,
+              "seatCount": 26
+            },
+            {
+              "sectionNumber": 104,
+              "pathIndex": 0,
+              "slotIndex": 5,
+              "seatCount": 26
+            },
+            {
+              "sectionNumber": 105,
+              "pathIndex": 0,
+              "slotIndex": 6,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 106,
+              "pathIndex": 0,
+              "slotIndex": 7,
+              "seatCount": 26
+            },
+            {
+              "sectionNumber": 107,
+              "pathIndex": 0,
+              "slotIndex": 8,
+              "seatCount": 25
+            },
+            {
+              "sectionNumber": 108,
+              "pathIndex": 0,
+              "slotIndex": 9,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 109,
+              "pathIndex": 0,
+              "slotIndex": 10,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 110,
+              "pathIndex": 0,
+              "slotIndex": 11,
+              "seatCount": 25
+            },
+            {
+              "sectionNumber": 111,
+              "pathIndex": 0,
+              "slotIndex": 12,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 112,
+              "pathIndex": 0,
+              "slotIndex": 13,
+              "seatCount": 17
+            },
+            {
+              "sectionNumber": 113,
+              "pathIndex": 0,
+              "slotIndex": 14,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 114,
+              "pathIndex": 0,
+              "slotIndex": 15,
+              "seatCount": 17
+            },
+            {
+              "sectionNumber": 115,
+              "pathIndex": 0,
+              "slotIndex": 16,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 116,
+              "pathIndex": 0,
+              "slotIndex": 0,
+              "seatCount": 25
+            }
+          ]
+        },
+        {
+          "rowIndex": 8,
+          "rowNumber": 9,
+          "xFt": 34.75,
+          "zFt": 12.847,
+          "treadDepthIn": 33,
+          "riserHeightIn": 16.12,
+          "cValueIn": 3.5,
+          "sightlineAngleDeg": 20.926,
+          "linearLengthFt": 744.586,
+          "estimatedLinearSeats": 385,
+          "seatsInRowActual": 382,
+          "sectionsInRow": 17,
+          "sectionSeatCounts": [
+            {
+              "sectionNumber": 100,
+              "pathIndex": 0,
+              "slotIndex": 1,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 101,
+              "pathIndex": 0,
+              "slotIndex": 2,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 102,
+              "pathIndex": 0,
+              "slotIndex": 3,
+              "seatCount": 26
+            },
+            {
+              "sectionNumber": 103,
+              "pathIndex": 0,
+              "slotIndex": 4,
+              "seatCount": 26
+            },
+            {
+              "sectionNumber": 104,
+              "pathIndex": 0,
+              "slotIndex": 5,
+              "seatCount": 26
+            },
+            {
+              "sectionNumber": 105,
+              "pathIndex": 0,
+              "slotIndex": 6,
+              "seatCount": 23
+            },
+            {
+              "sectionNumber": 106,
+              "pathIndex": 0,
+              "slotIndex": 7,
+              "seatCount": 26
+            },
+            {
+              "sectionNumber": 107,
+              "pathIndex": 0,
+              "slotIndex": 8,
+              "seatCount": 26
+            },
+            {
+              "sectionNumber": 108,
+              "pathIndex": 0,
+              "slotIndex": 9,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 109,
+              "pathIndex": 0,
+              "slotIndex": 10,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 110,
+              "pathIndex": 0,
+              "slotIndex": 11,
+              "seatCount": 26
+            },
+            {
+              "sectionNumber": 111,
+              "pathIndex": 0,
+              "slotIndex": 12,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 112,
+              "pathIndex": 0,
+              "slotIndex": 13,
+              "seatCount": 17
+            },
+            {
+              "sectionNumber": 113,
+              "pathIndex": 0,
+              "slotIndex": 14,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 114,
+              "pathIndex": 0,
+              "slotIndex": 15,
+              "seatCount": 17
+            },
+            {
+              "sectionNumber": 115,
+              "pathIndex": 0,
+              "slotIndex": 16,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 116,
+              "pathIndex": 0,
+              "slotIndex": 0,
+              "seatCount": 26
+            }
+          ]
+        },
+        {
+          "rowIndex": 9,
+          "rowNumber": 10,
+          "xFt": 37.5,
+          "zFt": 14.213,
+          "treadDepthIn": 33,
+          "riserHeightIn": 16.4,
+          "cValueIn": 3.5,
+          "sightlineAngleDeg": 21.351,
+          "linearLengthFt": 762.811,
+          "estimatedLinearSeats": 396,
+          "seatsInRowActual": 391,
+          "sectionsInRow": 17,
+          "sectionSeatCounts": [
+            {
+              "sectionNumber": 100,
+              "pathIndex": 0,
+              "slotIndex": 1,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 101,
+              "pathIndex": 0,
+              "slotIndex": 2,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 102,
+              "pathIndex": 0,
+              "slotIndex": 3,
+              "seatCount": 27
+            },
+            {
+              "sectionNumber": 103,
+              "pathIndex": 0,
+              "slotIndex": 4,
+              "seatCount": 26
+            },
+            {
+              "sectionNumber": 104,
+              "pathIndex": 0,
+              "slotIndex": 5,
+              "seatCount": 27
+            },
+            {
+              "sectionNumber": 105,
+              "pathIndex": 0,
+              "slotIndex": 6,
+              "seatCount": 23
+            },
+            {
+              "sectionNumber": 106,
+              "pathIndex": 0,
+              "slotIndex": 7,
+              "seatCount": 26
+            },
+            {
+              "sectionNumber": 107,
+              "pathIndex": 0,
+              "slotIndex": 8,
+              "seatCount": 27
+            },
+            {
+              "sectionNumber": 108,
+              "pathIndex": 0,
+              "slotIndex": 9,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 109,
+              "pathIndex": 0,
+              "slotIndex": 10,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 110,
+              "pathIndex": 0,
+              "slotIndex": 11,
+              "seatCount": 27
+            },
+            {
+              "sectionNumber": 111,
+              "pathIndex": 0,
+              "slotIndex": 12,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 112,
+              "pathIndex": 0,
+              "slotIndex": 13,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 113,
+              "pathIndex": 0,
+              "slotIndex": 14,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 114,
+              "pathIndex": 0,
+              "slotIndex": 15,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 115,
+              "pathIndex": 0,
+              "slotIndex": 16,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 116,
+              "pathIndex": 0,
+              "slotIndex": 0,
+              "seatCount": 27
+            }
+          ]
+        },
+        {
+          "rowIndex": 10,
+          "rowNumber": 11,
+          "xFt": 40.25,
+          "zFt": 15.602,
+          "treadDepthIn": 33,
+          "riserHeightIn": 16.66,
+          "cValueIn": 3.5,
+          "sightlineAngleDeg": 21.741,
+          "linearLengthFt": 781.037,
+          "estimatedLinearSeats": 407,
+          "seatsInRowActual": 406,
+          "sectionsInRow": 17,
+          "sectionSeatCounts": [
+            {
+              "sectionNumber": 100,
+              "pathIndex": 0,
+              "slotIndex": 1,
+              "seatCount": 23
+            },
+            {
+              "sectionNumber": 101,
+              "pathIndex": 0,
+              "slotIndex": 2,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 102,
+              "pathIndex": 0,
+              "slotIndex": 3,
+              "seatCount": 29
+            },
+            {
+              "sectionNumber": 103,
+              "pathIndex": 0,
+              "slotIndex": 4,
+              "seatCount": 27
+            },
+            {
+              "sectionNumber": 104,
+              "pathIndex": 0,
+              "slotIndex": 5,
+              "seatCount": 27
+            },
+            {
+              "sectionNumber": 105,
+              "pathIndex": 0,
+              "slotIndex": 6,
+              "seatCount": 23
+            },
+            {
+              "sectionNumber": 106,
+              "pathIndex": 0,
+              "slotIndex": 7,
+              "seatCount": 27
+            },
+            {
+              "sectionNumber": 107,
+              "pathIndex": 0,
+              "slotIndex": 8,
+              "seatCount": 29
+            },
+            {
+              "sectionNumber": 108,
+              "pathIndex": 0,
+              "slotIndex": 9,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 109,
+              "pathIndex": 0,
+              "slotIndex": 10,
+              "seatCount": 23
+            },
+            {
+              "sectionNumber": 110,
+              "pathIndex": 0,
+              "slotIndex": 11,
+              "seatCount": 29
+            },
+            {
+              "sectionNumber": 111,
+              "pathIndex": 0,
+              "slotIndex": 12,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 112,
+              "pathIndex": 0,
+              "slotIndex": 13,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 113,
+              "pathIndex": 0,
+              "slotIndex": 14,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 114,
+              "pathIndex": 0,
+              "slotIndex": 15,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 115,
+              "pathIndex": 0,
+              "slotIndex": 16,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 116,
+              "pathIndex": 0,
+              "slotIndex": 0,
+              "seatCount": 29
+            }
+          ]
+        },
+        {
+          "rowIndex": 11,
+          "rowNumber": 12,
+          "xFt": 43,
+          "zFt": 17.01,
+          "treadDepthIn": 33,
+          "riserHeightIn": 16.9,
+          "cValueIn": 3.5,
+          "sightlineAngleDeg": 22.103,
+          "linearLengthFt": 799.262,
+          "estimatedLinearSeats": 418,
+          "seatsInRowActual": 415,
+          "sectionsInRow": 17,
+          "sectionSeatCounts": [
+            {
+              "sectionNumber": 100,
+              "pathIndex": 0,
+              "slotIndex": 1,
+              "seatCount": 24
+            },
+            {
+              "sectionNumber": 101,
+              "pathIndex": 0,
+              "slotIndex": 2,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 102,
+              "pathIndex": 0,
+              "slotIndex": 3,
+              "seatCount": 30
+            },
+            {
+              "sectionNumber": 103,
+              "pathIndex": 0,
+              "slotIndex": 4,
+              "seatCount": 27
+            },
+            {
+              "sectionNumber": 104,
+              "pathIndex": 0,
+              "slotIndex": 5,
+              "seatCount": 27
+            },
+            {
+              "sectionNumber": 105,
+              "pathIndex": 0,
+              "slotIndex": 6,
+              "seatCount": 24
+            },
+            {
+              "sectionNumber": 106,
+              "pathIndex": 0,
+              "slotIndex": 7,
+              "seatCount": 27
+            },
+            {
+              "sectionNumber": 107,
+              "pathIndex": 0,
+              "slotIndex": 8,
+              "seatCount": 30
+            },
+            {
+              "sectionNumber": 108,
+              "pathIndex": 0,
+              "slotIndex": 9,
+              "seatCount": 20
+            },
+            {
+              "sectionNumber": 109,
+              "pathIndex": 0,
+              "slotIndex": 10,
+              "seatCount": 24
+            },
+            {
+              "sectionNumber": 110,
+              "pathIndex": 0,
+              "slotIndex": 11,
+              "seatCount": 30
+            },
+            {
+              "sectionNumber": 111,
+              "pathIndex": 0,
+              "slotIndex": 12,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 112,
+              "pathIndex": 0,
+              "slotIndex": 13,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 113,
+              "pathIndex": 0,
+              "slotIndex": 14,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 114,
+              "pathIndex": 0,
+              "slotIndex": 15,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 115,
+              "pathIndex": 0,
+              "slotIndex": 16,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 116,
+              "pathIndex": 0,
+              "slotIndex": 0,
+              "seatCount": 30
+            }
+          ]
+        },
+        {
+          "rowIndex": 12,
+          "rowNumber": 13,
+          "xFt": 45.75,
+          "zFt": 18.438,
+          "treadDepthIn": 33,
+          "riserHeightIn": 17.13,
+          "cValueIn": 3.5,
+          "sightlineAngleDeg": 22.44,
+          "linearLengthFt": 817.487,
+          "estimatedLinearSeats": 429,
+          "seatsInRowActual": 428,
+          "sectionsInRow": 17,
+          "sectionSeatCounts": [
+            {
+              "sectionNumber": 100,
+              "pathIndex": 0,
+              "slotIndex": 1,
+              "seatCount": 25
+            },
+            {
+              "sectionNumber": 101,
+              "pathIndex": 0,
+              "slotIndex": 2,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 102,
+              "pathIndex": 0,
+              "slotIndex": 3,
+              "seatCount": 32
+            },
+            {
+              "sectionNumber": 103,
+              "pathIndex": 0,
+              "slotIndex": 4,
+              "seatCount": 27
+            },
+            {
+              "sectionNumber": 104,
+              "pathIndex": 0,
+              "slotIndex": 5,
+              "seatCount": 28
+            },
+            {
+              "sectionNumber": 105,
+              "pathIndex": 0,
+              "slotIndex": 6,
+              "seatCount": 24
+            },
+            {
+              "sectionNumber": 106,
+              "pathIndex": 0,
+              "slotIndex": 7,
+              "seatCount": 27
+            },
+            {
+              "sectionNumber": 107,
+              "pathIndex": 0,
+              "slotIndex": 8,
+              "seatCount": 32
+            },
+            {
+              "sectionNumber": 108,
+              "pathIndex": 0,
+              "slotIndex": 9,
+              "seatCount": 21
+            },
+            {
+              "sectionNumber": 109,
+              "pathIndex": 0,
+              "slotIndex": 10,
+              "seatCount": 25
+            },
+            {
+              "sectionNumber": 110,
+              "pathIndex": 0,
+              "slotIndex": 11,
+              "seatCount": 32
+            },
+            {
+              "sectionNumber": 111,
+              "pathIndex": 0,
+              "slotIndex": 12,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 112,
+              "pathIndex": 0,
+              "slotIndex": 13,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 113,
+              "pathIndex": 0,
+              "slotIndex": 14,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 114,
+              "pathIndex": 0,
+              "slotIndex": 15,
+              "seatCount": 18
+            },
+            {
+              "sectionNumber": 115,
+              "pathIndex": 0,
+              "slotIndex": 16,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 116,
+              "pathIndex": 0,
+              "slotIndex": 0,
+              "seatCount": 32
+            }
+          ]
+        },
+        {
+          "rowIndex": 13,
+          "rowNumber": 14,
+          "xFt": 48.5,
+          "zFt": 19.883,
+          "treadDepthIn": 33,
+          "riserHeightIn": 17.34,
+          "cValueIn": 3.5,
+          "sightlineAngleDeg": 22.755,
+          "linearLengthFt": 835.713,
+          "estimatedLinearSeats": 440,
+          "seatsInRowActual": 438,
+          "sectionsInRow": 17,
+          "sectionSeatCounts": [
+            {
+              "sectionNumber": 100,
+              "pathIndex": 0,
+              "slotIndex": 1,
+              "seatCount": 25
+            },
+            {
+              "sectionNumber": 101,
+              "pathIndex": 0,
+              "slotIndex": 2,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 102,
+              "pathIndex": 0,
+              "slotIndex": 3,
+              "seatCount": 33
+            },
+            {
+              "sectionNumber": 103,
+              "pathIndex": 0,
+              "slotIndex": 4,
+              "seatCount": 28
+            },
+            {
+              "sectionNumber": 104,
+              "pathIndex": 0,
+              "slotIndex": 5,
+              "seatCount": 28
+            },
+            {
+              "sectionNumber": 105,
+              "pathIndex": 0,
+              "slotIndex": 6,
+              "seatCount": 24
+            },
+            {
+              "sectionNumber": 106,
+              "pathIndex": 0,
+              "slotIndex": 7,
+              "seatCount": 28
+            },
+            {
+              "sectionNumber": 107,
+              "pathIndex": 0,
+              "slotIndex": 8,
+              "seatCount": 33
+            },
+            {
+              "sectionNumber": 108,
+              "pathIndex": 0,
+              "slotIndex": 9,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 109,
+              "pathIndex": 0,
+              "slotIndex": 10,
+              "seatCount": 25
+            },
+            {
+              "sectionNumber": 110,
+              "pathIndex": 0,
+              "slotIndex": 11,
+              "seatCount": 33
+            },
+            {
+              "sectionNumber": 111,
+              "pathIndex": 0,
+              "slotIndex": 12,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 112,
+              "pathIndex": 0,
+              "slotIndex": 13,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 113,
+              "pathIndex": 0,
+              "slotIndex": 14,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 114,
+              "pathIndex": 0,
+              "slotIndex": 15,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 115,
+              "pathIndex": 0,
+              "slotIndex": 16,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 116,
+              "pathIndex": 0,
+              "slotIndex": 0,
+              "seatCount": 33
+            }
+          ]
+        },
+        {
+          "rowIndex": 14,
+          "rowNumber": 15,
+          "xFt": 51.25,
+          "zFt": 21.345,
+          "treadDepthIn": 33,
+          "riserHeightIn": 17.54,
+          "cValueIn": 3.5,
+          "sightlineAngleDeg": 23.05,
+          "linearLengthFt": 853.938,
+          "estimatedLinearSeats": 451,
+          "seatsInRowActual": 446,
+          "sectionsInRow": 17,
+          "sectionSeatCounts": [
+            {
+              "sectionNumber": 100,
+              "pathIndex": 0,
+              "slotIndex": 1,
+              "seatCount": 26
+            },
+            {
+              "sectionNumber": 101,
+              "pathIndex": 0,
+              "slotIndex": 2,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 102,
+              "pathIndex": 0,
+              "slotIndex": 3,
+              "seatCount": 34
+            },
+            {
+              "sectionNumber": 103,
+              "pathIndex": 0,
+              "slotIndex": 4,
+              "seatCount": 28
+            },
+            {
+              "sectionNumber": 104,
+              "pathIndex": 0,
+              "slotIndex": 5,
+              "seatCount": 28
+            },
+            {
+              "sectionNumber": 105,
+              "pathIndex": 0,
+              "slotIndex": 6,
+              "seatCount": 25
+            },
+            {
+              "sectionNumber": 106,
+              "pathIndex": 0,
+              "slotIndex": 7,
+              "seatCount": 28
+            },
+            {
+              "sectionNumber": 107,
+              "pathIndex": 0,
+              "slotIndex": 8,
+              "seatCount": 34
+            },
+            {
+              "sectionNumber": 108,
+              "pathIndex": 0,
+              "slotIndex": 9,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 109,
+              "pathIndex": 0,
+              "slotIndex": 10,
+              "seatCount": 26
+            },
+            {
+              "sectionNumber": 110,
+              "pathIndex": 0,
+              "slotIndex": 11,
+              "seatCount": 34
+            },
+            {
+              "sectionNumber": 111,
+              "pathIndex": 0,
+              "slotIndex": 12,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 112,
+              "pathIndex": 0,
+              "slotIndex": 13,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 113,
+              "pathIndex": 0,
+              "slotIndex": 14,
+              "seatCount": 23
+            },
+            {
+              "sectionNumber": 114,
+              "pathIndex": 0,
+              "slotIndex": 15,
+              "seatCount": 19
+            },
+            {
+              "sectionNumber": 115,
+              "pathIndex": 0,
+              "slotIndex": 16,
+              "seatCount": 22
+            },
+            {
+              "sectionNumber": 116,
+              "pathIndex": 0,
+              "slotIndex": 0,
+              "seatCount": 34
+            }
+          ]
+        }
+      ],
+      "sections": [
+        {
+          "tierIndex": 0,
+          "tierNumber": 1,
+          "sectionNumber": 100,
+          "pathIndex": 0,
+          "slotIndex": 1,
+          "occupancy": 315,
+          "rowsInSection": 15,
+          "seatCountsByRow": [
+            {
+              "rowIndex": 0,
+              "rowNumber": 1,
+              "seatCount": 16
+            },
+            {
+              "rowIndex": 1,
+              "rowNumber": 2,
+              "seatCount": 17
+            },
+            {
+              "rowIndex": 2,
+              "rowNumber": 3,
+              "seatCount": 17
+            },
+            {
+              "rowIndex": 3,
+              "rowNumber": 4,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 4,
+              "rowNumber": 5,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 5,
+              "rowNumber": 6,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 6,
+              "rowNumber": 7,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 7,
+              "rowNumber": 8,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 8,
+              "rowNumber": 9,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 9,
+              "rowNumber": 10,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 10,
+              "rowNumber": 11,
+              "seatCount": 23
+            },
+            {
+              "rowIndex": 11,
+              "rowNumber": 12,
+              "seatCount": 24
+            },
+            {
+              "rowIndex": 12,
+              "rowNumber": 13,
+              "seatCount": 25
+            },
+            {
+              "rowIndex": 13,
+              "rowNumber": 14,
+              "seatCount": 25
+            },
+            {
+              "rowIndex": 14,
+              "rowNumber": 15,
+              "seatCount": 26
+            }
+          ],
+          "minSeatsPerRow": 16,
+          "maxSeatsPerRow": 26,
+          "avgSeatsPerRow": 21,
+          "frontRowSeats": 16,
+          "backRowSeats": 26,
+          "labelAnchorFt": {
+            "x": 130.625,
+            "y": 18.258
+          },
+          "averageSeatBandWidthFt": 35,
+          "backRowSeatBandWidthFt": 43.333,
+          "seatWidthIn": 20
+        },
+        {
+          "tierIndex": 0,
+          "tierNumber": 1,
+          "sectionNumber": 101,
+          "pathIndex": 0,
+          "slotIndex": 2,
+          "occupancy": 267,
+          "rowsInSection": 15,
+          "seatCountsByRow": [
+            {
+              "rowIndex": 0,
+              "rowNumber": 1,
+              "seatCount": 13
+            },
+            {
+              "rowIndex": 1,
+              "rowNumber": 2,
+              "seatCount": 14
+            },
+            {
+              "rowIndex": 2,
+              "rowNumber": 3,
+              "seatCount": 15
+            },
+            {
+              "rowIndex": 3,
+              "rowNumber": 4,
+              "seatCount": 15
+            },
+            {
+              "rowIndex": 4,
+              "rowNumber": 5,
+              "seatCount": 16
+            },
+            {
+              "rowIndex": 5,
+              "rowNumber": 6,
+              "seatCount": 17
+            },
+            {
+              "rowIndex": 6,
+              "rowNumber": 7,
+              "seatCount": 17
+            },
+            {
+              "rowIndex": 7,
+              "rowNumber": 8,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 8,
+              "rowNumber": 9,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 9,
+              "rowNumber": 10,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 10,
+              "rowNumber": 11,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 11,
+              "rowNumber": 12,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 12,
+              "rowNumber": 13,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 13,
+              "rowNumber": 14,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 14,
+              "rowNumber": 15,
+              "seatCount": 22
+            }
+          ],
+          "minSeatsPerRow": 13,
+          "maxSeatsPerRow": 22,
+          "avgSeatsPerRow": 17.8,
+          "frontRowSeats": 13,
+          "backRowSeats": 22,
+          "labelAnchorFt": {
+            "x": 130.625,
+            "y": -20.927
+          },
+          "averageSeatBandWidthFt": 29.667,
+          "backRowSeatBandWidthFt": 36.667,
+          "seatWidthIn": 20
+        },
+        {
+          "tierIndex": 0,
+          "tierNumber": 1,
+          "sectionNumber": 102,
+          "pathIndex": 0,
+          "slotIndex": 3,
+          "occupancy": 370,
+          "rowsInSection": 15,
+          "seatCountsByRow": [
+            {
+              "rowIndex": 0,
+              "rowNumber": 1,
+              "seatCount": 15
+            },
+            {
+              "rowIndex": 1,
+              "rowNumber": 2,
+              "seatCount": 16
+            },
+            {
+              "rowIndex": 2,
+              "rowNumber": 3,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 3,
+              "rowNumber": 4,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 4,
+              "rowNumber": 5,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 5,
+              "rowNumber": 6,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 6,
+              "rowNumber": 7,
+              "seatCount": 23
+            },
+            {
+              "rowIndex": 7,
+              "rowNumber": 8,
+              "seatCount": 25
+            },
+            {
+              "rowIndex": 8,
+              "rowNumber": 9,
+              "seatCount": 26
+            },
+            {
+              "rowIndex": 9,
+              "rowNumber": 10,
+              "seatCount": 27
+            },
+            {
+              "rowIndex": 10,
+              "rowNumber": 11,
+              "seatCount": 29
+            },
+            {
+              "rowIndex": 11,
+              "rowNumber": 12,
+              "seatCount": 30
+            },
+            {
+              "rowIndex": 12,
+              "rowNumber": 13,
+              "seatCount": 32
+            },
+            {
+              "rowIndex": 13,
+              "rowNumber": 14,
+              "seatCount": 33
+            },
+            {
+              "rowIndex": 14,
+              "rowNumber": 15,
+              "seatCount": 34
+            }
+          ],
+          "minSeatsPerRow": 15,
+          "maxSeatsPerRow": 34,
+          "avgSeatsPerRow": 24.67,
+          "frontRowSeats": 15,
+          "backRowSeats": 34,
+          "labelAnchorFt": {
+            "x": 113.655,
+            "y": -56.155
+          },
+          "averageSeatBandWidthFt": 41.117,
+          "backRowSeatBandWidthFt": 56.667,
+          "seatWidthIn": 20
+        },
+        {
+          "tierIndex": 0,
+          "tierNumber": 1,
+          "sectionNumber": 103,
+          "pathIndex": 0,
+          "slotIndex": 4,
+          "occupancy": 385,
+          "rowsInSection": 15,
+          "seatCountsByRow": [
+            {
+              "rowIndex": 0,
+              "rowNumber": 1,
+              "seatCount": 23
+            },
+            {
+              "rowIndex": 1,
+              "rowNumber": 2,
+              "seatCount": 24
+            },
+            {
+              "rowIndex": 2,
+              "rowNumber": 3,
+              "seatCount": 24
+            },
+            {
+              "rowIndex": 3,
+              "rowNumber": 4,
+              "seatCount": 24
+            },
+            {
+              "rowIndex": 4,
+              "rowNumber": 5,
+              "seatCount": 25
+            },
+            {
+              "rowIndex": 5,
+              "rowNumber": 6,
+              "seatCount": 25
+            },
+            {
+              "rowIndex": 6,
+              "rowNumber": 7,
+              "seatCount": 25
+            },
+            {
+              "rowIndex": 7,
+              "rowNumber": 8,
+              "seatCount": 26
+            },
+            {
+              "rowIndex": 8,
+              "rowNumber": 9,
+              "seatCount": 26
+            },
+            {
+              "rowIndex": 9,
+              "rowNumber": 10,
+              "seatCount": 26
+            },
+            {
+              "rowIndex": 10,
+              "rowNumber": 11,
+              "seatCount": 27
+            },
+            {
+              "rowIndex": 11,
+              "rowNumber": 12,
+              "seatCount": 27
+            },
+            {
+              "rowIndex": 12,
+              "rowNumber": 13,
+              "seatCount": 27
+            },
+            {
+              "rowIndex": 13,
+              "rowNumber": 14,
+              "seatCount": 28
+            },
+            {
+              "rowIndex": 14,
+              "rowNumber": 15,
+              "seatCount": 28
+            }
+          ],
+          "minSeatsPerRow": 23,
+          "maxSeatsPerRow": 28,
+          "avgSeatsPerRow": 25.67,
+          "frontRowSeats": 23,
+          "backRowSeats": 28,
+          "labelAnchorFt": {
+            "x": 71.882,
+            "y": -73.125
+          },
+          "averageSeatBandWidthFt": 42.783,
+          "backRowSeatBandWidthFt": 46.667,
+          "seatWidthIn": 20
+        },
+        {
+          "tierIndex": 0,
+          "tierNumber": 1,
+          "sectionNumber": 104,
+          "pathIndex": 0,
+          "slotIndex": 5,
+          "occupancy": 389,
+          "rowsInSection": 15,
+          "seatCountsByRow": [
+            {
+              "rowIndex": 0,
+              "rowNumber": 1,
+              "seatCount": 23
+            },
+            {
+              "rowIndex": 1,
+              "rowNumber": 2,
+              "seatCount": 24
+            },
+            {
+              "rowIndex": 2,
+              "rowNumber": 3,
+              "seatCount": 24
+            },
+            {
+              "rowIndex": 3,
+              "rowNumber": 4,
+              "seatCount": 25
+            },
+            {
+              "rowIndex": 4,
+              "rowNumber": 5,
+              "seatCount": 25
+            },
+            {
+              "rowIndex": 5,
+              "rowNumber": 6,
+              "seatCount": 25
+            },
+            {
+              "rowIndex": 6,
+              "rowNumber": 7,
+              "seatCount": 26
+            },
+            {
+              "rowIndex": 7,
+              "rowNumber": 8,
+              "seatCount": 26
+            },
+            {
+              "rowIndex": 8,
+              "rowNumber": 9,
+              "seatCount": 26
+            },
+            {
+              "rowIndex": 9,
+              "rowNumber": 10,
+              "seatCount": 27
+            },
+            {
+              "rowIndex": 10,
+              "rowNumber": 11,
+              "seatCount": 27
+            },
+            {
+              "rowIndex": 11,
+              "rowNumber": 12,
+              "seatCount": 27
+            },
+            {
+              "rowIndex": 12,
+              "rowNumber": 13,
+              "seatCount": 28
+            },
+            {
+              "rowIndex": 13,
+              "rowNumber": 14,
+              "seatCount": 28
+            },
+            {
+              "rowIndex": 14,
+              "rowNumber": 15,
+              "seatCount": 28
+            }
+          ],
+          "minSeatsPerRow": 23,
+          "maxSeatsPerRow": 28,
+          "avgSeatsPerRow": 25.93,
+          "frontRowSeats": 23,
+          "backRowSeats": 28,
+          "labelAnchorFt": {
+            "x": 22.046,
+            "y": -73.125
+          },
+          "averageSeatBandWidthFt": 43.217,
+          "backRowSeatBandWidthFt": 46.667,
+          "seatWidthIn": 20
+        },
+        {
+          "tierIndex": 0,
+          "tierNumber": 1,
+          "sectionNumber": 105,
+          "pathIndex": 0,
+          "slotIndex": 6,
+          "occupancy": 335,
+          "rowsInSection": 15,
+          "seatCountsByRow": [
+            {
+              "rowIndex": 0,
+              "rowNumber": 1,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 1,
+              "rowNumber": 2,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 2,
+              "rowNumber": 3,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 3,
+              "rowNumber": 4,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 4,
+              "rowNumber": 5,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 5,
+              "rowNumber": 6,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 6,
+              "rowNumber": 7,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 7,
+              "rowNumber": 8,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 8,
+              "rowNumber": 9,
+              "seatCount": 23
+            },
+            {
+              "rowIndex": 9,
+              "rowNumber": 10,
+              "seatCount": 23
+            },
+            {
+              "rowIndex": 10,
+              "rowNumber": 11,
+              "seatCount": 23
+            },
+            {
+              "rowIndex": 11,
+              "rowNumber": 12,
+              "seatCount": 24
+            },
+            {
+              "rowIndex": 12,
+              "rowNumber": 13,
+              "seatCount": 24
+            },
+            {
+              "rowIndex": 13,
+              "rowNumber": 14,
+              "seatCount": 24
+            },
+            {
+              "rowIndex": 14,
+              "rowNumber": 15,
+              "seatCount": 25
+            }
+          ],
+          "minSeatsPerRow": 20,
+          "maxSeatsPerRow": 25,
+          "avgSeatsPerRow": 22.33,
+          "frontRowSeats": 20,
+          "backRowSeats": 25,
+          "labelAnchorFt": {
+            "x": -25.033,
+            "y": -73.125
+          },
+          "averageSeatBandWidthFt": 37.217,
+          "backRowSeatBandWidthFt": 41.667,
+          "seatWidthIn": 20
+        },
+        {
+          "tierIndex": 0,
+          "tierNumber": 1,
+          "sectionNumber": 106,
+          "pathIndex": 0,
+          "slotIndex": 7,
+          "occupancy": 385,
+          "rowsInSection": 15,
+          "seatCountsByRow": [
+            {
+              "rowIndex": 0,
+              "rowNumber": 1,
+              "seatCount": 23
+            },
+            {
+              "rowIndex": 1,
+              "rowNumber": 2,
+              "seatCount": 24
+            },
+            {
+              "rowIndex": 2,
+              "rowNumber": 3,
+              "seatCount": 24
+            },
+            {
+              "rowIndex": 3,
+              "rowNumber": 4,
+              "seatCount": 24
+            },
+            {
+              "rowIndex": 4,
+              "rowNumber": 5,
+              "seatCount": 25
+            },
+            {
+              "rowIndex": 5,
+              "rowNumber": 6,
+              "seatCount": 25
+            },
+            {
+              "rowIndex": 6,
+              "rowNumber": 7,
+              "seatCount": 25
+            },
+            {
+              "rowIndex": 7,
+              "rowNumber": 8,
+              "seatCount": 26
+            },
+            {
+              "rowIndex": 8,
+              "rowNumber": 9,
+              "seatCount": 26
+            },
+            {
+              "rowIndex": 9,
+              "rowNumber": 10,
+              "seatCount": 26
+            },
+            {
+              "rowIndex": 10,
+              "rowNumber": 11,
+              "seatCount": 27
+            },
+            {
+              "rowIndex": 11,
+              "rowNumber": 12,
+              "seatCount": 27
+            },
+            {
+              "rowIndex": 12,
+              "rowNumber": 13,
+              "seatCount": 27
+            },
+            {
+              "rowIndex": 13,
+              "rowNumber": 14,
+              "seatCount": 28
+            },
+            {
+              "rowIndex": 14,
+              "rowNumber": 15,
+              "seatCount": 28
+            }
+          ],
+          "minSeatsPerRow": 23,
+          "maxSeatsPerRow": 28,
+          "avgSeatsPerRow": 25.67,
+          "frontRowSeats": 23,
+          "backRowSeats": 28,
+          "labelAnchorFt": {
+            "x": -71.882,
+            "y": -73.125
+          },
+          "averageSeatBandWidthFt": 42.783,
+          "backRowSeatBandWidthFt": 46.667,
+          "seatWidthIn": 20
+        },
+        {
+          "tierIndex": 0,
+          "tierNumber": 1,
+          "sectionNumber": 107,
+          "pathIndex": 0,
+          "slotIndex": 8,
+          "occupancy": 370,
+          "rowsInSection": 15,
+          "seatCountsByRow": [
+            {
+              "rowIndex": 0,
+              "rowNumber": 1,
+              "seatCount": 15
+            },
+            {
+              "rowIndex": 1,
+              "rowNumber": 2,
+              "seatCount": 16
+            },
+            {
+              "rowIndex": 2,
+              "rowNumber": 3,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 3,
+              "rowNumber": 4,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 4,
+              "rowNumber": 5,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 5,
+              "rowNumber": 6,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 6,
+              "rowNumber": 7,
+              "seatCount": 23
+            },
+            {
+              "rowIndex": 7,
+              "rowNumber": 8,
+              "seatCount": 25
+            },
+            {
+              "rowIndex": 8,
+              "rowNumber": 9,
+              "seatCount": 26
+            },
+            {
+              "rowIndex": 9,
+              "rowNumber": 10,
+              "seatCount": 27
+            },
+            {
+              "rowIndex": 10,
+              "rowNumber": 11,
+              "seatCount": 29
+            },
+            {
+              "rowIndex": 11,
+              "rowNumber": 12,
+              "seatCount": 30
+            },
+            {
+              "rowIndex": 12,
+              "rowNumber": 13,
+              "seatCount": 32
+            },
+            {
+              "rowIndex": 13,
+              "rowNumber": 14,
+              "seatCount": 33
+            },
+            {
+              "rowIndex": 14,
+              "rowNumber": 15,
+              "seatCount": 34
+            }
+          ],
+          "minSeatsPerRow": 15,
+          "maxSeatsPerRow": 34,
+          "avgSeatsPerRow": 24.67,
+          "frontRowSeats": 15,
+          "backRowSeats": 34,
+          "labelAnchorFt": {
+            "x": -113.655,
+            "y": -56.155
+          },
+          "averageSeatBandWidthFt": 41.117,
+          "backRowSeatBandWidthFt": 56.667,
+          "seatWidthIn": 20
+        },
+        {
+          "tierIndex": 0,
+          "tierNumber": 1,
+          "sectionNumber": 108,
+          "pathIndex": 0,
+          "slotIndex": 9,
+          "occupancy": 267,
+          "rowsInSection": 15,
+          "seatCountsByRow": [
+            {
+              "rowIndex": 0,
+              "rowNumber": 1,
+              "seatCount": 13
+            },
+            {
+              "rowIndex": 1,
+              "rowNumber": 2,
+              "seatCount": 14
+            },
+            {
+              "rowIndex": 2,
+              "rowNumber": 3,
+              "seatCount": 15
+            },
+            {
+              "rowIndex": 3,
+              "rowNumber": 4,
+              "seatCount": 15
+            },
+            {
+              "rowIndex": 4,
+              "rowNumber": 5,
+              "seatCount": 16
+            },
+            {
+              "rowIndex": 5,
+              "rowNumber": 6,
+              "seatCount": 17
+            },
+            {
+              "rowIndex": 6,
+              "rowNumber": 7,
+              "seatCount": 17
+            },
+            {
+              "rowIndex": 7,
+              "rowNumber": 8,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 8,
+              "rowNumber": 9,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 9,
+              "rowNumber": 10,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 10,
+              "rowNumber": 11,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 11,
+              "rowNumber": 12,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 12,
+              "rowNumber": 13,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 13,
+              "rowNumber": 14,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 14,
+              "rowNumber": 15,
+              "seatCount": 22
+            }
+          ],
+          "minSeatsPerRow": 13,
+          "maxSeatsPerRow": 22,
+          "avgSeatsPerRow": 17.8,
+          "frontRowSeats": 13,
+          "backRowSeats": 22,
+          "labelAnchorFt": {
+            "x": -130.625,
+            "y": -20.927
+          },
+          "averageSeatBandWidthFt": 29.667,
+          "backRowSeatBandWidthFt": 36.667,
+          "seatWidthIn": 20
+        },
+        {
+          "tierIndex": 0,
+          "tierNumber": 1,
+          "sectionNumber": 109,
+          "pathIndex": 0,
+          "slotIndex": 10,
+          "occupancy": 315,
+          "rowsInSection": 15,
+          "seatCountsByRow": [
+            {
+              "rowIndex": 0,
+              "rowNumber": 1,
+              "seatCount": 16
+            },
+            {
+              "rowIndex": 1,
+              "rowNumber": 2,
+              "seatCount": 17
+            },
+            {
+              "rowIndex": 2,
+              "rowNumber": 3,
+              "seatCount": 17
+            },
+            {
+              "rowIndex": 3,
+              "rowNumber": 4,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 4,
+              "rowNumber": 5,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 5,
+              "rowNumber": 6,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 6,
+              "rowNumber": 7,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 7,
+              "rowNumber": 8,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 8,
+              "rowNumber": 9,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 9,
+              "rowNumber": 10,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 10,
+              "rowNumber": 11,
+              "seatCount": 23
+            },
+            {
+              "rowIndex": 11,
+              "rowNumber": 12,
+              "seatCount": 24
+            },
+            {
+              "rowIndex": 12,
+              "rowNumber": 13,
+              "seatCount": 25
+            },
+            {
+              "rowIndex": 13,
+              "rowNumber": 14,
+              "seatCount": 25
+            },
+            {
+              "rowIndex": 14,
+              "rowNumber": 15,
+              "seatCount": 26
+            }
+          ],
+          "minSeatsPerRow": 16,
+          "maxSeatsPerRow": 26,
+          "avgSeatsPerRow": 21,
+          "frontRowSeats": 16,
+          "backRowSeats": 26,
+          "labelAnchorFt": {
+            "x": -130.625,
+            "y": 18.258
+          },
+          "averageSeatBandWidthFt": 35,
+          "backRowSeatBandWidthFt": 43.333,
+          "seatWidthIn": 20
+        },
+        {
+          "tierIndex": 0,
+          "tierNumber": 1,
+          "sectionNumber": 110,
+          "pathIndex": 0,
+          "slotIndex": 11,
+          "occupancy": 370,
+          "rowsInSection": 15,
+          "seatCountsByRow": [
+            {
+              "rowIndex": 0,
+              "rowNumber": 1,
+              "seatCount": 15
+            },
+            {
+              "rowIndex": 1,
+              "rowNumber": 2,
+              "seatCount": 16
+            },
+            {
+              "rowIndex": 2,
+              "rowNumber": 3,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 3,
+              "rowNumber": 4,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 4,
+              "rowNumber": 5,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 5,
+              "rowNumber": 6,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 6,
+              "rowNumber": 7,
+              "seatCount": 23
+            },
+            {
+              "rowIndex": 7,
+              "rowNumber": 8,
+              "seatCount": 25
+            },
+            {
+              "rowIndex": 8,
+              "rowNumber": 9,
+              "seatCount": 26
+            },
+            {
+              "rowIndex": 9,
+              "rowNumber": 10,
+              "seatCount": 27
+            },
+            {
+              "rowIndex": 10,
+              "rowNumber": 11,
+              "seatCount": 29
+            },
+            {
+              "rowIndex": 11,
+              "rowNumber": 12,
+              "seatCount": 30
+            },
+            {
+              "rowIndex": 12,
+              "rowNumber": 13,
+              "seatCount": 32
+            },
+            {
+              "rowIndex": 13,
+              "rowNumber": 14,
+              "seatCount": 33
+            },
+            {
+              "rowIndex": 14,
+              "rowNumber": 15,
+              "seatCount": 34
+            }
+          ],
+          "minSeatsPerRow": 15,
+          "maxSeatsPerRow": 34,
+          "avgSeatsPerRow": 24.67,
+          "frontRowSeats": 15,
+          "backRowSeats": 34,
+          "labelAnchorFt": {
+            "x": -113.655,
+            "y": 56.155
+          },
+          "averageSeatBandWidthFt": 41.117,
+          "backRowSeatBandWidthFt": 56.667,
+          "seatWidthIn": 20
+        },
+        {
+          "tierIndex": 0,
+          "tierNumber": 1,
+          "sectionNumber": 111,
+          "pathIndex": 0,
+          "slotIndex": 12,
+          "occupancy": 306,
+          "rowsInSection": 15,
+          "seatCountsByRow": [
+            {
+              "rowIndex": 0,
+              "rowNumber": 1,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 1,
+              "rowNumber": 2,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 2,
+              "rowNumber": 3,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 3,
+              "rowNumber": 4,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 4,
+              "rowNumber": 5,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 5,
+              "rowNumber": 6,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 6,
+              "rowNumber": 7,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 7,
+              "rowNumber": 8,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 8,
+              "rowNumber": 9,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 9,
+              "rowNumber": 10,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 10,
+              "rowNumber": 11,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 11,
+              "rowNumber": 12,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 12,
+              "rowNumber": 13,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 13,
+              "rowNumber": 14,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 14,
+              "rowNumber": 15,
+              "seatCount": 22
+            }
+          ],
+          "minSeatsPerRow": 18,
+          "maxSeatsPerRow": 22,
+          "avgSeatsPerRow": 20.4,
+          "frontRowSeats": 18,
+          "backRowSeats": 22,
+          "labelAnchorFt": {
+            "x": -76.291,
+            "y": 73.125
+          },
+          "averageSeatBandWidthFt": 34,
+          "backRowSeatBandWidthFt": 36.667,
+          "seatWidthIn": 20
+        },
+        {
+          "tierIndex": 0,
+          "tierNumber": 1,
+          "sectionNumber": 112,
+          "pathIndex": 0,
+          "slotIndex": 13,
+          "occupancy": 257,
+          "rowsInSection": 15,
+          "seatCountsByRow": [
+            {
+              "rowIndex": 0,
+              "rowNumber": 1,
+              "seatCount": 15
+            },
+            {
+              "rowIndex": 1,
+              "rowNumber": 2,
+              "seatCount": 16
+            },
+            {
+              "rowIndex": 2,
+              "rowNumber": 3,
+              "seatCount": 16
+            },
+            {
+              "rowIndex": 3,
+              "rowNumber": 4,
+              "seatCount": 16
+            },
+            {
+              "rowIndex": 4,
+              "rowNumber": 5,
+              "seatCount": 16
+            },
+            {
+              "rowIndex": 5,
+              "rowNumber": 6,
+              "seatCount": 17
+            },
+            {
+              "rowIndex": 6,
+              "rowNumber": 7,
+              "seatCount": 17
+            },
+            {
+              "rowIndex": 7,
+              "rowNumber": 8,
+              "seatCount": 17
+            },
+            {
+              "rowIndex": 8,
+              "rowNumber": 9,
+              "seatCount": 17
+            },
+            {
+              "rowIndex": 9,
+              "rowNumber": 10,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 10,
+              "rowNumber": 11,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 11,
+              "rowNumber": 12,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 12,
+              "rowNumber": 13,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 13,
+              "rowNumber": 14,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 14,
+              "rowNumber": 15,
+              "seatCount": 19
+            }
+          ],
+          "minSeatsPerRow": 15,
+          "maxSeatsPerRow": 19,
+          "avgSeatsPerRow": 17.13,
+          "frontRowSeats": 15,
+          "backRowSeats": 19,
+          "labelAnchorFt": {
+            "x": -38.26,
+            "y": 73.125
+          },
+          "averageSeatBandWidthFt": 28.55,
+          "backRowSeatBandWidthFt": 31.667,
+          "seatWidthIn": 20
+        },
+        {
+          "tierIndex": 0,
+          "tierNumber": 1,
+          "sectionNumber": 113,
+          "pathIndex": 0,
+          "slotIndex": 14,
+          "occupancy": 310,
+          "rowsInSection": 15,
+          "seatCountsByRow": [
+            {
+              "rowIndex": 0,
+              "rowNumber": 1,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 1,
+              "rowNumber": 2,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 2,
+              "rowNumber": 3,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 3,
+              "rowNumber": 4,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 4,
+              "rowNumber": 5,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 5,
+              "rowNumber": 6,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 6,
+              "rowNumber": 7,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 7,
+              "rowNumber": 8,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 8,
+              "rowNumber": 9,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 9,
+              "rowNumber": 10,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 10,
+              "rowNumber": 11,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 11,
+              "rowNumber": 12,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 12,
+              "rowNumber": 13,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 13,
+              "rowNumber": 14,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 14,
+              "rowNumber": 15,
+              "seatCount": 23
+            }
+          ],
+          "minSeatsPerRow": 19,
+          "maxSeatsPerRow": 23,
+          "avgSeatsPerRow": 20.67,
+          "frontRowSeats": 19,
+          "backRowSeats": 23,
+          "labelAnchorFt": {
+            "x": 0,
+            "y": 73.125
+          },
+          "averageSeatBandWidthFt": 34.45,
+          "backRowSeatBandWidthFt": 38.333,
+          "seatWidthIn": 20
+        },
+        {
+          "tierIndex": 0,
+          "tierNumber": 1,
+          "sectionNumber": 114,
+          "pathIndex": 0,
+          "slotIndex": 15,
+          "occupancy": 257,
+          "rowsInSection": 15,
+          "seatCountsByRow": [
+            {
+              "rowIndex": 0,
+              "rowNumber": 1,
+              "seatCount": 15
+            },
+            {
+              "rowIndex": 1,
+              "rowNumber": 2,
+              "seatCount": 16
+            },
+            {
+              "rowIndex": 2,
+              "rowNumber": 3,
+              "seatCount": 16
+            },
+            {
+              "rowIndex": 3,
+              "rowNumber": 4,
+              "seatCount": 16
+            },
+            {
+              "rowIndex": 4,
+              "rowNumber": 5,
+              "seatCount": 16
+            },
+            {
+              "rowIndex": 5,
+              "rowNumber": 6,
+              "seatCount": 17
+            },
+            {
+              "rowIndex": 6,
+              "rowNumber": 7,
+              "seatCount": 17
+            },
+            {
+              "rowIndex": 7,
+              "rowNumber": 8,
+              "seatCount": 17
+            },
+            {
+              "rowIndex": 8,
+              "rowNumber": 9,
+              "seatCount": 17
+            },
+            {
+              "rowIndex": 9,
+              "rowNumber": 10,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 10,
+              "rowNumber": 11,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 11,
+              "rowNumber": 12,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 12,
+              "rowNumber": 13,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 13,
+              "rowNumber": 14,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 14,
+              "rowNumber": 15,
+              "seatCount": 19
+            }
+          ],
+          "minSeatsPerRow": 15,
+          "maxSeatsPerRow": 19,
+          "avgSeatsPerRow": 17.13,
+          "frontRowSeats": 15,
+          "backRowSeats": 19,
+          "labelAnchorFt": {
+            "x": 38.26,
+            "y": 73.125
+          },
+          "averageSeatBandWidthFt": 28.55,
+          "backRowSeatBandWidthFt": 31.667,
+          "seatWidthIn": 20
+        },
+        {
+          "tierIndex": 0,
+          "tierNumber": 1,
+          "sectionNumber": 115,
+          "pathIndex": 0,
+          "slotIndex": 16,
+          "occupancy": 306,
+          "rowsInSection": 15,
+          "seatCountsByRow": [
+            {
+              "rowIndex": 0,
+              "rowNumber": 1,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 1,
+              "rowNumber": 2,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 2,
+              "rowNumber": 3,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 3,
+              "rowNumber": 4,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 4,
+              "rowNumber": 5,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 5,
+              "rowNumber": 6,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 6,
+              "rowNumber": 7,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 7,
+              "rowNumber": 8,
+              "seatCount": 20
+            },
+            {
+              "rowIndex": 8,
+              "rowNumber": 9,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 9,
+              "rowNumber": 10,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 10,
+              "rowNumber": 11,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 11,
+              "rowNumber": 12,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 12,
+              "rowNumber": 13,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 13,
+              "rowNumber": 14,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 14,
+              "rowNumber": 15,
+              "seatCount": 22
+            }
+          ],
+          "minSeatsPerRow": 18,
+          "maxSeatsPerRow": 22,
+          "avgSeatsPerRow": 20.4,
+          "frontRowSeats": 18,
+          "backRowSeats": 22,
+          "labelAnchorFt": {
+            "x": 76.291,
+            "y": 73.125
+          },
+          "averageSeatBandWidthFt": 34,
+          "backRowSeatBandWidthFt": 36.667,
+          "seatWidthIn": 20
+        },
+        {
+          "tierIndex": 0,
+          "tierNumber": 1,
+          "sectionNumber": 116,
+          "pathIndex": 0,
+          "slotIndex": 0,
+          "occupancy": 370,
+          "rowsInSection": 15,
+          "seatCountsByRow": [
+            {
+              "rowIndex": 0,
+              "rowNumber": 1,
+              "seatCount": 15
+            },
+            {
+              "rowIndex": 1,
+              "rowNumber": 2,
+              "seatCount": 16
+            },
+            {
+              "rowIndex": 2,
+              "rowNumber": 3,
+              "seatCount": 18
+            },
+            {
+              "rowIndex": 3,
+              "rowNumber": 4,
+              "seatCount": 19
+            },
+            {
+              "rowIndex": 4,
+              "rowNumber": 5,
+              "seatCount": 21
+            },
+            {
+              "rowIndex": 5,
+              "rowNumber": 6,
+              "seatCount": 22
+            },
+            {
+              "rowIndex": 6,
+              "rowNumber": 7,
+              "seatCount": 23
+            },
+            {
+              "rowIndex": 7,
+              "rowNumber": 8,
+              "seatCount": 25
+            },
+            {
+              "rowIndex": 8,
+              "rowNumber": 9,
+              "seatCount": 26
+            },
+            {
+              "rowIndex": 9,
+              "rowNumber": 10,
+              "seatCount": 27
+            },
+            {
+              "rowIndex": 10,
+              "rowNumber": 11,
+              "seatCount": 29
+            },
+            {
+              "rowIndex": 11,
+              "rowNumber": 12,
+              "seatCount": 30
+            },
+            {
+              "rowIndex": 12,
+              "rowNumber": 13,
+              "seatCount": 32
+            },
+            {
+              "rowIndex": 13,
+              "rowNumber": 14,
+              "seatCount": 33
+            },
+            {
+              "rowIndex": 14,
+              "rowNumber": 15,
+              "seatCount": 34
+            }
+          ],
+          "minSeatsPerRow": 15,
+          "maxSeatsPerRow": 34,
+          "avgSeatsPerRow": 24.67,
+          "frontRowSeats": 15,
+          "backRowSeats": 34,
+          "labelAnchorFt": {
+            "x": 113.655,
+            "y": 56.155
+          },
+          "averageSeatBandWidthFt": 41.117,
+          "backRowSeatBandWidthFt": 56.667,
+          "seatWidthIn": 20
+        }
+      ]
+    }
+  ]
+}

@@ -348,7 +348,9 @@ export function reconcileTierMetricsByIndexWithLayoutSummaries({
             return;
         }
 
-        const totalCapacity = Math.max(0, Number(metrics.capacity) || 0);
+        const totalCapacity = sectionOccupancyTotals.length > 0
+            ? sectionOccupancyTotals.reduce((sum, value) => sum + value, 0)
+            : Math.max(0, Number(metrics.capacity) || 0);
         const avgOccupantsPerSection = totalCapacity / actualSections;
         const governingSectionOccupancy = maxSectionOccupancy > 0
             ? maxSectionOccupancy
@@ -356,6 +358,7 @@ export function reconcileTierMetricsByIndexWithLayoutSummaries({
         const aisleLoad = actualSections <= 1 ? (governingSectionOccupancy * 0.5) : governingSectionOccupancy;
         const nextMetrics = {
             ...metrics,
+            capacity: Math.round(totalCapacity),
             numSections: actualSections,
             numAisles: actualAisles > 0 ? actualAisles : actualSections,
             occupantsPerSection: Math.round(governingSectionOccupancy),

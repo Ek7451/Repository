@@ -1,7 +1,8 @@
 import {
     buildStructuralProfileGeometry,
     getSolverTierIndex,
-    ProfileSolver
+    ProfileSolver,
+    reconcileTierMetricsByIndexWithLayoutSummaries
 } from '../core/profile-solver.js';
 import { buildPlanDxfExportDescriptor, buildProfileDxfExportDescriptor } from '../export/dxf-exporter.js';
 import {
@@ -140,7 +141,7 @@ export class EditorExportController {
             (exportContext.tierAisleLayouts || []).map((layout, index) => [getSolverTierIndex(layout, index), layout])
         );
 
-        return (exportContext.activeSolvers || []).map((solver, index) => {
+        const tierArtifacts = (exportContext.activeSolvers || []).map((solver, index) => {
             if (!solver?.rows || solver.rows.length === 0) return null;
 
             const tierIndex = getSolverTierIndex(solver, index);
@@ -196,6 +197,17 @@ export class EditorExportController {
                 rowGeometries
             };
         }).filter(Boolean);
+
+        const reconciledTierMetricsByIndex = reconcileTierMetricsByIndexWithLayoutSummaries({
+            tierMetricsByIndex: new Map(tierArtifacts.map((artifact) => [artifact.tierIndex, artifact.tierMetrics])),
+            tierAisleLayouts: tierArtifacts.map((artifact) => artifact.tierLayout).filter(Boolean),
+            egressParams: exportContext.egressParams
+        });
+
+        return tierArtifacts.map((artifact) => ({
+            ...artifact,
+            tierMetrics: reconciledTierMetricsByIndex.get(artifact.tierIndex) || artifact.tierMetrics
+        }));
     }
 
     _buildRhinoTierArtifacts(exportContext) {
