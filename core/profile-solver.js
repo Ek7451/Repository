@@ -17,6 +17,9 @@
  *     R = (C + N) * (D + T) / D - N
  */
 
+import { computeTierEgressMetrics } from './egress-policy.js';
+import { computeUsableRunLengthIn, countSeatsFromUsableRunLengthIn } from './seat-math.js';
+
 export function getSolverTierIndex(solver, fallbackIndex = 0) {
     const tierIndex = Number(solver?.tierIndex);
     return Number.isInteger(tierIndex) ? tierIndex : fallbackIndex;
@@ -303,6 +306,76 @@ export function buildTierMetricsByIndex({
     return tierMetricsByIndex;
 }
 
+export function reconcileTierMetricsByIndexWithLayoutSummaries({
+    tierMetricsByIndex,
+    tierAisleLayouts,
+    egressParams
+}) {
+    if (!(tierMetricsByIndex instanceof Map) || tierMetricsByIndex.size === 0) {
+        return tierMetricsByIndex instanceof Map ? tierMetricsByIndex : new Map();
+    }
+
+    const egressFactorVal = Number(egressParams?.egressFactor);
+    const tierLayoutByIndex = new Map((tierAisleLayouts || []).map((layout) => [
+        Math.max(0, Math.floor(Number(layout?.tierIndex) || 0)),
+        layout
+    ]));
+    const reconciledTierMetrics = new Map();
+
+    tierMetricsByIndex.forEach((metrics, tierIndex) => {
+        const layout = tierLayoutByIndex.get(Math.max(0, Math.floor(Number(tierIndex) || 0)));
+        const summary = layout?.sectionSummary;
+
+        if (!metrics || !summary) {
+            reconciledTierMetrics.set(tierIndex, metrics);
+            return;
+        }
+
+        const actualSections = Math.max(0, Math.floor(Number(summary.actualSections) || 0));
+        const actualAisles = Math.max(0, Math.floor(Number(summary.actualAisles) || 0));
+        const avgBackRowSeats = Number(summary.avgBackRowSeatsPerSection);
+        const sectionOccupancyTotals = Array.isArray(summary.sectionOccupancyTotals)
+            ? summary.sectionOccupancyTotals
+                .map((value) => Math.max(0, Number(value) || 0))
+                .filter((value) => Number.isFinite(value) && value > 0)
+            : [];
+        const maxSectionOccupancy = sectionOccupancyTotals.length > 0
+            ? Math.max(...sectionOccupancyTotals)
+            : 0;
+
+        if (summary.allSectionPathsClosed !== true || actualSections <= 0) {
+            reconciledTierMetrics.set(tierIndex, metrics);
+            return;
+        }
+
+        const totalCapacity = Math.max(0, Number(metrics.capacity) || 0);
+        const avgOccupantsPerSection = totalCapacity / actualSections;
+        const governingSectionOccupancy = maxSectionOccupancy > 0
+            ? maxSectionOccupancy
+            : avgOccupantsPerSection;
+        const aisleLoad = actualSections <= 1 ? (governingSectionOccupancy * 0.5) : governingSectionOccupancy;
+        const nextMetrics = {
+            ...metrics,
+            numSections: actualSections,
+            numAisles: actualAisles > 0 ? actualAisles : actualSections,
+            occupantsPerSection: Math.round(governingSectionOccupancy),
+            occupantsPerAisleLine: Math.round(aisleLoad)
+        };
+
+        if (Number.isFinite(avgBackRowSeats)) {
+            nextMetrics.seatsPerBlock = avgBackRowSeats.toFixed(1);
+        }
+
+        if (Number.isFinite(egressFactorVal)) {
+            nextMetrics.capacityWidth = (aisleLoad * egressFactorVal).toFixed(1);
+        }
+
+        reconciledTierMetrics.set(tierIndex, nextMetrics);
+    });
+
+    return reconciledTierMetrics;
+}
+
 class RowData {
     constructor(rowNumber) {
         this.row_number = rowNumber;
@@ -505,75 +578,16 @@ export class ProfileSolver {
         const AvgTierLengthIn = (totalRawLengthIn / numRows) / mirroredSideRuns;
         const BackRowLengthForEgressIn = backRowLengthIn / mirroredSideRuns;
 
-        // 2. Iterative loop for aisle sizing (Option 1: uniform max width)
-        // Use the back row (widest row) as the hard cap check for max seats/row.
-        let iterAisleLines = 2; // Start with minimum edge aisles
-        let iterAisleWidth = minAisleWidthIn;
-        let finalSeatsPerRow = 0; // Average-row proxy (used for occupancy estimates/UI summary)
-        let finalBackRowSeatsPerRow = 0; // Hard-limit row for seatsBetweenAisles
-        let BlocksPerRow = 1;
-        let converged = false;
-
-        const maxIters = 20;
-        for (let i = 0; i < maxIters; i++) {
-            let totalAisleWidth = iterAisleLines * iterAisleWidth;
-
-            // Average row proxy for overall tier volume / occupant load estimates.
-            let avgSeatingLength = AvgTierLengthIn - totalAisleWidth;
-            if (avgSeatingLength < 0) avgSeatingLength = 0;
-            let avgSeatsPerRow = Math.floor(avgSeatingLength / seatWidthIn);
-            if (avgSeatsPerRow < 0) avgSeatsPerRow = 0;
-
-            // Back row governs the hard max-seats-between-aisles limit.
-            let backSeatingLength = BackRowLengthForEgressIn - totalAisleWidth;
-            if (backSeatingLength < 0) backSeatingLength = 0;
-            let backSeatsPerRow = Math.floor(backSeatingLength / seatWidthIn);
-            if (backSeatsPerRow < 0) backSeatsPerRow = 0;
-
-            // Enforce block minimums based on the widest row, not the average row.
-            let newBlocksPerRow = Math.ceil(backSeatsPerRow / seatsBetweenAisles);
-            if (newBlocksPerRow < 1) newBlocksPerRow = 1;
-
-            let SeatsInBlockPerRow = avgSeatsPerRow / newBlocksPerRow;
-            let OccBlock = SeatsInBlockPerRow * numRows;
-
-            // Tributary calculation (50/50 split)
-            let maxOccAisle = (newBlocksPerRow === 1) ? (0.5 * OccBlock) : OccBlock;
-
-            let Wcap_baseline = maxOccAisle * egressFactor;
-            let Wreq_baseline = Math.max(Wcap_baseline, minAisleWidthIn);
-
-            const newAisleWidth = Math.min(Wreq_baseline, maxAisleWidthIn);
-
-            let Wcap = maxOccAisle * egressFactor;
-            // If the required egress capacity exceeds the assigned width, we MUST add blocks (aisles)
-            if (Wcap > newAisleWidth) {
-                let maxOccAllowed = newAisleWidth / egressFactor;
-                let requiredBlocks = Math.ceil((avgSeatsPerRow * numRows) / maxOccAllowed);
-                if (requiredBlocks > newBlocksPerRow) {
-                    newBlocksPerRow = requiredBlocks;
-                }
-            }
-
-            let newAisleLines = newBlocksPerRow + 1; // n blocks have n+1 aisle lines
-
-            if (
-                newAisleLines === iterAisleLines &&
-                Math.abs(newAisleWidth - iterAisleWidth) < 0.1 &&
-                avgSeatsPerRow === finalSeatsPerRow &&
-                backSeatsPerRow === finalBackRowSeatsPerRow &&
-                newBlocksPerRow === BlocksPerRow
-            ) {
-                converged = true;
-                break;
-            }
-
-            iterAisleLines = newAisleLines;
-            iterAisleWidth = newAisleWidth;
-            finalSeatsPerRow = avgSeatsPerRow;
-            finalBackRowSeatsPerRow = backSeatsPerRow;
-            BlocksPerRow = newBlocksPerRow;
-        }
+        const egressMetrics = computeTierEgressMetrics({
+            avgTierLengthIn: AvgTierLengthIn,
+            backRowLengthIn: BackRowLengthForEgressIn,
+            numRows,
+            seatWidthIn,
+            minAisleWidthIn,
+            maxAisleWidthIn,
+            egressFactor,
+            seatsBetweenAisles
+        });
 
         // 3. Apply the converged aisle count and width per row to find final exact capacity
         let finalCapacity = 0;
@@ -586,12 +600,15 @@ export class ProfileSolver {
             const lengthFt = fieldRenderer.calculateRowLength(bowlConfig, offset);
             const lengthIn = lengthFt * 12.0;
 
-            const totalAisleWidthIn = iterAisleLines * iterAisleWidth;
+            const totalAisleWidthIn = egressMetrics.numAisles * egressMetrics.aisleWidthIn;
             const rowEgressRunLengthIn = lengthIn / mirroredSideRuns;
-            let usableIn = rowEgressRunLengthIn - totalAisleWidthIn;
-            if (usableIn < 0) usableIn = 0;
+            const usableIn = computeUsableRunLengthIn({
+                totalRunLengthIn: rowEgressRunLengthIn,
+                aisleLineCount: egressMetrics.numAisles,
+                aisleWidthIn: egressMetrics.aisleWidthIn
+            });
 
-            const rowCapacityPerRun = Math.floor(usableIn / seatWidthIn);
+            const rowCapacityPerRun = countSeatsFromUsableRunLengthIn({ usableRunLengthIn: usableIn, seatWidthIn });
             const rowCapacity = rowCapacityPerRun * mirroredSideRuns;
             finalCapacity += rowCapacity;
             if (rowIndex === numRows - 1) exactBackRowSeatsPerRow = rowCapacityPerRun;
@@ -601,7 +618,7 @@ export class ProfileSolver {
             row.computedSeats = rowCapacity;
             row.computedLengthPerSide = mirroredSideRuns > 1 ? (lengthIn / mirroredSideRuns) / 12.0 : lengthFt;
             row.computedSeatsPerSide = mirroredSideRuns > 1 ? rowCapacityPerRun : rowCapacity;
-            row.computedBlocks = BlocksPerRow;
+            row.computedBlocks = egressMetrics.numSections;
 
             // Linear Stats Accumulation
             // For mirrored "Sides" mode, report one representative side's egress math
@@ -610,35 +627,26 @@ export class ProfileSolver {
             finalAisleLengthFt += (totalAisleWidthIn / 12.0);
         });
 
-        const totalEgressWidthRequired = iterAisleLines * iterAisleWidth;
-        const SeatsInBlockPerRow = finalSeatsPerRow / BlocksPerRow;
-        const OccBlock = SeatsInBlockPerRow * numRows;
-        const maxOccAisle = (BlocksPerRow === 1) ? (0.5 * OccBlock) : OccBlock;
-        const Wcap = maxOccAisle * egressFactor;
-
-        let baselineBlocksPerRow = Math.ceil(exactBackRowSeatsPerRow / seatsBetweenAisles);
-        if (baselineBlocksPerRow < 1) baselineBlocksPerRow = 1;
-
         return {
             capacity: finalCapacity,
-            numAisles: iterAisleLines,
-            aisleWidth: iterAisleWidth.toFixed(1),
-            totalEgressWidthRequired: totalEgressWidthRequired.toFixed(1),
+            numAisles: egressMetrics.numAisles,
+            aisleWidth: egressMetrics.aisleWidthIn.toFixed(1),
+            totalEgressWidthRequired: egressMetrics.totalEgressWidthRequired.toFixed(1),
             totalRowLength: (finalSeatingLengthFt + finalAisleLengthFt).toFixed(0),
             totalSeatingLength: finalSeatingLengthFt.toFixed(0),
             totalAisleLength: finalAisleLengthFt.toFixed(0),
-            seatsPerRow: finalSeatsPerRow,
+            seatsPerRow: egressMetrics.seatsPerRow,
             backRowSeatsPerRow: exactBackRowSeatsPerRow,
-            numSections: BlocksPerRow,
-            seatsPerBlock: SeatsInBlockPerRow.toFixed(1),
-            occupantsPerSection: Math.round(OccBlock),
-            occupantsPerAisleLine: Math.round(maxOccAisle),
-            capacityWidth: Wcap.toFixed(1),
-            minimumWidth: minAisleWidthIn.toFixed(1),
-            maximumWidth: maxAisleWidthIn.toFixed(1),
-            governingWidth: iterAisleWidth.toFixed(1),
-            blocksAddedForEgress: BlocksPerRow - baselineBlocksPerRow,
-            converged: converged,
+            numSections: egressMetrics.numSections,
+            seatsPerBlock: egressMetrics.seatsPerBlock.toFixed(1),
+            occupantsPerSection: Math.round(egressMetrics.occupantsPerSection),
+            occupantsPerAisleLine: Math.round(egressMetrics.occupantsPerAisleLine),
+            capacityWidth: egressMetrics.capacityWidth.toFixed(1),
+            minimumWidth: egressMetrics.minimumWidth.toFixed(1),
+            maximumWidth: egressMetrics.maximumWidth.toFixed(1),
+            governingWidth: egressMetrics.governingWidth.toFixed(1),
+            blocksAddedForEgress: egressMetrics.blocksAddedForEgress,
+            converged: egressMetrics.converged,
             mirroredSideRuns
         };
     }

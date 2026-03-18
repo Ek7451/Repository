@@ -1,7 +1,8 @@
 import {
     buildActiveTierSolvers,
     buildNextTierDefaultsFromSolvers,
-    buildTierMetricsByIndex
+    buildTierMetricsByIndex,
+    reconcileTierMetricsByIndexWithLayoutSummaries
 } from '../core/profile-solver.js';
 import {
     buildBowlConfig,
@@ -93,6 +94,11 @@ export class RenderRuntime {
                 offsetCorrection,
                 egressParams
             ) || [];
+            tierMetricsByIndex = reconcileTierMetricsByIndexWithLayoutSummaries({
+                tierMetricsByIndex,
+                tierAisleLayouts,
+                egressParams
+            });
         }
 
         this._solvers = solvers;
@@ -143,8 +149,7 @@ export class RenderRuntime {
                 focalPointFt,
                 bowlConfig,
                 egressParams,
-                tierMetricsByIndex,
-                tierAisleLayouts
+                tierMetricsByIndex
             })
         };
 

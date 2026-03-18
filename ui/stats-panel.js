@@ -216,7 +216,7 @@ function buildEgressMarkup(tiers = []) {
                         </div>
                     </div>
                     <div class="tier-metric-item">
-                        <div class="tier-metric-label">Seats/Section</div>
+                        <div class="tier-metric-label">Largest Section</div>
                         <div class="tier-metric-content">
                             ${TIER_METRIC_ICONS.seats}
                             <div class="tier-metric-value">${egress.occupantsPerSection}</div>
@@ -272,7 +272,7 @@ function buildEgressMarkup(tiers = []) {
                             <strong>${egress.displayAisles} Aisles${egress.countsTag}</strong> (Width: ${egress.aisleWidth}") &bull; ${egress.displaySeatLen.toLocaleString()}' Linear Seating vs ${egress.displayAisleLen.toLocaleString()}' Linear Aisles${egress.linearQuantitiesTag}
                             <div class="egress-row-notes">
                                 &#8627; Total Linear Seating${egress.countsTag}: ${egress.displayTotalLen.toLocaleString()}' (averaging ${egress.displaySeatsPerRow} seats/row)<br/>
-                                &#8627; Sections${egress.countsTag}: ${egress.displaySections} (avg ${egress.seatsPerBlock} seats/row, ${egress.occupantsPerSection} seats/section)<br/>
+                                &#8627; Sections${egress.countsTag}: ${egress.displaySections} (avg ${egress.seatsPerBlock} seats/row, largest section ${egress.occupantsPerSection} seats)<br/>
                                 &#8627; Max Load/Aisle (per aisle): ${egress.occupantsPerAisleLine} occ (50/50 section split)<br/>
                                 &#8627; Aisle Egress Capacity Check (per aisle): ${egress.occupantsPerAisleLine} occ &times; ${egress.egressFactor}"/occ = ${egress.capacityWidth}" required<br/>
                                 &#8627; Aisle Sizing: Max of Min Allowed (${egress.minimumWidth}") vs Required (${egress.capacityWidth}") &rarr; <strong class="egress-row-details-highlight">Governing Width = ${egress.governingWidth}"</strong>${limitForcedHtml}
@@ -308,51 +308,12 @@ function getStatsTierIndex(solver, fallbackIndex = 0) {
     return Number.isInteger(tierIndex) ? tierIndex : fallbackIndex;
 }
 
-function reconcileTierMetricsForStats(solver, loopIndex, metrics, tierLayoutByIndex, egressParams) {
-    if (!metrics) return metrics;
-
-    const tierIdx = getStatsTierIndex(solver, loopIndex);
-    const layout = tierLayoutByIndex instanceof Map
-        ? tierLayoutByIndex.get(Math.max(0, Math.floor(Number(tierIdx) || 0)))
-        : null;
-    const summary = layout?.sectionSummary;
-    if (!summary) return metrics;
-
-    const nextMetrics = { ...metrics };
-    const actualSections = Math.max(0, Math.floor(Number(summary.actualSections) || 0));
-    const actualAisles = Math.max(0, Math.floor(Number(summary.actualAisles) || 0));
-    const avgBackRowSeats = Number(summary.avgBackRowSeatsPerSection);
-    const egressFactorVal = Number(egressParams?.egressFactor);
-    const totalCapacity = Math.max(0, Number(metrics.capacity) || 0);
-
-    if (summary.allSectionPathsClosed === true && actualSections > 0) {
-        nextMetrics.numSections = actualSections;
-        nextMetrics.numAisles = actualAisles > 0 ? actualAisles : actualSections;
-
-        if (Number.isFinite(avgBackRowSeats)) {
-            nextMetrics.seatsPerBlock = avgBackRowSeats.toFixed(1);
-        }
-
-        const avgOccupantsPerSection = totalCapacity / actualSections;
-        nextMetrics.occupantsPerSection = Math.round(avgOccupantsPerSection);
-        const aisleLoad = actualSections <= 1 ? (avgOccupantsPerSection * 0.5) : avgOccupantsPerSection;
-        nextMetrics.occupantsPerAisleLine = Math.round(aisleLoad);
-
-        if (Number.isFinite(egressFactorVal)) {
-            nextMetrics.capacityWidth = (aisleLoad * egressFactorVal).toFixed(1);
-        }
-    }
-
-    return nextMetrics;
-}
-
 function buildTierStatsViewModel({
     solver,
     loopIndex,
     focalPointFt,
     egressParams,
     tierMetricsByIndex,
-    tierLayoutByIndex,
     isMirroredSidesMode
 }) {
     const tierIndex = getStatsTierIndex(solver, loopIndex);
@@ -360,13 +321,7 @@ function buildTierStatsViewModel({
     const baseMetrics = tierMetricsByIndex instanceof Map
         ? (tierMetricsByIndex.get(tierIndex) || null)
         : null;
-    const metrics = reconcileTierMetricsForStats(
-        solver,
-        loopIndex,
-        baseMetrics,
-        tierLayoutByIndex,
-        egressParams
-    );
+    const metrics = baseMetrics;
     const accentColor = tierIndex === 0
         ? 'var(--accent-blue)'
         : (tierIndex === 1 ? 'var(--accent-cyan)' : 'var(--accent-purple)');
@@ -484,8 +439,7 @@ export function buildStatsViewModel({
     focalPointFt = { x: 0, z: 0 },
     bowlConfig = {},
     egressParams = {},
-    tierMetricsByIndex = new Map(),
-    tierAisleLayouts = []
+    tierMetricsByIndex = new Map()
 } = {}) {
     const activeSolvers = (solvers || []).filter((solver) => solver && Array.isArray(solver.rows) && solver.rows.length > 0);
     if (!activeSolvers.length) return null;
@@ -520,10 +474,6 @@ export function buildStatsViewModel({
         }
     }
 
-    const tierLayoutByIndex = new Map((tierAisleLayouts || []).map((layout) => [
-        Math.max(0, Math.floor(Number(layout?.tierIndex) || 0)),
-        layout
-    ]));
     const safeBowlConfig = /** @type {any} */ (bowlConfig);
     const isMirroredSidesMode = String(safeBowlConfig?.type || '').toLowerCase() === 'sides';
 
@@ -533,7 +483,6 @@ export function buildStatsViewModel({
         focalPointFt,
         egressParams,
         tierMetricsByIndex,
-        tierLayoutByIndex,
         isMirroredSidesMode
     }));
     const totalOccupancy = tiers.reduce((sum, tier) => sum + Math.max(0, Number(tier?.occupancy?.capacity) || 0), 0);

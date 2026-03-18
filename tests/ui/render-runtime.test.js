@@ -34,6 +34,7 @@ function createTierLayout(tierIndex) {
             actualSections: 1,
             allSectionPathsClosed: true,
             backRowSectionSeatCounts: [18],
+            sectionOccupancyTotals: [265],
             avgBackRowSeatsPerSection: 18,
             maxBackRowSeatsPerSection: 18,
             minBackRowSeatsPerSection: 18
@@ -111,6 +112,13 @@ describe('RenderRuntime', () => {
                 allSectionPathsClosed: true
             })
         }));
+        expect(snapshot.tierMetricsByIndex.get(0)).toMatchObject({
+            numAisles: 1,
+            numSections: 1,
+            seatsPerBlock: '18.0',
+            occupantsPerSection: 265,
+            occupantsPerAisleLine: 133
+        });
         expect(snapshot.fieldRenderInput).toEqual(expect.objectContaining({
             template: snapshot.template,
             customRunoff: 30,

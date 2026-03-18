@@ -50,19 +50,6 @@ function createMetrics(overrides = {}) {
     };
 }
 
-function createTierLayout({ tierIndex = 0, sectionSummary = {} } = {}) {
-    return {
-        tierIndex,
-        sectionSummary: {
-            actualSections: 3,
-            actualAisles: 3,
-            allSectionPathsClosed: true,
-            avgBackRowSeatsPerSection: 12,
-            ...sectionSummary
-        }
-    };
-}
-
 function buildStatsDto(input = {}) {
     return buildStatsViewModel(input);
 }
@@ -81,8 +68,7 @@ describe('buildStatsViewModel', () => {
             focalPointFt: { x: 0, z: 0 },
             bowlConfig: { type: 'Full' },
             egressParams: { egressFactor: 0.2 },
-            tierMetricsByIndex: new Map([[0, createMetrics()]]),
-            tierAisleLayouts: [createTierLayout()]
+            tierMetricsByIndex: new Map([[0, createMetrics()]])
         });
 
         expect(viewModel.summary).toMatchObject({
@@ -115,11 +101,7 @@ describe('buildStatsViewModel', () => {
             tierMetricsByIndex: new Map([
                 [0, createMetrics({ capacity: 120 })],
                 [1, createMetrics({ capacity: 80 })]
-            ]),
-            tierAisleLayouts: [
-                createTierLayout({ tierIndex: 0 }),
-                createTierLayout({ tierIndex: 1, sectionSummary: { actualSections: 2, actualAisles: 2 } })
-            ]
+            ])
         });
 
         expect(viewModel.summary.totalOccupancy).toBe(200);
@@ -159,8 +141,7 @@ describe('buildStatsViewModel', () => {
                     seatsPerRow: 24,
                     capacity: 96
                 })
-            ]]),
-            tierAisleLayouts: [createTierLayout()]
+            ]])
         });
 
         expect(viewModel.tiers[0].rows[0]).toMatchObject({
@@ -169,8 +150,8 @@ describe('buildStatsViewModel', () => {
         });
         expect(viewModel.tiers[0].egress).toMatchObject({
             headerSuffix: ' &bull; Both Sides',
-            displayAisles: 6,
-            displaySections: 6
+            displayAisles: 4,
+            displaySections: 4
         });
     });
 
@@ -180,8 +161,7 @@ describe('buildStatsViewModel', () => {
             focalPointFt: { x: 0, z: 0 },
             bowlConfig: { type: 'Full' },
             egressParams: { egressFactor: 0.2 },
-            tierMetricsByIndex: new Map([[0, createMetrics({ numAisles: 4, numSections: 5 })]]),
-            tierAisleLayouts: []
+            tierMetricsByIndex: new Map([[0, createMetrics({ numAisles: 4, numSections: 5 })]])
         });
 
         expect(viewModel.tiers[0].egress).toMatchObject({
@@ -196,20 +176,43 @@ describe('buildStatsViewModel', () => {
             focalPointFt: { x: 0, z: 0 },
             bowlConfig: { type: 'Full' },
             egressParams: { egressFactor: 0.2 },
-            tierMetricsByIndex: new Map([[0, createMetrics({ blocksAddedForEgress: 2 })]]),
-            tierAisleLayouts: [createTierLayout()]
+            tierMetricsByIndex: new Map([[0, createMetrics({ blocksAddedForEgress: 2 })]])
         });
         const nonConvergedViewModel = buildStatsDto({
             solvers: [createSolver()],
             focalPointFt: { x: 0, z: 0 },
             bowlConfig: { type: 'Full' },
             egressParams: { egressFactor: 0.2 },
-            tierMetricsByIndex: new Map([[0, createMetrics({ converged: false })]]),
-            tierAisleLayouts: [createTierLayout()]
+            tierMetricsByIndex: new Map([[0, createMetrics({ converged: false })]])
         });
 
         expect(forcedWidthViewModel.tiers[0].egress.warningText).toContain('Limit Forced');
         expect(nonConvergedViewModel.tiers[0].egress.warningText).toContain('did not converge');
+    });
+
+    test('renders largest section occupancy wording from canonical metrics', () => {
+        const viewModel = buildStatsDto({
+            solvers: [createSolver()],
+            focalPointFt: { x: 0, z: 0 },
+            bowlConfig: { type: 'Full' },
+            egressParams: { egressFactor: 0.2 },
+            tierMetricsByIndex: new Map([[0, createMetrics({ occupantsPerSection: 57 })]])
+        });
+        const statsEl = { innerHTML: '' };
+        const detailsEl = {
+            innerHTML: '',
+            querySelectorAll: vi.fn(() => [])
+        };
+        const panel = new StatsPanel({
+            statsEl: /** @type {any} */ (statsEl),
+            detailsEl: /** @type {any} */ (detailsEl)
+        });
+
+        panel.update(viewModel);
+
+        expect(statsEl.innerHTML).toContain('Largest Section');
+        expect(statsEl.innerHTML).toContain('57');
+        expect(statsEl.innerHTML).toContain('largest section 57 seats');
     });
 });
 
@@ -220,8 +223,7 @@ describe('StatsPanel', () => {
             focalPointFt: { x: 0, z: 0 },
             bowlConfig: { type: 'Full' },
             egressParams: { egressFactor: 0.2 },
-            tierMetricsByIndex: new Map([[0, createMetrics()]]),
-            tierAisleLayouts: [createTierLayout()]
+            tierMetricsByIndex: new Map([[0, createMetrics()]])
         });
         const statsEl = { innerHTML: '' };
         const detailsEl = {
@@ -247,8 +249,7 @@ describe('StatsPanel', () => {
             focalPointFt: { x: 0, z: 0 },
             bowlConfig: { type: 'Full' },
             egressParams: { egressFactor: 0.2 },
-            tierMetricsByIndex: new Map([[0, createMetrics()]]),
-            tierAisleLayouts: [createTierLayout()]
+            tierMetricsByIndex: new Map([[0, createMetrics()]])
         });
         const statsEl = { innerHTML: '' };
         const detailsEl = {

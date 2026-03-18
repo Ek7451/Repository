@@ -154,6 +154,7 @@ describe('FieldRenderer helper delegation surface', () => {
                 actualSections: expect.any(Number),
                 allSectionPathsClosed: true,
                 backRowSectionSeatCounts: expect.any(Array),
+                sectionOccupancyTotals: expect.any(Array),
                 avgBackRowSeatsPerSection: expect.any(Number),
                 maxBackRowSeatsPerSection: expect.any(Number),
                 minBackRowSeatsPerSection: expect.any(Number)
@@ -165,6 +166,7 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(layout.sectionBoundaries[0]).toHaveLength(layout.aisles.length);
         expect(layout.forcedCount).toBe(layout.aisles.filter((aisle) => aisle.forced).length);
         expect(layout.sectionSummary.backRowSectionSeatCounts).toHaveLength(layout.sectionSummary.actualSections);
+        expect(layout.sectionSummary.sectionOccupancyTotals).toHaveLength(layout.sectionSummary.actualSections);
 
         expect(layout.aisles.find((aisle) => aisle.forced)).toEqual(expect.objectContaining({
             anchorType: 'forced_chamfer',

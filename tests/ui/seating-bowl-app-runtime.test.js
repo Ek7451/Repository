@@ -40,6 +40,7 @@ function createTierLayout(tierIndex = 0) {
             actualSections: 1,
             allSectionPathsClosed: true,
             backRowSectionSeatCounts: [18],
+            sectionOccupancyTotals: [265],
             avgBackRowSeatsPerSection: 18,
             maxBackRowSeatsPerSection: 18,
             minBackRowSeatsPerSection: 18

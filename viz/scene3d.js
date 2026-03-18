@@ -14,6 +14,7 @@ import {
     samplePathPointByRatio
 } from '../core/aisle-layout.js';
 import { buildStructuralProfileGeometry } from '../core/profile-solver.js';
+import { intervalLengthToSeatCount } from '../core/seat-math.js';
 import { resolvePlanFocalYFt } from '../core/sports-templates.js';
 
 const SCENE_THEME_COLORS = {
@@ -905,7 +906,7 @@ export class Scene3D {
                     const len = endDist - startDist;
                     if (len + 1e-6 < seatSizeFt) continue;
 
-                    const seatCount = Math.floor((len + 1e-6) / seatSizeFt);
+                    const seatCount = intervalLengthToSeatCount(len + 1e-6, seatWidthIn);
                     if (seatCount <= 0) continue;
 
                     const remainder = Math.max(0, len - (seatCount * seatSizeFt));

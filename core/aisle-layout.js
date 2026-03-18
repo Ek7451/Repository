@@ -3,6 +3,13 @@
  * All geometry units are feet.
  */
 
+import {
+    computeRequiredPerimeterSegmentCounts,
+    estimateWorstSeatsInInterval as estimateWorstSeatsInIntervalByPolicy,
+    findRequiredIntervalAisleCount,
+    validatePerimeterSeatCaps
+} from './egress-policy.js';
+
 const EPS = 1e-6;
 
 function clamp01(v) {
@@ -1184,15 +1191,11 @@ function estimateWorstSeatsInInterval(interval, count, seatWidthIn, aisleWidthFt
     if (!interval || interval.length <= EPS) return 0;
     const ts = distributeIntervalTs(interval, count, axisExclusionFt, endpointBufferFt);
     const bounds = [0, ...ts, 1].sort((a, b) => a - b);
-    let worst = 0;
-
-    for (let i = 0; i < bounds.length - 1; i++) {
-        const gapFt = Math.max(0, interval.length * (bounds[i + 1] - bounds[i]));
-        const seats = Math.floor(Math.max(0, (gapFt - aisleWidthFt) * 12.0) / Math.max(1, seatWidthIn));
-        if (seats > worst) worst = seats;
-    }
-
-    return worst;
+    return estimateWorstSeatsInIntervalByPolicy(interval.length, count, {
+        aisleWidthFt,
+        seatWidthIn,
+        measureSegments: () => bounds
+    });
 }
 
 function compareAislesByPathAndStation(a, b) {
@@ -1343,39 +1346,47 @@ function buildForcedTransitionAisles(perimeterModel) {
     return out.sort(compareAislesByPathAndStation);
 }
 
+function buildMeasureWorstSeatsForInterval(intervalSide, seatWidthIn, aisleWidthFt, axisExclusionFt, endpointBufferFt) {
+    return (count) => estimateWorstSeatsInInterval(
+        intervalSide,
+        count,
+        seatWidthIn,
+        aisleWidthFt,
+        axisExclusionFt,
+        endpointBufferFt
+    );
+}
+
 function computeRequiredSegmentCounts(perimeterModel, options) {
-    const counts = createPerimeterCountMatrix(perimeterModel);
     const maxSeatsBetweenAisles = Number(options?.maxSeatsBetweenAisles);
-    if (!(Number.isFinite(maxSeatsBetweenAisles) && maxSeatsBetweenAisles > 0)) return counts;
 
     const seatWidthIn = Math.max(1, Number(options?.seatWidthIn) || 20);
     const aisleWidthFt = Math.max(0, Number(options?.aisleWidthFt) || 0);
     const axisExclusionFt = Math.max(0, Number(options?.axisExclusionFt) || 0);
     const endpointBufferFt = Math.max(0, Number(options?.endpointBufferFt) || 0);
 
-    getPerimeterIntervalEntries(perimeterModel).forEach(({ pathIndex, interval }) => {
-        const intervalSide = interval.back || interval.front;
-        if (!intervalSide || intervalSide.length <= EPS) return;
+    return computeRequiredPerimeterSegmentCounts({
+        perimeterModel,
+        maxSeatsBetweenAisles,
+        createCountMatrix: createPerimeterCountMatrix,
+        getEntries: getPerimeterIntervalEntries,
+        resolveRequiredCount: ({ interval, measureWorstSeatsForCount, maxSeatsBetweenAisles: limit }) => {
+            const intervalSide = interval?.back || interval?.front;
+            if (!intervalSide || intervalSide.length <= EPS) return 0;
 
-        let required = 0;
-        while (
-            estimateWorstSeatsInInterval(
-                intervalSide,
-                required,
-                seatWidthIn,
-                aisleWidthFt,
-                axisExclusionFt,
-                endpointBufferFt
-            ) > maxSeatsBetweenAisles &&
-            required < 500
-        ) {
-            required += 1;
+            return findRequiredIntervalAisleCount({
+                maxSeatsBetweenAisles: limit,
+                maxCount: 500,
+                measureWorstSeatsForCount: measureWorstSeatsForCount || buildMeasureWorstSeatsForInterval(
+                    intervalSide,
+                    seatWidthIn,
+                    aisleWidthFt,
+                    axisExclusionFt,
+                    endpointBufferFt
+                )
+            });
         }
-
-        counts[pathIndex][interval.index] = required;
     });
-
-    return counts;
 }
 
 function normalizeRequiredCountsForSymmetry(perimeterModel, requiredCounts) {
@@ -1581,43 +1592,41 @@ function materializeDistributedAisles(perimeterModel, intervalCounts, bowlConfig
 
 function validateSeatCap(perimeterModel, aisles, options) {
     const maxSeatsBetweenAisles = Number(options?.maxSeatsBetweenAisles);
-    if (!(Number.isFinite(maxSeatsBetweenAisles) && maxSeatsBetweenAisles > 0)) return true;
 
     const seatWidthIn = Math.max(1, Number(options?.seatWidthIn) || 20);
     const aisleWidthFt = Math.max(0, Number(options?.aisleWidthFt) || 0);
     const axisExclusionFt = Math.max(0, Number(options?.axisExclusionFt) || 0);
     const endpointBufferFt = Math.max(0, Number(options?.endpointBufferFt) || 0);
-    const counts = createPerimeterCountMatrix(perimeterModel);
 
-    for (let i = 0; i < (Array.isArray(aisles) ? aisles.length : 0); i++) {
-        const aisle = aisles[i];
-        if (!aisle || aisle.forced || !Number.isFinite(aisle.segmentIndex)) continue;
+    return validatePerimeterSeatCaps({
+        perimeterModel,
+        aisles,
+        maxSeatsBetweenAisles,
+        createCountMatrix: createPerimeterCountMatrix,
+        getEntries: getPerimeterIntervalEntries,
+        accumulateAisleCount: (counts, aisle) => {
+            if (!aisle || aisle.forced || !Number.isFinite(aisle.segmentIndex)) return;
 
-        const pathIndex = Math.max(0, Math.floor(Number(aisle.pathIndex) || 0));
-        const intervalIndex = Math.max(0, Math.floor(Number(aisle.segmentIndex) || 0));
-        if (!counts[pathIndex] || intervalIndex >= counts[pathIndex].length) continue;
-        counts[pathIndex][intervalIndex] += 1;
-    }
+            const pathIndex = Math.max(0, Math.floor(Number(aisle.pathIndex) || 0));
+            const intervalIndex = Math.max(0, Math.floor(Number(aisle.segmentIndex) || 0));
+            if (!counts[pathIndex] || intervalIndex >= counts[pathIndex].length) return;
+            counts[pathIndex][intervalIndex] += 1;
+        },
+        measureWorstSeats: (entry, counts) => {
+            const intervalSide = entry?.interval?.back || entry?.interval?.front;
+            if (!intervalSide || intervalSide.length <= EPS) return 0;
 
-    const entries = getPerimeterIntervalEntries(perimeterModel);
-    for (let i = 0; i < entries.length; i++) {
-        const entry = entries[i];
-        const intervalSide = entry.interval.back || entry.interval.front;
-        if (!intervalSide || intervalSide.length <= EPS) continue;
-
-        const count = Math.max(0, Math.floor(Number(counts?.[entry.pathIndex]?.[entry.interval.index]) || 0));
-        const worst = estimateWorstSeatsInInterval(
-            intervalSide,
-            count,
-            seatWidthIn,
-            aisleWidthFt,
-            axisExclusionFt,
-            endpointBufferFt
-        );
-        if (worst > maxSeatsBetweenAisles) return false;
-    }
-
-    return true;
+            const count = Math.max(0, Math.floor(Number(counts?.[entry.pathIndex]?.[entry.interval.index]) || 0));
+            return estimateWorstSeatsInInterval(
+                intervalSide,
+                count,
+                seatWidthIn,
+                aisleWidthFt,
+                axisExclusionFt,
+                endpointBufferFt
+            );
+        }
+    });
 }
 
 function getPerimeterPathRecord(perimeterModel, pathIndex) {

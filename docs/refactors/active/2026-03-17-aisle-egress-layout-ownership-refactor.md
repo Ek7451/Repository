@@ -1,9 +1,25 @@
 # Seat Math / Egress Policy Split
 
 ## Summary
-- The split is sound, with one refinement: the current risk is not only duplicated formulas, but split authority. Tier totals come from [`core/profile-solver.js`](/c:/Users/Elliott%20Klinger/Desktop/Repository/core/profile-solver.js#L478), actual aisle geometry comes from [`core/aisle-layout.js`](/c:/Users/Elliott%20Klinger/Desktop/Repository/core/aisle-layout.js#L1701), and some displayed section occupancy data is recomputed inside [`viz/field-renderer.js`](/c:/Users/Elliott%20Klinger/Desktop/Repository/viz/field-renderer.js#L1612) and patched again in [`ui/stats-panel.js`](/c:/Users/Elliott%20Klinger/Desktop/Repository/ui/stats-panel.js#L311).
+- The split is sound, with one refinement: the current risk is not only duplicated formulas, but split authority. Tier totals come from `core/profile-solver.js`, actual aisle geometry comes from `core/aisle-layout.js`, and some displayed section occupancy data is recomputed inside `viz/field-renderer.js` and patched again in `ui/stats-panel.js`.
 - Biggest current design risk: actual layout can diverge from solver-estimated aisles, so seat/egress metrics are being reconciled outside the canonical owner. That is a larger drift risk than any single duplicated formula.
 - JSON/CSV export is explicitly not the source of truth for this refactor. Treat it as a deferred consumer.
+
+## Phase Documents
+- `docs/refactors/active/2026-03-17-phase-1-seat-math-egress-boundaries.md`
+  - boundary definition, ownership rules, dependency design, and approved new-file justification
+- `docs/refactors/active/2026-03-17-phase-2-seat-math-egress-implementation.md`
+  - shared logic extraction for `core/seat-math.js` and `core/egress-policy.js`
+- `docs/refactors/active/2026-03-17-phase-3-canonical-metrics-reconciliation.md`
+  - canonical metrics reconciliation in `core/profile-solver.js` and cleanup of downstream UI consumers
+
+## Phase Plan
+1. Phase 1 defines ownership, dependency boundaries, and scope limits.
+2. Phase 2 extracts shared seat math and egress policy logic into the approved core modules.
+3. Phase 3 restores single-source canonical metrics ownership after actual aisle layout generation and removes UI-side reconciliation.
+
+## Source Material Retained Below
+The remaining sections preserve the original audit, extraction map, migration sequence, verification strategy, and risks as the umbrella reference.
 
 ## Current State Audit
 - `ProfileSolver.calculateTierMetrics` is the current authoritative source for:

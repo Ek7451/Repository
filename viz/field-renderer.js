@@ -4,6 +4,7 @@
  */
 
 import { getSolverTierIndex } from '../core/profile-solver.js';
+import { countSeatsFromCenterlineGapFt } from '../core/seat-math.js';
 import { getCValueQuality } from '../core/sightline-calc.js';
 import { resolvePlanFocalYFt } from '../core/sports-templates.js';
 import {
@@ -1066,12 +1067,17 @@ export class FieldRenderer {
                 if (!Number.isFinite(uA) || !Number.isFinite(uB)) continue;
 
                 const centerGapFt = sectionDistanceOnPath(path, uA, uB);
-                const seatingGapFt = Math.max(0, centerGapFt - aisleWidthFt);
-                const seatCount = Math.max(0, Math.floor((seatingGapFt * 12.0) / seatWidthIn));
+                const seatCount = countSeatsFromCenterlineGapFt({ centerGapFt, aisleWidthFt, seatWidthIn });
                 backRowSectionSeatCounts.push(seatCount);
             }
         }
 
+        const overlayData = this.getTierSectionMetricsOverlayData(solver, bowlConfig, tierLayout, offsetCorrection);
+        const sectionOccupancyTotals = Array.isArray(overlayData?.sectionOccupancyTotals)
+            ? overlayData.sectionOccupancyTotals
+                .map((value) => Math.max(0, Number(value) || 0))
+                .filter((value) => Number.isFinite(value) && value > 0)
+            : [];
         let avgBackRowSeatsPerSection = 0;
         let maxBackRowSeatsPerSection = 0;
         let minBackRowSeatsPerSection = 0;
@@ -1087,6 +1093,7 @@ export class FieldRenderer {
             actualSections,
             allSectionPathsClosed,
             backRowSectionSeatCounts,
+            sectionOccupancyTotals,
             avgBackRowSeatsPerSection,
             maxBackRowSeatsPerSection,
             minBackRowSeatsPerSection
@@ -1406,8 +1413,7 @@ export class FieldRenderer {
                         if (!Number.isFinite(uA) || !Number.isFinite(uB)) continue;
 
                         const centerGapFt = sectionDistanceOnPath(path, uA, uB);
-                        const seatingGapFt = Math.max(0, centerGapFt - aisleWidthFt);
-                        const seatCount = Math.floor((seatingGapFt * 12.0) / seatWidthIn);
+                        const seatCount = countSeatsFromCenterlineGapFt({ centerGapFt, aisleWidthFt, seatWidthIn });
                         if (!(seatCount > 0)) continue;
                         totals[i] += seatCount;
 
@@ -1684,8 +1690,7 @@ export class FieldRenderer {
                     if (!Number.isFinite(uA) || !Number.isFinite(uB)) continue;
 
                     const centerGapFt = sectionDistanceOnPath(path, uA, uB);
-                    const seatingGapFt = Math.max(0, centerGapFt - aisleWidthFt);
-                    const seatCount = Math.floor((seatingGapFt * 12.0) / seatWidthIn);
+                    const seatCount = countSeatsFromCenterlineGapFt({ centerGapFt, aisleWidthFt, seatWidthIn });
                     if (!(seatCount > 0)) continue;
                     totals[i] += seatCount;
 
@@ -1790,7 +1795,13 @@ export class FieldRenderer {
             }
         });
 
-        return { sectionLabels, rowSeatLabels };
+        return {
+            sectionLabels,
+            rowSeatLabels,
+            sectionOccupancyTotals: Array.from(sectionSeatTotals.values()).flatMap((totals) =>
+                (Array.isArray(totals) ? totals : []).map((value) => Math.round(Math.max(0, Number(value) || 0)))
+            )
+        };
     }
 
     _drawTierAisles(ctx, solver, bowlConfig, tierLayout, offsetCorrection, scale, fx, fy) {

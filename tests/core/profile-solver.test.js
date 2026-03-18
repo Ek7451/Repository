@@ -6,7 +6,9 @@ import {
     buildTierRowCountHandleCandidates,
     buildStructuralProfileGeometry,
     buildTierMetricsByIndex,
-    getSolverTierIndex
+    reconcileTierMetricsByIndexWithLayoutSummaries,
+    getSolverTierIndex,
+    ProfileSolver
 } from '../../core/profile-solver.js';
 
 function createTier(overrides = {}) {
@@ -141,6 +143,104 @@ describe('profile solver helper exports', () => {
             mirroredSideRuns: 1
         });
         expect(calculateRowLength).toHaveBeenCalled();
+    });
+
+    it('reconciles tier metrics from closed layout summaries by stable tier index', () => {
+        const tierMetricsByIndex = new Map([
+            [0, {
+                capacity: 120,
+                numAisles: 5,
+                numSections: 4,
+                seatsPerBlock: '18.0',
+                occupantsPerSection: 30,
+                occupantsPerAisleLine: 30,
+                capacityWidth: '6.0'
+            }],
+            [2, {
+                capacity: 80,
+                numAisles: 4,
+                numSections: 4,
+                seatsPerBlock: '10.0',
+                occupantsPerSection: 20,
+                occupantsPerAisleLine: 20,
+                capacityWidth: '4.0'
+            }]
+        ]);
+
+        const reconciled = reconcileTierMetricsByIndexWithLayoutSummaries({
+            tierMetricsByIndex,
+            tierAisleLayouts: [{
+                tierIndex: 2,
+                sectionSummary: {
+                    actualSections: 2,
+                    actualAisles: 2,
+                    allSectionPathsClosed: true,
+                    avgBackRowSeatsPerSection: 14,
+                    sectionOccupancyTotals: [32, 48]
+                }
+            }],
+            egressParams: { egressFactor: 0.2 }
+        });
+
+        expect(reconciled).not.toBe(tierMetricsByIndex);
+        expect(reconciled.get(0)).toBe(tierMetricsByIndex.get(0));
+        expect(reconciled.get(2)).toMatchObject({
+            numAisles: 2,
+            numSections: 2,
+            seatsPerBlock: '14.0',
+            occupantsPerSection: 48,
+            occupantsPerAisleLine: 48,
+            capacityWidth: '9.6'
+        });
+    });
+
+    it('preserves tier metrics seat and egress outputs for a representative tier', () => {
+        const solver = new ProfileSolver({
+            targetCValue: 4,
+            firstRowDistance: 45,
+            firstRowElevation: 6,
+            treadDepth: 33,
+            defaultRiser: 10,
+            numRows: 4,
+            eyeHeight: 3.75,
+            eyeSetback: 6,
+            focalX: 0,
+            focalZ: 0
+        });
+        solver.solve('Parabolic');
+
+        const metrics = ProfileSolver.calculateTierMetrics(
+            solver,
+            { type: 'Full' },
+            { calculateRowLength: () => 140 },
+            {
+                seatWidthIn: 20,
+                maxAisleWidthIn: 72,
+                minAisleWidthIn: 48,
+                egressFactor: 0.2,
+                seatsBetweenAisles: 20
+            },
+            0
+        );
+
+        expect(metrics).toMatchObject({
+            numAisles: 5,
+            aisleWidth: '48.0',
+            seatsPerRow: 72,
+            backRowSeatsPerRow: 72,
+            numSections: 4,
+            seatsPerBlock: '18.0',
+            occupantsPerSection: 72,
+            occupantsPerAisleLine: 72,
+            capacityWidth: '14.4',
+            minimumWidth: '48.0',
+            maximumWidth: '72.0',
+            governingWidth: '48.0',
+            blocksAddedForEgress: 0,
+            converged: true,
+            mirroredSideRuns: 1
+        });
+        expect(metrics.capacity).toBe(288);
     });
 
     it('clamps tier 1 stepped structural underside to non-negative elevations', () => {
