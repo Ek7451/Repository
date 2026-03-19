@@ -110,6 +110,26 @@ function buildSteppedUndersideProfile(solver, rows, lastRowX, structuralDepthFt,
     return dedupeProfilePoints(undersideProfile);
 }
 
+function buildSlopedUndersideProfile(solver, rows, structuralDepthFt, frontBottomZ, tierIndex = 0) {
+    const firstRow = rows[0];
+    const lastRow = rows[rows.length - 1];
+    const usesUpperTierFrontTreadRun = tierIndex === 1 || tierIndex === 2;
+    const frontSlopeStartX = usesUpperTierFrontTreadRun
+        ? firstRow.x
+        : Math.min(lastRow.x, (firstRow.x - solver.treadDepthFt) + structuralDepthFt);
+
+    return dedupeProfilePoints([
+        {
+            x: frontSlopeStartX,
+            z: frontBottomZ
+        },
+        {
+            x: lastRow.x,
+            z: Math.max(0, lastRow.z - structuralDepthFt)
+        }
+    ]);
+}
+
 export function buildStructuralProfileGeometry(
     solver,
     { structuralDepthFt = 0, structuralProfileMode = 'stepped', tierIndex = 0 } = {}
@@ -130,16 +150,13 @@ export function buildStructuralProfileGeometry(
     let undersideProfile = [];
     if (depthFt > 0) {
         undersideProfile = mode === 'sloped'
-            ? dedupeProfilePoints([
-                {
-                    x: Math.min(lastRow.x, startX + depthFt),
-                    z: frontBottomZ
-                },
-                {
-                    x: lastRow.x,
-                    z: Math.max(0, lastRow.z - depthFt)
-                }
-            ])
+            ? buildSlopedUndersideProfile(
+                solver,
+                rows,
+                depthFt,
+                frontBottomZ,
+                resolvedTierIndex
+            )
             : buildSteppedUndersideProfile(solver, rows, lastRow.x, depthFt, frontBottomZ);
     }
 
