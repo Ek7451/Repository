@@ -1,9 +1,9 @@
 import {
     buildActiveTierSolvers,
     buildNextTierDefaultsFromSolvers,
-    buildTierMetricsByIndex,
-    reconcileTierMetricsByIndexWithLayoutSummaries
+    buildTierMetricsByIndexFromLayouts
 } from '../core/profile-solver.js';
+import { buildConfigurationAisleSummary } from '../core/aisle-layout.js';
 import {
     buildBowlConfig,
     buildEgressParams,
@@ -51,7 +51,7 @@ export class RenderRuntime {
      *     buildTierAisleLayouts(
      *       solvers: unknown[],
      *       bowlConfig: unknown,
-     *       tierMetricsByIndex: Map<number, unknown>,
+     *       tierMetricsByIndex: Map<number, unknown> | null,
      *       offsetCorrection: number,
      *       egressParams: unknown
      *     ): unknown[]
@@ -76,28 +76,27 @@ export class RenderRuntime {
         let visualFocalY = 0;
         let tierMetricsByIndex = new Map();
         let tierAisleLayouts = [];
+        let configurationSummary = buildConfigurationAisleSummary({
+            tierLayouts: tierAisleLayouts
+        });
 
         if (fieldGeometryPort && bowlConfig) {
             offsetCorrection = fieldGeometryPort.getOffsetCorrection(bowlConfig, sportName);
             visualFocalY = fieldGeometryPort.getVisualFocalY(template, focalPointFt, sportName);
-            tierMetricsByIndex = buildTierMetricsByIndex({
-                solvers,
-                bowlConfig,
-                egressParams,
-                offsetCorrection,
-                calculateRowLength: (nextBowlConfig, offset) => fieldGeometryPort.calculateRowLength(nextBowlConfig, offset)
-            });
             tierAisleLayouts = fieldGeometryPort.buildTierAisleLayouts(
                 solvers,
                 bowlConfig,
-                tierMetricsByIndex,
+                null,
                 offsetCorrection,
                 egressParams
             ) || [];
-            tierMetricsByIndex = reconcileTierMetricsByIndexWithLayoutSummaries({
-                tierMetricsByIndex,
-                tierAisleLayouts,
-                egressParams
+            tierMetricsByIndex = buildTierMetricsByIndexFromLayouts({
+                tierLayouts: tierAisleLayouts,
+                egressParams,
+                solvers
+            });
+            configurationSummary = buildConfigurationAisleSummary({
+                tierLayouts: tierAisleLayouts
             });
         }
 
@@ -116,6 +115,7 @@ export class RenderRuntime {
             visualFocalY,
             tierMetricsByIndex,
             tierAisleLayouts,
+            configurationSummary,
             seatPreviewOptions,
             offsetCorrection,
             fieldRenderInput: {
@@ -149,7 +149,8 @@ export class RenderRuntime {
                 focalPointFt,
                 bowlConfig,
                 egressParams,
-                tierMetricsByIndex
+                tierMetricsByIndex,
+                configurationSummary
             })
         };
 
@@ -186,6 +187,9 @@ export class RenderRuntime {
             primaryTierParameters: buildPrimaryTierParameters(state),
             runoffDistance: getRunoffDistance(state, template),
             tierAisleLayouts: this._tierAisleLayouts || [],
+            configurationSummary: this._snapshot?.configurationSummary || buildConfigurationAisleSummary({
+                tierLayouts: this._tierAisleLayouts || []
+            }),
             structuralDepthFt: structuralDepth / 12.0,
             offsetCorrection: Number(this._snapshot?.offsetCorrection) || 0
         };

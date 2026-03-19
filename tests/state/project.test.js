@@ -51,7 +51,7 @@ describe('project state helpers', () => {
         expect(request.name).toBe('Untitled Project');
         expect(request.state).toMatchObject({
             _projectVersion: 'dashboard-cutover-v1',
-            sport: 'Football',
+            sport: 'Ice Hockey',
             activeOptionId: 'option-1',
             options: [
                 {
@@ -59,7 +59,7 @@ describe('project state helpers', () => {
                     name: 'Option 1',
                     color: '#7aae1a',
                     state: {
-                        sport: 'Football'
+                        sport: 'Ice Hockey'
                     }
                 }
             ]
@@ -162,7 +162,7 @@ describe('project state helpers', () => {
             id: 'option-2',
             name: 'Option 2',
             state: {
-                sport: 'Football',
+                sport: 'Ice Hockey',
                 ui: {
                     activeViewTab: 'profile'
                 }

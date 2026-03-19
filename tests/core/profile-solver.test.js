@@ -6,6 +6,7 @@ import {
     buildTierRowCountHandleCandidates,
     buildStructuralProfileGeometry,
     buildTierMetricsByIndex,
+    buildTierMetricsByIndexFromLayouts,
     reconcileTierMetricsByIndexWithLayoutSummaries,
     getSolverTierIndex,
     ProfileSolver
@@ -143,6 +144,105 @@ describe('profile solver helper exports', () => {
             mirroredSideRuns: 1
         });
         expect(calculateRowLength).toHaveBeenCalled();
+    });
+
+    it('maps authoritative layout summaries into legacy tier metrics without recomputing egress math', () => {
+        const solver = {
+            tierIndex: 0,
+            rows: [
+                { row_number: 1, x: 10, tread_depth: 2 },
+                { row_number: 2, x: 12, tread_depth: 2 }
+            ]
+        };
+
+        const tierMetricsByIndex = buildTierMetricsByIndexFromLayouts({
+            solvers: [solver],
+            egressParams: {
+                seatWidthIn: 20,
+                minAisleWidthIn: 48,
+                maxAisleWidthIn: 72,
+                seatsBetweenAisles: 20
+            },
+            tierLayouts: [{
+                tierIndex: 0,
+                sectionSummary: {
+                    actualAisles: 2,
+                    actualSections: 1,
+                    tierSeatCount: 22,
+                    backRowSectionSeatCounts: [12],
+                    avgBackRowSeatsPerSection: 12,
+                    maxBackRowSeatsPerSection: 12,
+                    aisleOccupancyTotals: [11, 11],
+                    largestSectionOccupancy: 22,
+                    maxRequiredAisleWidthIn: 12,
+                    maxGoverningAisleWidthIn: 48,
+                    maxRenderedAisleWidthIn: 48,
+                    converged: true,
+                    compliance: {
+                        seatCapCompliant: true,
+                        egressCapCompliant: true,
+                        renderedWidthCompliant: true
+                    },
+                    rowSummaries: [
+                        {
+                            rowIndex: 0,
+                            rowNumber: 1,
+                            seatCount: 10,
+                            sectionCount: 1,
+                            maxContinuousSectionSeats: 10,
+                            pathSeatCounts: [{ pathIndex: 0, seatCount: 10 }],
+                            linearLengthFt: 40,
+                            linearLengthPerRunFt: 40,
+                            seatCountPerRun: 10,
+                            sectionCountPerRun: 1
+                        },
+                        {
+                            rowIndex: 1,
+                            rowNumber: 2,
+                            seatCount: 12,
+                            sectionCount: 1,
+                            maxContinuousSectionSeats: 12,
+                            pathSeatCounts: [{ pathIndex: 0, seatCount: 12 }],
+                            linearLengthFt: 42,
+                            linearLengthPerRunFt: 42,
+                            seatCountPerRun: 12,
+                            sectionCountPerRun: 1
+                        }
+                    ],
+                    aisles: [
+                        { legalMaxOccupantsPerAisle: 360 },
+                        { legalMaxOccupantsPerAisle: 360 }
+                    ]
+                }
+            }]
+        });
+
+        expect(tierMetricsByIndex.get(0)).toMatchObject({
+            capacity: 22,
+            numAisles: 2,
+            numSections: 1,
+            seatsPerBlock: '12.0',
+            backRowSeatsPerRow: 12,
+            occupantsPerSection: 22,
+            occupantsPerAisleLine: 11,
+            capacityWidth: '12.0',
+            governingWidth: '48.0',
+            renderedAisleWidth: '48.0',
+            totalRowLength: '82',
+            totalSeatingLength: '37',
+            totalAisleLength: '45',
+            renderedWidthCompliant: true
+        });
+        expect(solver.rows[0]).toMatchObject({
+            computedLength: 40,
+            computedSeats: 10,
+            computedBlocks: 1
+        });
+        expect(solver.rows[1]).toMatchObject({
+            computedLength: 42,
+            computedSeats: 12,
+            computedBlocks: 1
+        });
     });
 
     it('reconciles tier metrics from closed layout summaries by stable tier index', () => {

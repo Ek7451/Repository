@@ -81,11 +81,86 @@ describe('buildStudyResultsJsonPayload', () => {
                     actualAisles: 2,
                     actualSections: 1,
                     allSectionPathsClosed: true,
+                    backRowSectionSeatCounts: [12],
+                    sectionOccupancyTotals: [22],
                     avgBackRowSeatsPerSection: 12,
+                    maxBackRowSeatsPerSection: 12,
+                    minBackRowSeatsPerSection: 10,
                     aisleOccupancyTotals: [11, 11],
+                    tierSeatCount: 22,
+                    largestSectionOccupancy: 22,
+                    maxRequiredAisleWidthIn: 12,
+                    maxGoverningAisleWidthIn: 48,
+                    minRenderedAisleWidthIn: 48,
+                    maxRenderedAisleWidthIn: 48,
                     requiredWidthIn: 12,
                     governingWidthIn: 48,
                     renderedAisleWidthIn: 48,
+                    rowSummaries: [
+                        {
+                            rowIndex: 0,
+                            rowNumber: 1,
+                            seatCount: 10,
+                            sectionCount: 1,
+                            maxContinuousSectionSeats: 10,
+                            pathSeatCounts: [{ pathIndex: 0, seatCount: 10 }],
+                            linearLengthFt: 40,
+                            linearLengthPerRunFt: 40,
+                            seatCountPerRun: 10,
+                            sectionCountPerRun: 1
+                        },
+                        {
+                            rowIndex: 1,
+                            rowNumber: 2,
+                            seatCount: 12,
+                            sectionCount: 1,
+                            maxContinuousSectionSeats: 12,
+                            pathSeatCounts: [{ pathIndex: 0, seatCount: 12 }],
+                            linearLengthFt: 42,
+                            linearLengthPerRunFt: 42,
+                            seatCountPerRun: 12,
+                            sectionCountPerRun: 1
+                        }
+                    ],
+                    sections: [{
+                        pathIndex: 0,
+                        slotIndex: 0,
+                        aisleIndexA: 0,
+                        aisleIndexB: 1,
+                        rowSeatCounts: [10, 12],
+                        occupancy: 22,
+                        frontRowSeats: 10,
+                        backRowSeats: 12,
+                        minSeatsPerRow: 10,
+                        maxSeatsPerRow: 12,
+                        avgSeatsPerRow: 11
+                    }],
+                    aisles: [
+                        {
+                            aisleIndex: 0,
+                            pathIndex: 0,
+                            tributaryOccupancy: 11,
+                            requiredWidthIn: 12,
+                            governingWidthIn: 48,
+                            renderedWidthIn: 48,
+                            renderedWidthFt: 4,
+                            legalMaxOccupantsPerAisle: 360,
+                            withinMaxWidth: true,
+                            renderedWidthCompliant: true
+                        },
+                        {
+                            aisleIndex: 1,
+                            pathIndex: 0,
+                            tributaryOccupancy: 11,
+                            requiredWidthIn: 12,
+                            governingWidthIn: 48,
+                            renderedWidthIn: 48,
+                            renderedWidthFt: 4,
+                            legalMaxOccupantsPerAisle: 360,
+                            withinMaxWidth: true,
+                            renderedWidthCompliant: true
+                        }
+                    ],
                     compliance: {
                         seatCapCompliant: true,
                         egressCapCompliant: true,
@@ -137,6 +212,13 @@ describe('buildStudyResultsJsonPayload', () => {
                 eyeHeight: 4,
                 eyeSetback: 6
             },
+            configurationSummary: {
+                totalOccupancyAllTiers: 22,
+                totalAislesAllTiers: 2,
+                totalSectionsAllTiers: 1,
+                tierSeatCounts: [{ tierIndex: 0, tierSeatCount: 22 }],
+                maxRequiredAisleWidthInOverall: 12
+            },
             tierArtifacts
         });
 
@@ -177,6 +259,9 @@ describe('buildStudyResultsJsonPayload', () => {
             requiredWidthIn: 12,
             governingWidthIn: 48,
             renderedCommonWidthIn: 48,
+            renderedWidthMinIn: 48,
+            renderedWidthMaxIn: 48,
+            renderedWidthVaries: false,
             finalNumAisles: 2,
             finalNumSections: 1
         });

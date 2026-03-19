@@ -68,7 +68,7 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(renderer.getVisualFocalY(null, null, 'Soccer')).toBe(0);
     });
 
-    it('builds tier aisle layouts only for solved tiers with metrics', () => {
+    it('builds tier aisle layouts for solved tiers with rows and ignores metrics as a truth source', () => {
         const renderer = Object.create(FieldRenderer.prototype);
         renderer.generateTierAisleLayout = vi.fn((solver, bowlConfig, metrics, offsetCorrection, egressParams) => ({
             solver,
@@ -101,7 +101,7 @@ describe('FieldRenderer helper delegation surface', () => {
             1,
             solvers[0],
             { width: 100 },
-            { numAisles: 4 },
+            null,
             8,
             { seatsBetweenAisles: 24 }
         );
@@ -109,7 +109,7 @@ describe('FieldRenderer helper delegation surface', () => {
             2,
             solvers[2],
             { width: 100 },
-            { numAisles: 2 },
+            null,
             8,
             { seatsBetweenAisles: 24 }
         );
@@ -143,7 +143,7 @@ describe('FieldRenderer helper delegation surface', () => {
 
         expect(layout).toEqual(expect.objectContaining({
             tierIndex: 0,
-            aisleWidthFt: 4,
+            aisleWidthFt: expect.any(Number),
             seatWidthIn: 20,
             targetAisles: expect.any(Number),
             forcedCount: expect.any(Number),
@@ -162,6 +162,9 @@ describe('FieldRenderer helper delegation surface', () => {
                 requiredWidthIn: expect.any(Number),
                 governingWidthIn: expect.any(Number),
                 renderedAisleWidthIn: expect.any(Number),
+                rowSummaries: expect.any(Array),
+                tierSeatCount: expect.any(Number),
+                maxRenderedAisleWidthIn: expect.any(Number),
                 compliance: expect.objectContaining({
                     seatCapCompliant: expect.any(Boolean),
                     egressCapCompliant: expect.any(Boolean),
@@ -225,6 +228,46 @@ describe('FieldRenderer helper delegation surface', () => {
         }));
         expect(overlay.widthLabels[0]).toEqual(expect.objectContaining({
             text: expect.stringMatching(/"$/)
+        }));
+    });
+
+    it('renders aisle polygons and width labels from per-aisle rendered widths', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const solver = createTierSolver();
+        const bowlConfig = createFullChamferBowlConfig();
+        const tierLayout = renderer.generateTierAisleLayout(
+            solver,
+            bowlConfig,
+            createTierMetrics(),
+            0,
+            createEgressParams()
+        );
+        const baselinePolygons = renderer.getTierAisleBandPolygons(solver, bowlConfig, tierLayout, 0)
+            .filter((polygon) => polygon.aisleIndex === 0);
+        tierLayout.sectionSummary.aisles[0].renderedWidthIn = 60;
+        tierLayout.sectionSummary.aisles[0].renderedWidthFt = 5;
+        tierLayout.sectionSummary.maxRenderedAisleWidthIn = Math.max(
+            60,
+            Number(tierLayout.sectionSummary.maxRenderedAisleWidthIn) || 0
+        );
+
+        const polygons = renderer.getTierAisleBandPolygons(solver, bowlConfig, tierLayout, 0)
+            .filter((polygon) => polygon.aisleIndex === 0);
+        const overlay = renderer._getTierAisleMetricLabelData(solver, bowlConfig, tierLayout, 0);
+        const baselineFrontWidthFt = Math.hypot(
+            baselinePolygons[0].points[0].x - baselinePolygons[0].points[1].x,
+            baselinePolygons[0].points[0].y - baselinePolygons[0].points[1].y
+        );
+        const firstPolygon = polygons[0];
+        const frontWidthFt = Math.hypot(
+            firstPolygon.points[0].x - firstPolygon.points[1].x,
+            firstPolygon.points[0].y - firstPolygon.points[1].y
+        );
+
+        expect(polygons.length).toBeGreaterThan(0);
+        expect(frontWidthFt).toBeGreaterThan(baselineFrontWidthFt + 0.3);
+        expect(overlay.widthLabels[0]).toEqual(expect.objectContaining({
+            text: '60"'
         }));
     });
 
@@ -520,6 +563,48 @@ describe('FieldRenderer helper delegation surface', () => {
             expect(sceneRatios.uFront).toBeCloseTo(fieldRatios.uFront);
             expect(sceneRatios.uBack).toBeCloseTo(fieldRatios.uBack);
         });
+    });
+
+    it('uses rendered aisle widths when building scene3d aisle geometry', async () => {
+        const fieldRenderer = Object.create(FieldRenderer.prototype);
+        const { Scene3D } = await import('../../viz/scene3d.js');
+        const THREE = await import('../../lib/three.module.js');
+        const scene = Object.create(Scene3D.prototype);
+        scene.THREE = THREE;
+
+        const solver = createTierSolver();
+        const bowlConfig = createFullChamferBowlConfig();
+        const baseLayout = fieldRenderer.generateTierAisleLayout(
+            solver,
+            bowlConfig,
+            createTierMetrics(),
+            0,
+            createEgressParams()
+        );
+        const widenedLayout = structuredClone(baseLayout);
+        widenedLayout.sectionSummary.aisles[0].renderedWidthIn = 60;
+        widenedLayout.sectionSummary.aisles[0].renderedWidthFt = 5;
+        widenedLayout.sectionSummary.maxRenderedAisleWidthIn = Math.max(
+            60,
+            Number(widenedLayout.sectionSummary.maxRenderedAisleWidthIn) || 0
+        );
+
+        const baseGeometry = scene._createTierAisleGeometry(solver, bowlConfig, baseLayout, 0);
+        const widenedGeometry = scene._createTierAisleGeometry(solver, bowlConfig, widenedLayout, 0);
+        const basePositions = baseGeometry.getAttribute('position').array;
+        const widenedPositions = widenedGeometry.getAttribute('position').array;
+        const baseFrontWidthFt = Math.hypot(
+            basePositions[0] - basePositions[3],
+            basePositions[2] - basePositions[5]
+        );
+        const widenedFrontWidthFt = Math.hypot(
+            widenedPositions[0] - widenedPositions[3],
+            widenedPositions[2] - widenedPositions[5]
+        );
+
+        expect(baseGeometry).not.toBeNull();
+        expect(widenedGeometry).not.toBeNull();
+        expect(widenedFrontWidthFt).toBeGreaterThan(baseFrontWidthFt + 0.3);
     });
 });
 

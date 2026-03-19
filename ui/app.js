@@ -5,7 +5,6 @@
 
 import { FieldRenderer } from '../viz/field-renderer.js';
 import { ProfileRenderer } from '../viz/profile-renderer.js';
-import { DEFAULT_STARTUP_PROFILE } from '../core/default-starting-profile.js';
 import { createAppState, resolveSportName, resolveSportTemplate } from '../state/app-state.js';
 import {
     getActiveProjectStateSnapshot,
@@ -107,7 +106,6 @@ export class SeatingBowlApp {
             });
             this.statsPanel = new StatsPanel();
 
-            this.state.fromJSON(DEFAULT_STARTUP_PROFILE);
             this.syncShellFromState();
             this.scene3DController?.renderBookmarks();
             this.projectShell.refreshProjectChrome();

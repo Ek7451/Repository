@@ -42,6 +42,12 @@ function summarizeValues(values) {
     };
 }
 
+function roundNumber(value, digits = 2) {
+    return Number.isFinite(Number(value))
+        ? +Number(value).toFixed(digits)
+        : null;
+}
+
 function buildTierExportRecord({
     solver,
     fallbackIndex,
@@ -53,109 +59,103 @@ function buildTierExportRecord({
     const rows = Array.isArray(solver?.rows) ? solver.rows : [];
     const tierArtifact = tierArtifactMap instanceof Map ? tierArtifactMap.get(tierIndex) : null;
     const finalMetrics = tierArtifact?.tierMetrics ?? null;
-    const estimateMetrics = tierArtifact?.tierMetricsEstimate ?? finalMetrics?.egressEstimate ?? finalMetrics ?? null;
+    const estimateMetrics = tierArtifact?.tierMetricsEstimate ?? finalMetrics?.egressEstimate ?? null;
     const tierLayout = tierArtifact?.tierLayout ?? null;
+    const sectionSummary = tierLayout?.sectionSummary ?? null;
     const overlay = tierArtifact?.overlayData ?? createEmptyOverlay();
+    const rowSummaries = Array.isArray(sectionSummary?.rowSummaries) ? sectionSummary.rowSummaries : [];
+    const summarySections = Array.isArray(sectionSummary?.sections) ? sectionSummary.sections : [];
 
-    const rowSeatLabels = Array.isArray(overlay.rowSeatLabels) ? overlay.rowSeatLabels.slice() : [];
     const sectionLabels = Array.isArray(overlay.sectionLabels) ? overlay.sectionLabels.slice() : [];
-    rowSeatLabels.sort((a, b) =>
-        (a.rowIndex - b.rowIndex) ||
-        ((a.sectionNumber || 0) - (b.sectionNumber || 0)) ||
-        (a.pathIndex - b.pathIndex) ||
-        (a.slotIndex - b.slotIndex)
-    );
     sectionLabels.sort((a, b) => (a.sectionNumber || 0) - (b.sectionNumber || 0));
+    const getSectionKey = (pathIndex, slotIndex) => `${pathIndex}:${slotIndex}`;
+    const sectionLabelByKey = new Map(
+        sectionLabels.map((label) => [getSectionKey(label.pathIndex, label.slotIndex), label])
+    );
 
     const rowsByIndex = new Map();
     rows.forEach((row, rowIndex) => {
+        const rowSummary = rowSummaries[rowIndex] || null;
         rowsByIndex.set(rowIndex, {
             rowIndex,
             rowNumber: Number(row.row_number ?? (rowIndex + 1)),
-            xFt: Number.isFinite(row.x) ? +row.x.toFixed(3) : null,
-            zFt: Number.isFinite(row.z) ? +row.z.toFixed(3) : null,
-            treadDepthIn: Number.isFinite(row.tread_depth) ? +(row.tread_depth * 12).toFixed(2) : null,
-            riserHeightIn: Number.isFinite(row.riser_height) ? +(row.riser_height * 12).toFixed(2) : null,
-            cValueIn: Number.isFinite(row.c_value) ? +row.c_value.toFixed(2) : null,
-            sightlineAngleDeg: Number.isFinite(row.sightline_angle) ? +row.sightline_angle.toFixed(3) : null,
-            linearLengthFt: Number.isFinite(row.computedLength) ? +row.computedLength.toFixed(3) : null,
+            xFt: roundNumber(row?.x, 3),
+            zFt: roundNumber(row?.z, 3),
+            treadDepthIn: Number.isFinite(row?.tread_depth) ? roundNumber(row.tread_depth * 12, 2) : null,
+            riserHeightIn: Number.isFinite(row?.riser_height) ? roundNumber(row.riser_height * 12, 2) : null,
+            cValueIn: roundNumber(row?.c_value, 2),
+            sightlineAngleDeg: roundNumber(row?.sightline_angle, 3),
+            linearLengthFt: roundNumber(
+                rowSummary?.linearLengthFt ?? row?.computedLength,
+                3
+            ),
             estimatedLinearSeats: Number.isFinite(row.computedSeats) ? Math.round(row.computedSeats) : null,
-            seatsInRowActual: 0,
-            sectionsInRow: 0,
+            seatsInRowActual: Math.max(0, Number(rowSummary?.seatCount) || 0),
+            sectionsInRow: Math.max(0, Number(rowSummary?.sectionCount) || 0),
             sectionSeatCounts: []
         });
     });
 
-    const sectionsByKey = new Map();
-    const getSectionKey = (pathIndex, slotIndex) => `${pathIndex}:${slotIndex}`;
+    const seatWidthIn = Math.max(0, Number(tierLayout?.seatWidthIn) || Number(egressParams?.seatWidthIn) || 0);
+    const maxRenderedWidthIn = Math.max(
+        0,
+        Number(sectionSummary?.maxRenderedAisleWidthIn)
+            || Number(sectionSummary?.renderedAisleWidthIn)
+            || Number(finalMetrics?.renderedAisleWidth)
+            || (Number(tierLayout?.aisleWidthFt) || 0) * 12.0
+    );
+    const minRenderedWidthIn = Math.max(
+        0,
+        Number(sectionSummary?.minRenderedAisleWidthIn)
+            || maxRenderedWidthIn
+    );
 
-    sectionLabels.forEach((label) => {
-        const key = getSectionKey(label.pathIndex, label.slotIndex);
-        sectionsByKey.set(key, {
+    const sectionRecords = summarySections.map((section, sectionIndex) => {
+        const sectionKey = getSectionKey(section.pathIndex, section.slotIndex);
+        const label = sectionLabelByKey.get(sectionKey) || null;
+        const seatCountsByRow = (Array.isArray(section?.rowSeatCounts) ? section.rowSeatCounts : [])
+            .map((seatCount, rowIndex) => ({
+                rowIndex,
+                rowNumber: Number(rows?.[rowIndex]?.row_number ?? (rowIndex + 1)),
+                seatCount: Math.max(0, Math.round(Number(seatCount) || 0))
+            }));
+        seatCountsByRow.forEach((seatRecord) => {
+            const rowRec = rowsByIndex.get(seatRecord.rowIndex);
+            if (!rowRec || !(seatRecord.seatCount > 0)) return;
+            rowRec.sectionSeatCounts.push({
+                sectionNumber: Number.isFinite(label?.sectionNumber) ? label.sectionNumber : (sectionIndex + 1),
+                pathIndex: Number.isFinite(section?.pathIndex) ? section.pathIndex : null,
+                slotIndex: Number.isFinite(section?.slotIndex) ? section.slotIndex : null,
+                seatCount: seatRecord.seatCount
+            });
+        });
+
+        return {
             tierIndex,
             tierNumber,
-            sectionNumber: Number.isFinite(label.sectionNumber) ? label.sectionNumber : null,
-            pathIndex: Number.isFinite(label.pathIndex) ? label.pathIndex : null,
-            slotIndex: Number.isFinite(label.slotIndex) ? label.slotIndex : null,
-            occupancy: 0,
-            rowsInSection: 0,
-            seatCountsByRow: [],
-            minSeatsPerRow: null,
-            maxSeatsPerRow: null,
-            avgSeatsPerRow: null,
-            frontRowSeats: null,
-            backRowSeats: null,
-            labelAnchorFt: (Number.isFinite(label.x) && Number.isFinite(label.y))
-                ? { x: +label.x.toFixed(3), y: +label.y.toFixed(3) }
+            sectionNumber: Number.isFinite(label?.sectionNumber) ? label.sectionNumber : (sectionIndex + 1),
+            pathIndex: Number.isFinite(section?.pathIndex) ? section.pathIndex : null,
+            slotIndex: Number.isFinite(section?.slotIndex) ? section.slotIndex : null,
+            occupancy: Math.max(0, Number(section?.occupancy) || 0),
+            rowsInSection: seatCountsByRow.length,
+            seatCountsByRow,
+            minSeatsPerRow: Math.max(0, Number(section?.minSeatsPerRow) || 0),
+            maxSeatsPerRow: Math.max(0, Number(section?.maxSeatsPerRow) || 0),
+            avgSeatsPerRow: roundNumber(section?.avgSeatsPerRow, 2),
+            frontRowSeats: Math.max(0, Number(section?.frontRowSeats) || 0),
+            backRowSeats: Math.max(0, Number(section?.backRowSeats) || 0),
+            averageSeatBandWidthFt: seatWidthIn > 0
+                ? roundNumber((Number(section?.avgSeatsPerRow) || 0) * seatWidthIn / 12.0, 3)
+                : null,
+            backRowSeatBandWidthFt: seatWidthIn > 0
+                ? roundNumber((Number(section?.backRowSeats) || 0) * seatWidthIn / 12.0, 3)
+                : null,
+            seatWidthIn: seatWidthIn > 0 ? roundNumber(seatWidthIn, 2) : null,
+            labelAnchorFt: (Number.isFinite(label?.x) && Number.isFinite(label?.y))
+                ? { x: roundNumber(label.x, 3), y: roundNumber(label.y, 3) }
                 : null
-        });
-    });
-
-    rowSeatLabels.forEach((label) => {
-        const sectionKey = getSectionKey(label.pathIndex, label.slotIndex);
-        if (!sectionsByKey.has(sectionKey)) {
-            sectionsByKey.set(sectionKey, {
-                tierIndex,
-                tierNumber,
-                sectionNumber: Number.isFinite(label.sectionNumber) ? label.sectionNumber : null,
-                pathIndex: Number.isFinite(label.pathIndex) ? label.pathIndex : null,
-                slotIndex: Number.isFinite(label.slotIndex) ? label.slotIndex : null,
-                occupancy: 0,
-                rowsInSection: 0,
-                seatCountsByRow: [],
-                minSeatsPerRow: null,
-                maxSeatsPerRow: null,
-                avgSeatsPerRow: null,
-                frontRowSeats: null,
-                backRowSeats: null,
-                labelAnchorFt: null
-            });
-        }
-
-        const section = sectionsByKey.get(sectionKey);
-        const rowRec = rowsByIndex.get(label.rowIndex);
-        const seatCount = Math.max(0, Math.round(Number(label.seatCount) || 0));
-
-        if (rowRec && seatCount > 0) {
-            rowRec.sectionSeatCounts.push({
-                sectionNumber: section.sectionNumber,
-                pathIndex: Number.isFinite(label.pathIndex) ? label.pathIndex : null,
-                slotIndex: Number.isFinite(label.slotIndex) ? label.slotIndex : null,
-                seatCount
-            });
-            rowRec.seatsInRowActual += seatCount;
-        }
-
-        if (section && seatCount > 0) {
-            const rowNumber = rowRec ? rowRec.rowNumber : (Number(label.rowIndex) + 1);
-            section.seatCountsByRow.push({
-                rowIndex: Number.isFinite(label.rowIndex) ? label.rowIndex : null,
-                rowNumber,
-                seatCount
-            });
-            section.occupancy += seatCount;
-        }
-    });
+        };
+    }).sort((a, b) => (a.sectionNumber ?? 0) - (b.sectionNumber ?? 0));
 
     const rowRecords = Array.from(rowsByIndex.values()).sort((a, b) => a.rowIndex - b.rowIndex);
     rowRecords.forEach((rowRec) => {
@@ -164,49 +164,12 @@ function buildTierExportRecord({
             ((a.pathIndex ?? 0) - (b.pathIndex ?? 0)) ||
             ((a.slotIndex ?? 0) - (b.slotIndex ?? 0))
         );
-        rowRec.sectionsInRow = rowRec.sectionSeatCounts.length;
     });
-
-    const seatWidthIn = Math.max(0, Number(tierLayout?.seatWidthIn) || Number(egressParams?.seatWidthIn) || 0);
-    const renderedAisleWidthIn = Math.max(
-        0,
-        Number(tierLayout?.sectionSummary?.renderedAisleWidthIn)
-            || Number(finalMetrics?.renderedAisleWidth)
-            || (Number(tierLayout?.aisleWidthFt) || 0) * 12.0
-    );
-
-    const sectionRecords = Array.from(sectionsByKey.values())
-        .sort((a, b) => (a.sectionNumber ?? 0) - (b.sectionNumber ?? 0))
-        .map((section) => {
-            section.seatCountsByRow.sort((a, b) => (a.rowIndex ?? 0) - (b.rowIndex ?? 0));
-            section.rowsInSection = section.seatCountsByRow.length;
-            if (section.rowsInSection > 0) {
-                const seatCounts = section.seatCountsByRow.map((row) => row.seatCount);
-                const sum = seatCounts.reduce((acc, value) => acc + value, 0);
-                section.occupancy = Math.max(section.occupancy, sum);
-                section.minSeatsPerRow = Math.min(...seatCounts);
-                section.maxSeatsPerRow = Math.max(...seatCounts);
-                section.avgSeatsPerRow = +(sum / section.rowsInSection).toFixed(2);
-                section.frontRowSeats = seatCounts[0];
-                section.backRowSeats = seatCounts[seatCounts.length - 1];
-                section.averageSeatBandWidthFt = seatWidthIn > 0
-                    ? +((section.avgSeatsPerRow * seatWidthIn) / 12.0).toFixed(3)
-                    : null;
-                section.backRowSeatBandWidthFt = (seatWidthIn > 0 && Number.isFinite(section.backRowSeats))
-                    ? +((section.backRowSeats * seatWidthIn) / 12.0).toFixed(3)
-                    : null;
-            } else {
-                section.averageSeatBandWidthFt = null;
-                section.backRowSeatBandWidthFt = null;
-            }
-            section.seatWidthIn = seatWidthIn > 0 ? +seatWidthIn.toFixed(2) : null;
-            return section;
-        });
 
     const totalOccupancy = Math.max(
         0,
-        Number(finalMetrics?.capacity)
-            || sectionRecords.reduce((acc, section) => acc + (Number(section.occupancy) || 0), 0)
+        Number(sectionSummary?.tierSeatCount)
+            || Number(finalMetrics?.capacity)
     );
     const rowTotals = rowRecords.map((row) => row.seatsInRowActual);
     const sectionTotals = sectionRecords.map((section) => section.occupancy);
@@ -214,7 +177,9 @@ function buildTierExportRecord({
     const rowsPerSectionCounts = sectionRecords.map((section) => section.rowsInSection);
     const actualSectionCount = sectionRecords.length;
     const actualAisleCenterlines = Array.isArray(tierLayout?.aisles) ? tierLayout.aisles.length : 0;
-    const sectionSummary = tierLayout?.sectionSummary || null;
+    const maxTributaryOccupancyPerAisle = Array.isArray(sectionSummary?.aisleOccupancyTotals) && sectionSummary.aisleOccupancyTotals.length
+        ? Math.max(...sectionSummary.aisleOccupancyTotals.map((occupancy) => Math.max(0, Number(occupancy) || 0)))
+        : null;
 
     return {
         tierIndex,
@@ -224,7 +189,7 @@ function buildTierExportRecord({
         totalOccupancy,
         egressInputs: {
             seatWidthIn: seatWidthIn > 0 ? +seatWidthIn.toFixed(2) : null,
-            aisleWidthIn: renderedAisleWidthIn > 0 ? +renderedAisleWidthIn.toFixed(2) : null,
+            aisleWidthIn: maxRenderedWidthIn > 0 ? +maxRenderedWidthIn.toFixed(2) : null,
             maxSeatsPerRow: Number.isFinite(egressParams?.seatsBetweenAisles) ? +egressParams.seatsBetweenAisles : null,
             egressFactor: Number.isFinite(egressParams?.egressFactor) ? +egressParams.egressFactor : null
         },
@@ -248,22 +213,31 @@ function buildTierExportRecord({
             sectionsPerRow: summarizeValues(sectionsPerRowCounts),
             rowsPerSection: summarizeValues(rowsPerSectionCounts)
         },
-        egressFinal: finalMetrics ? {
-            requiredWidthIn: Number.isFinite(Number(sectionSummary?.requiredWidthIn))
-                ? +Number(sectionSummary.requiredWidthIn).toFixed(2)
+        egressFinal: (sectionSummary || finalMetrics) ? {
+            requiredWidthIn: Number.isFinite(Number(sectionSummary?.maxRequiredAisleWidthIn ?? sectionSummary?.requiredWidthIn))
+                ? +Number(sectionSummary.maxRequiredAisleWidthIn ?? sectionSummary.requiredWidthIn).toFixed(2)
                 : (Number.isFinite(Number(finalMetrics.capacityWidth)) ? +Number(finalMetrics.capacityWidth).toFixed(2) : null),
-            governingWidthIn: Number.isFinite(Number(sectionSummary?.governingWidthIn))
-                ? +Number(sectionSummary.governingWidthIn).toFixed(2)
+            governingWidthIn: Number.isFinite(Number(sectionSummary?.maxGoverningAisleWidthIn ?? sectionSummary?.governingWidthIn))
+                ? +Number(sectionSummary.maxGoverningAisleWidthIn ?? sectionSummary.governingWidthIn).toFixed(2)
                 : (Number.isFinite(Number(finalMetrics.governingWidth)) ? +Number(finalMetrics.governingWidth).toFixed(2) : null),
-            renderedCommonWidthIn: renderedAisleWidthIn > 0 ? +renderedAisleWidthIn.toFixed(2) : null,
-            finalNumAisles: Number.isFinite(finalMetrics.numAisles) ? finalMetrics.numAisles : null,
-            finalNumSections: Number.isFinite(finalMetrics.numSections) ? finalMetrics.numSections : null,
-            largestSectionOccupancy: Number.isFinite(finalMetrics.occupantsPerSection)
-                ? +Number(finalMetrics.occupantsPerSection).toFixed(2)
+            renderedCommonWidthIn: maxRenderedWidthIn > 0 ? +maxRenderedWidthIn.toFixed(2) : null,
+            renderedWidthMinIn: minRenderedWidthIn > 0 ? +minRenderedWidthIn.toFixed(2) : null,
+            renderedWidthMaxIn: maxRenderedWidthIn > 0 ? +maxRenderedWidthIn.toFixed(2) : null,
+            renderedWidthVaries: !!sectionSummary?.hasVariableRenderedAisleWidths,
+            finalNumAisles: Number.isFinite(Number(sectionSummary?.actualAisles))
+                ? Math.round(Number(sectionSummary.actualAisles))
+                : (Number.isFinite(finalMetrics?.numAisles) ? finalMetrics.numAisles : null),
+            finalNumSections: Number.isFinite(Number(sectionSummary?.actualSections))
+                ? Math.round(Number(sectionSummary.actualSections))
+                : (Number.isFinite(finalMetrics?.numSections) ? finalMetrics.numSections : null),
+            largestSectionOccupancy: Number.isFinite(Number(sectionSummary?.largestSectionOccupancy))
+                ? +Number(sectionSummary.largestSectionOccupancy).toFixed(2)
                 : null,
-            maxTributaryOccupancyPerAisle: Number.isFinite(finalMetrics.occupantsPerAisleLine)
-                ? +Number(finalMetrics.occupantsPerAisleLine).toFixed(2)
-                : null
+            maxTributaryOccupancyPerAisle: Number.isFinite(Number(maxTributaryOccupancyPerAisle))
+                ? +Number(maxTributaryOccupancyPerAisle).toFixed(2)
+                : (Number.isFinite(finalMetrics?.occupantsPerAisleLine)
+                    ? +Number(finalMetrics.occupantsPerAisleLine).toFixed(2)
+                    : null)
         } : null,
         egressEstimate: estimateMetrics ? {
             requiredWidthIn: Number.isFinite(Number(estimateMetrics.requiredWidth))
@@ -291,6 +265,7 @@ export function buildStudyResultsJsonPayload({
     egressParams,
     focalPointFt,
     primaryTierParameters,
+    configurationSummary = null,
     tierArtifacts = []
 }) {
     const activeSolvers = (solvers || []).filter((solver) => solver && Array.isArray(solver.rows) && solver.rows.length > 0);
@@ -303,9 +278,9 @@ export function buildStudyResultsJsonPayload({
         egressParams,
         tierArtifactMap
     }));
-    const totalOccupancyAllTiers = tierExports.reduce((acc, tier) => acc + (Number(tier.totalOccupancy) || 0), 0);
-    const totalAislesAllTiers = tierExports.reduce((acc, tier) => acc + (Number(tier.actualLayout?.aisleCenterlineCount) || 0), 0);
-    const totalSectionsAllTiers = tierExports.reduce((acc, tier) => acc + (Number(tier.actualLayout?.sectionCount) || 0), 0);
+    const totalOccupancyAllTiers = Math.max(0, Number(configurationSummary?.totalOccupancyAllTiers) || 0);
+    const totalAislesAllTiers = Math.max(0, Number(configurationSummary?.totalAislesAllTiers) || 0);
+    const totalSectionsAllTiers = Math.max(0, Number(configurationSummary?.totalSectionsAllTiers) || 0);
     const tier1Solver = activeSolvers[0];
 
     return {
@@ -368,6 +343,7 @@ export function buildStudyResultsJsonExportDescriptor({
     egressParams = null,
     focalPointFt = { x: 0, z: 0 },
     primaryTierParameters = null,
+    configurationSummary = null,
     tierArtifacts = []
 } = {}) {
     const payload = buildStudyResultsJsonPayload({
@@ -379,6 +355,7 @@ export function buildStudyResultsJsonExportDescriptor({
         egressParams,
         focalPointFt,
         primaryTierParameters,
+        configurationSummary,
         tierArtifacts
     });
     if (!payload) {

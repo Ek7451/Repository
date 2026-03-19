@@ -314,7 +314,7 @@ describe('entry routing and bootstrap', () => {
             state: expect.objectContaining({
                 _projectVersion: 'dashboard-cutover-v1',
                 activeOptionId: 'option-1',
-                sport: 'Football'
+                sport: 'Ice Hockey'
             })
         }));
         expect(location.replace).toHaveBeenCalledWith(
@@ -773,7 +773,7 @@ describe('entry routing and bootstrap', () => {
             state: expect.objectContaining({
                 _projectVersion: 'dashboard-cutover-v1',
                 activeOptionId: 'option-1',
-                sport: 'Football'
+                sport: 'Ice Hockey'
             })
         }));
         expect(history.replaceState).toHaveBeenNthCalledWith(

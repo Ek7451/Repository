@@ -8,9 +8,9 @@ import { OrbitControls } from '../lib/OrbitControls.js';
 import {
     buildGeometryPaths,
     sampleAisleBand,
-    buildPerpendicularAisleReferenceMap,
-    resolveAisleStationRatios,
-    resolvePerpendicularAisleStationRatiosFromReference,
+    buildTierAisleReferenceMap,
+    getTierRenderedAisleWidthFt,
+    resolveTierAisleStationRatios,
     samplePathPointByRatio
 } from '../core/aisle-layout.js';
 import { buildStructuralProfileGeometry } from '../core/profile-solver.js';
@@ -691,9 +691,6 @@ export class Scene3D {
         if (!solver || !solver.rows || solver.rows.length === 0) return null;
         if (!tierAisleLayout || !tierAisleLayout.aisles || tierAisleLayout.aisles.length === 0) return null;
 
-        const widthFt = Math.max(0, Number(tierAisleLayout.aisleWidthFt) || 0);
-        if (widthFt <= 0) return null;
-
         const positions = [];
         const indices = [];
         const zOffset = 0.045; // small lift to avoid z-fighting against bowl faces
@@ -756,6 +753,8 @@ export class Scene3D {
                 );
                 if (!ratios) return;
 
+                const widthFt = getTierRenderedAisleWidthFt(tierAisleLayout, aisleIndex);
+                if (widthFt <= 0) return;
                 const bandFront = sampleAisleBand(pathFront, ratios.uFront, widthFt);
                 const bandBack = sampleAisleBand(pathBack, ratios.uBack, widthFt);
                 if (!bandFront || !bandBack) return;
@@ -790,41 +789,24 @@ export class Scene3D {
         getPathsForOffset,
         chamferCache
     ) {
-        const byAisle = new Map();
-        if (!solver || !Array.isArray(solver.rows) || solver.rows.length === 0) return byAisle;
-        if (!tierAisleLayout || !Array.isArray(tierAisleLayout.aisles) || !tierAisleLayout.aisles.length) return byAisle;
-
-        const firstRow = solver.rows[0];
-        const lastRow = solver.rows[solver.rows.length - 1];
-        if (!firstRow || !lastRow || typeof getPathsForOffset !== 'function') return byAisle;
-
-        const referenceFrontPaths = getPathsForOffset((firstRow.x - firstRow.tread_depth) - offsetCorrection);
-        const referenceBackPaths = getPathsForOffset(lastRow.x - offsetCorrection);
-        if (!referenceFrontPaths.length || !referenceBackPaths.length) return byAisle;
-
-        return buildPerpendicularAisleReferenceMap(
-            referenceFrontPaths,
-            referenceBackPaths,
-            tierAisleLayout.aisles,
+        return buildTierAisleReferenceMap({
+            rows: solver?.rows || [],
+            tierLayout: tierAisleLayout,
+            offsetCorrection,
+            getPathsForOffset,
             chamferCache
-        );
+        });
     }
 
     _resolveTierAisleStationRatios(pathFront, pathBack, aisle, aisleIndex, chamferCache, aisleReferenceMap = null) {
-        const stableReference = aisleReferenceMap?.get?.(aisleIndex) || null;
-        if (stableReference?.referencePath && Number.isFinite(stableReference.referenceU)) {
-            const resolvedFromReference = resolvePerpendicularAisleStationRatiosFromReference(
-                pathFront,
-                pathBack,
-                aisle,
-                stableReference.referencePath,
-                stableReference.referenceU,
-                chamferCache
-            );
-            if (resolvedFromReference) return resolvedFromReference;
-        }
-
-        return resolveAisleStationRatios(pathFront, pathBack, aisle, chamferCache);
+        return resolveTierAisleStationRatios(
+            pathFront,
+            pathBack,
+            aisle,
+            aisleIndex,
+            chamferCache,
+            aisleReferenceMap
+        );
     }
 
     _createTierSeatPreviewMesh(
@@ -842,7 +824,6 @@ export class Scene3D {
         if (seatSizeFt <= 0) return null;
 
         const aisles = (tierAisleLayout && Array.isArray(tierAisleLayout.aisles)) ? tierAisleLayout.aisles : [];
-        const aisleWidthFt = Math.max(0, Number(tierAisleLayout && tierAisleLayout.aisleWidthFt) || 0);
         const seatPlacements = [];
         const zLift = 0.08;
 
@@ -871,7 +852,7 @@ export class Scene3D {
 
             const blockedByPath = centerPaths.map(() => []);
 
-            if (aisles.length > 0 && aisleWidthFt > 0) {
+            if (aisles.length > 0) {
                 for (let i = 0; i < aisles.length; i++) {
                     const aisle = aisles[i];
                     const pathIndex = Math.max(0, Math.floor(Number(aisle.pathIndex) || 0));
@@ -894,6 +875,8 @@ export class Scene3D {
                         ? ((((u % 1) + 1) % 1))
                         : Math.max(0, Math.min(1, u));
                     const centerDist = normalizedU * path.length;
+                    const aisleWidthFt = getTierRenderedAisleWidthFt(tierAisleLayout, i);
+                    if (aisleWidthFt <= 0) continue;
                     this._addSeatBlockedSpan(
                         blockedByPath[pathIndex],
                         path.length,

@@ -9,19 +9,35 @@ const SPORTS_TEMPLATES = {
         field_length: 200.0,
         field_width: 85.0,
         corner_radius: 28.0,
-        runoff: 10.0,
-        focal_x: 0.0,
+        runoff: 0.0,
+        focal_x: -10.0,
         focal_y: -42.5,
         focal_z: 0.0,
         shape: "rounded_rect",
         defaults: {
-            setup: { customRunoff: 10.0, focalZ: 3.5 },
-            bowl: { radius: 16 },
+            setup: { customRunoff: -10.0, focalZ: 2.5, focalX: -10.0 },
+            bowl: {
+                type: "Full",
+                cornerRad: 16,
+                sideLength: 200,
+                structuralDepth: 6,
+                structuralProfileMode: "stepped",
+                straightAisleMode: "perpendicular",
+                chamferAisleMode: "radial",
+                radius: 16
+            },
+            occupancy: {
+                seatWidth: 19,
+                minAisle: 48,
+                maxAisle: 66,
+                seatsBetweenAisles: 28,
+                egressFactor: 0.2
+            },
             tier1: {
                 targetCValue: 3.5,
                 numRows: 15,
-                firstRowDist: 10.0,
-                firstRowElev: 3.0,
+                firstRowDist: 0.0,
+                firstRowElev: 2.0,
                 treadDepth: 33,
                 riserHeight: 12, // Steeper for over glass
                 eyeHeight: 3.75,
@@ -39,8 +55,24 @@ const SPORTS_TEMPLATES = {
         focal_z: 0.0,
         shape: "rectangle",
         defaults: {
-            setup: { customRunoff: 25.0, focalZ: 0.0 },
-            bowl: { radius: 10 },
+            setup: { customRunoff: 25.0, focalZ: 0.0, focalX: 0.0 },
+            bowl: {
+                type: "Full",
+                cornerRad: 10,
+                sideLength: 360,
+                structuralDepth: 12,
+                structuralProfileMode: "stepped",
+                straightAisleMode: "perpendicular",
+                chamferAisleMode: "radial",
+                radius: 10
+            },
+            occupancy: {
+                seatWidth: 20,
+                minAisle: 48,
+                maxAisle: 72,
+                seatsBetweenAisles: 20,
+                egressFactor: 0.2
+            },
             tier1: {
                 targetCValue: 4.0,
                 numRows: 30,
@@ -63,8 +95,24 @@ const SPORTS_TEMPLATES = {
         focal_z: 0.0,
         shape: "rectangle",
         defaults: {
-            setup: { customRunoff: 20.0, focalZ: 0.0 },
-            bowl: { radius: 2 },
+            setup: { customRunoff: 20.0, focalZ: 0.0, focalX: 0.0 },
+            bowl: {
+                type: "Full",
+                cornerRad: 2,
+                sideLength: 345,
+                structuralDepth: 12,
+                structuralProfileMode: "stepped",
+                straightAisleMode: "perpendicular",
+                chamferAisleMode: "radial",
+                radius: 2
+            },
+            occupancy: {
+                seatWidth: 20,
+                minAisle: 48,
+                maxAisle: 72,
+                seatsBetweenAisles: 20,
+                egressFactor: 0.2
+            },
             tier1: {
                 targetCValue: 3.5, // FIFA Recommendation
                 numRows: 30,
@@ -87,8 +135,24 @@ const SPORTS_TEMPLATES = {
         focal_z: 2.5,
         shape: "rectangle",
         defaults: {
-            setup: { customRunoff: 6.5, focalZ: 2.5 },
-            bowl: { radius: 1 },
+            setup: { customRunoff: 6.5, focalZ: 2.5, focalX: 0.0 },
+            bowl: {
+                type: "Full",
+                cornerRad: 1,
+                sideLength: 94,
+                structuralDepth: 12,
+                structuralProfileMode: "stepped",
+                straightAisleMode: "perpendicular",
+                chamferAisleMode: "radial",
+                radius: 1
+            },
+            occupancy: {
+                seatWidth: 20,
+                minAisle: 48,
+                maxAisle: 72,
+                seatsBetweenAisles: 20,
+                egressFactor: 0.2
+            },
             tier1: {
                 targetCValue: 4.0,
                 numRows: 20,
@@ -110,8 +174,23 @@ const SPORTS_TEMPLATES = {
         shape: "arc",
         arc_angle: 90.0,
         defaults: {
-            setup: { customRunoff: 60.0, focalZ: 0.0 },
-            bowl: { radius: 0 },
+            setup: { customRunoff: 60.0, focalZ: 0.0, focalX: 0.0 },
+            bowl: {
+                type: "Full",
+                cornerRad: 0,
+                structuralDepth: 12,
+                structuralProfileMode: "stepped",
+                straightAisleMode: "perpendicular",
+                chamferAisleMode: "radial",
+                radius: 0
+            },
+            occupancy: {
+                seatWidth: 20,
+                minAisle: 48,
+                maxAisle: 72,
+                seatsBetweenAisles: 20,
+                egressFactor: 0.2
+            },
             tier1: {
                 targetCValue: 5.0,
                 numRows: 25,
@@ -134,8 +213,24 @@ const SPORTS_TEMPLATES = {
         focal_z: 0.0,
         shape: "oval",
         defaults: {
-            setup: { customRunoff: 10.0, focalZ: 0.0 },
-            bowl: { type: 'Sides', radius: 100 },
+            setup: { customRunoff: 10.0, focalZ: 0.0, focalX: 0.0 },
+            bowl: {
+                type: "Sides",
+                cornerRad: 100,
+                sideLength: 580.5,
+                structuralDepth: 12,
+                structuralProfileMode: "stepped",
+                straightAisleMode: "perpendicular",
+                chamferAisleMode: "radial",
+                radius: 100
+            },
+            occupancy: {
+                seatWidth: 20,
+                minAisle: 48,
+                maxAisle: 72,
+                seatsBetweenAisles: 20,
+                egressFactor: 0.2
+            },
             tier1: {
                 targetCValue: 3.0,
                 numRows: 20,
@@ -158,8 +253,24 @@ const SPORTS_TEMPLATES = {
         focal_z: 5.0,
         shape: "rectangle",
         defaults: {
-            setup: { customRunoff: 15.0, focalZ: 5.0 }, // Stage Height
-            bowl: { radius: 0 },
+            setup: { customRunoff: 15.0, focalZ: 5.0, focalX: 0.0 }, // Stage Height
+            bowl: {
+                type: "Full",
+                cornerRad: 0,
+                sideLength: 60,
+                structuralDepth: 12,
+                structuralProfileMode: "stepped",
+                straightAisleMode: "perpendicular",
+                chamferAisleMode: "radial",
+                radius: 0
+            },
+            occupancy: {
+                seatWidth: 20,
+                minAisle: 48,
+                maxAisle: 72,
+                seatsBetweenAisles: 20,
+                egressFactor: 0.2
+            },
             tier1: {
                 targetCValue: 2.5,
                 numRows: 40,

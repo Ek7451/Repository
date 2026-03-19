@@ -1,8 +1,7 @@
 import {
     buildStructuralProfileGeometry,
     getSolverTierIndex,
-    ProfileSolver,
-    reconcileTierMetricsByIndexWithLayoutSummaries
+    buildTierMetricsByIndexFromLayouts
 } from '../core/profile-solver.js';
 import { buildPlanDxfExportDescriptor, buildProfileDxfExportDescriptor } from '../export/dxf-exporter.js';
 import {
@@ -28,6 +27,7 @@ export class EditorExportController {
                 solvers?: Array<object>,
                 activeSolvers?: Array<object>,
                 tierAisleLayouts?: Array<object>,
+                configurationSummary?: object | null,
                 structuralDepthFt?: number,
                 offsetCorrection?: number
             } | null),
@@ -112,6 +112,7 @@ export class EditorExportController {
             egressParams: exportContext.egressParams,
             focalPointFt: exportContext.focalPointFt,
             primaryTierParameters: exportContext.primaryTierParameters,
+            configurationSummary: exportContext.configurationSummary,
             tierArtifacts: this._buildTierRuntimeArtifacts(exportContext)
         });
     }
@@ -145,20 +146,12 @@ export class EditorExportController {
             if (!solver?.rows || solver.rows.length === 0) return null;
 
             const tierIndex = getSolverTierIndex(solver, index);
-            const tierMetricsEstimate = ProfileSolver.calculateTierMetrics(
-                solver,
-                exportContext.bowlConfig,
-                fieldGeometryPort,
-                exportContext.egressParams,
-                exportContext.offsetCorrection
-            );
-
             let tierLayout = tierLayoutMap.get(tierIndex) || null;
-            if (!tierLayout && tierMetricsEstimate) {
+            if (!tierLayout) {
                 tierLayout = fieldGeometryPort.generateTierAisleLayout(
                     solver,
                     exportContext.bowlConfig,
-                    tierMetricsEstimate,
+                    null,
                     exportContext.offsetCorrection,
                     exportContext.egressParams
                 );
@@ -190,7 +183,7 @@ export class EditorExportController {
 
             return {
                 tierIndex,
-                tierMetricsEstimate,
+                tierMetricsEstimate: null,
                 tierLayout,
                 overlayData,
                 aislePolygons,
@@ -198,15 +191,15 @@ export class EditorExportController {
             };
         }).filter(Boolean);
 
-        const reconciledTierMetricsByIndex = reconcileTierMetricsByIndexWithLayoutSummaries({
-            tierMetricsByIndex: new Map(tierArtifacts.map((artifact) => [artifact.tierIndex, artifact.tierMetricsEstimate])),
-            tierAisleLayouts: tierArtifacts.map((artifact) => artifact.tierLayout).filter(Boolean),
-            egressParams: exportContext.egressParams
+        const tierMetricsByIndex = buildTierMetricsByIndexFromLayouts({
+            tierLayouts: tierArtifacts.map((artifact) => artifact.tierLayout).filter(Boolean),
+            egressParams: exportContext.egressParams,
+            solvers: exportContext.activeSolvers
         });
 
         return tierArtifacts.map((artifact) => ({
             ...artifact,
-            tierMetrics: reconciledTierMetricsByIndex.get(artifact.tierIndex) || artifact.tierMetricsEstimate
+            tierMetrics: tierMetricsByIndex.get(artifact.tierIndex) || null
         }));
     }
 
@@ -292,6 +285,7 @@ export class EditorExportController {
             solvers: Array.isArray(context?.solvers) ? context.solvers : [],
             activeSolvers: Array.isArray(context?.activeSolvers) ? context.activeSolvers : [],
             tierAisleLayouts: Array.isArray(context?.tierAisleLayouts) ? context.tierAisleLayouts : [],
+            configurationSummary: context?.configurationSummary ?? null,
             structuralDepthFt: Number(context?.structuralDepthFt) || 0,
             offsetCorrection: Number(context?.offsetCorrection) || 0
         };

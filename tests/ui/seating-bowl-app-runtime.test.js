@@ -187,6 +187,7 @@ describe('SeatingBowlApp runtime seams', () => {
         app.scene3DController = /** @type {any} */ ({
             update: vi.fn()
         });
+        app.state.sport = 'Football';
         app.state.setup.focalX = 18;
         app.state.setup.focalZ = 9;
         app.state.setup.customRunoff = 30;

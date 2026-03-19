@@ -17,7 +17,10 @@
  *     R = (C + N) * (D + T) / D - N
  */
 
-import { computeTierEgressMetrics } from './egress-policy.js';
+import {
+    computeMinimumBlockCountForSeatLimit,
+    computeTierEgressMetrics
+} from './egress-policy.js';
 import { computeUsableRunLengthIn, countSeatsFromUsableRunLengthIn } from './seat-math.js';
 
 export function getSolverTierIndex(solver, fallbackIndex = 0) {
@@ -348,6 +351,161 @@ function buildEstimateEgressSnapshot(metrics) {
         legalMaxOccupantsPerAisle: metrics.legalMaxOccupantsPerAisle,
         mirroredSideRuns: metrics.mirroredSideRuns
     };
+}
+
+function getTierLayoutIndex(layout, fallbackIndex = 0) {
+    const tierIndex = Number(layout?.tierIndex);
+    return Number.isInteger(tierIndex) ? tierIndex : fallbackIndex;
+}
+
+function toFixedString(value, digits = 1, fallback = '0.0') {
+    return Number.isFinite(Number(value))
+        ? Number(value).toFixed(digits)
+        : fallback;
+}
+
+function getMirroredSideRunsFromSummary(summary) {
+    const rowSummaries = Array.isArray(summary?.rowSummaries) ? summary.rowSummaries : [];
+    const pathRunCount = rowSummaries.reduce((maxRuns, rowSummary) => (
+        Math.max(maxRuns, Array.isArray(rowSummary?.pathSeatCounts) ? rowSummary.pathSeatCounts.length : 0)
+    ), 0);
+    return Math.max(1, pathRunCount || 1);
+}
+
+function stampSolverRowsFromSummary(solver, summary, mirrorRuns) {
+    const rows = Array.isArray(solver?.rows) ? solver.rows : [];
+    const rowSummaries = Array.isArray(summary?.rowSummaries) ? summary.rowSummaries : [];
+
+    rows.forEach((row, rowIndex) => {
+        const rowSummary = rowSummaries[rowIndex];
+        if (!rowSummary) return;
+
+        const totalSeats = Math.max(0, Number(rowSummary.seatCount) || 0);
+        const totalLengthFt = Number.isFinite(Number(rowSummary.linearLengthFt))
+            ? Number(rowSummary.linearLengthFt)
+            : null;
+        const seatsPerRun = Math.max(
+            0,
+            Number(rowSummary.seatCountPerRun ?? (mirrorRuns > 1 ? Math.round(totalSeats / mirrorRuns) : totalSeats)) || 0
+        );
+        const sectionsPerRun = Math.max(
+            0,
+            Number(rowSummary.sectionCountPerRun ?? (mirrorRuns > 1
+                ? Math.round((Number(rowSummary.sectionCount) || 0) / mirrorRuns)
+                : (Number(rowSummary.sectionCount) || 0))) || 0
+        );
+
+        row.computedSeats = totalSeats;
+        row.computedSeatsPerSide = mirrorRuns > 1 ? seatsPerRun : totalSeats;
+        row.computedBlocks = sectionsPerRun;
+
+        if (Number.isFinite(totalLengthFt)) {
+            row.computedLength = totalLengthFt;
+            row.computedLengthPerSide = mirrorRuns > 1
+                ? (Number.isFinite(Number(rowSummary.linearLengthPerRunFt))
+                    ? Number(rowSummary.linearLengthPerRunFt)
+                    : (totalLengthFt / mirrorRuns))
+                : totalLengthFt;
+        }
+    });
+}
+
+function buildLegacyMetricsFromLayout({ solver, layout, egressParams }) {
+    const summary = layout?.sectionSummary;
+    if (!summary) return null;
+
+    const mirrorRuns = getMirroredSideRunsFromSummary(summary);
+    stampSolverRowsFromSummary(solver, summary, mirrorRuns);
+
+    const rowSummaries = Array.isArray(summary.rowSummaries) ? summary.rowSummaries : [];
+    const totalRowLengthFt = rowSummaries.reduce((sum, rowSummary) => (
+        sum + Math.max(0, Number(rowSummary?.linearLengthPerRunFt ?? rowSummary?.linearLengthFt) || 0)
+    ), 0);
+    const totalSeatingLengthFt = rowSummaries.reduce((sum, rowSummary) => (
+        sum + ((Math.max(0, Number(rowSummary?.seatCountPerRun ?? rowSummary?.seatCount) || 0)
+            * Math.max(0, Number(egressParams?.seatWidthIn) || 0)) / 12.0)
+    ), 0);
+    const totalAisleLengthFt = Math.max(0, totalRowLengthFt - totalSeatingLengthFt);
+    const actualAisles = Math.max(0, Number(summary.actualAisles) || 0);
+    const actualSections = Math.max(0, Number(summary.actualSections) || 0);
+    const numAisles = mirrorRuns > 1 ? Math.round(actualAisles / mirrorRuns) : actualAisles;
+    const numSections = mirrorRuns > 1 ? Math.round(actualSections / mirrorRuns) : actualSections;
+    const backRowSeatsPerRowTotal = Array.isArray(summary.backRowSectionSeatCounts)
+        ? summary.backRowSectionSeatCounts.reduce((sum, seatCount) => sum + Math.max(0, Number(seatCount) || 0), 0)
+        : 0;
+    const backRowSeatsPerRow = mirrorRuns > 1
+        ? Math.round(backRowSeatsPerRowTotal / mirrorRuns)
+        : backRowSeatsPerRowTotal;
+    const maxAisleLoad = Array.isArray(summary.aisleOccupancyTotals) && summary.aisleOccupancyTotals.length
+        ? Math.max(...summary.aisleOccupancyTotals.map((occupancy) => Math.max(0, Number(occupancy) || 0)))
+        : 0;
+    const blocksAddedForEgress = Math.max(0, numSections - computeMinimumBlockCountForSeatLimit({
+        backRowSeatsPerRun: backRowSeatsPerRow,
+        seatsBetweenAisles: egressParams?.seatsBetweenAisles
+    }));
+    const legalMaxOccupantsPerAisle = Array.isArray(summary.aisles) && summary.aisles.length
+        ? Math.max(...summary.aisles.map((aisle) => Math.max(0, Number(aisle?.legalMaxOccupantsPerAisle) || 0)))
+        : 0;
+
+    return {
+        capacity: Math.max(0, Number(summary.tierSeatCount) || 0),
+        numAisles,
+        aisleWidth: toFixedString(summary.maxGoverningAisleWidthIn),
+        renderedAisleWidth: toFixedString(summary.maxRenderedAisleWidthIn),
+        totalEgressWidthRequired: toFixedString(summary.maxRequiredAisleWidthIn),
+        totalRowLength: toFixedString(totalRowLengthFt, 0, '0'),
+        totalSeatingLength: toFixedString(totalSeatingLengthFt, 0, '0'),
+        totalAisleLength: toFixedString(totalAisleLengthFt, 0, '0'),
+        seatsPerRow: rowSummaries.length
+            ? Math.round(rowSummaries.reduce((sum, rowSummary) => sum + Math.max(0, Number(rowSummary?.seatCountPerRun ?? rowSummary?.seatCount) || 0), 0) / rowSummaries.length)
+            : 0,
+        backRowSeatsPerRow,
+        numSections,
+        seatsPerBlock: toFixedString(summary.avgBackRowSeatsPerSection),
+        maxSeatsPerSectionRow: Math.max(0, Number(summary.maxBackRowSeatsPerSection) || 0),
+        occupantsPerSection: Math.round(Math.max(0, Number(summary.largestSectionOccupancy) || 0)),
+        occupantsPerAisleLine: Math.round(maxAisleLoad),
+        capacityWidth: toFixedString(summary.maxRequiredAisleWidthIn),
+        minimumWidth: toFixedString(egressParams?.minAisleWidthIn),
+        maximumWidth: toFixedString(egressParams?.maxAisleWidthIn),
+        legalMaxOccupantsPerAisle,
+        governingWidth: toFixedString(summary.maxGoverningAisleWidthIn),
+        blocksAddedForEgress,
+        converged: summary.converged !== false,
+        mirroredSideRuns: mirrorRuns,
+        seatCapCompliant: summary?.compliance?.seatCapCompliant,
+        egressCapCompliant: summary?.compliance?.egressCapCompliant,
+        renderedWidthCompliant: summary?.compliance?.renderedWidthCompliant
+    };
+}
+
+export function buildTierMetricsByIndexFromLayouts({
+    tierLayouts,
+    egressParams,
+    solvers
+}) {
+    const tierLayoutByIndex = new Map((tierLayouts || []).map((layout, index) => [
+        getTierLayoutIndex(layout, index),
+        layout
+    ]));
+    const tierMetricsByIndex = new Map();
+
+    (solvers || []).forEach((solver, index) => {
+        if (!solver?.rows?.length) return;
+
+        const tierIndex = getSolverTierIndex(solver, index);
+        const layout = tierLayoutByIndex.get(tierIndex);
+        const metrics = buildLegacyMetricsFromLayout({
+            solver,
+            layout,
+            egressParams
+        });
+        if (!metrics) return;
+
+        tierMetricsByIndex.set(tierIndex, metrics);
+    });
+
+    return tierMetricsByIndex;
 }
 
 export function reconcileTierMetricsByIndexWithLayoutSummaries({

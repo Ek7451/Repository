@@ -17,8 +17,8 @@ import {
 } from './egress-policy.js';
 import {
     countSeatsFromCenterlineGapFt,
-    normalizeAisleWidthFt,
-    normalizeSeatWidthIn
+    normalizeSeatWidthIn,
+    seatingLengthToSeatCount
 } from './seat-math.js';
 
 const EPS = 1e-6;
@@ -1880,38 +1880,203 @@ function buildTierLayoutSectionSlots(referencePaths, sectionBoundaries) {
     };
 }
 
-export function buildTierAisleLayoutSummary({
+export function buildTierAisleReferenceMap({
     rows = [],
     tierLayout = null,
-    referencePaths = [],
+    offsetCorrection = 0,
+    getPathsForOffset = null,
+    chamferCache = null
+} = {}) {
+    const byAisle = new Map();
+    const safeRows = Array.isArray(rows) ? rows : [];
+    if (!safeRows.length) return byAisle;
+    if (!tierLayout || !Array.isArray(tierLayout.aisles) || !tierLayout.aisles.length) return byAisle;
+    if (typeof getPathsForOffset !== 'function') return byAisle;
+
+    const firstRow = safeRows[0];
+    const lastRow = safeRows[safeRows.length - 1];
+    if (!firstRow || !lastRow) return byAisle;
+
+    const referenceFrontPaths = getPathsForOffset((firstRow.x - firstRow.tread_depth) - offsetCorrection);
+    const referenceBackPaths = getPathsForOffset(lastRow.x - offsetCorrection);
+    if (!referenceFrontPaths.length || !referenceBackPaths.length) return byAisle;
+
+    return buildPerpendicularAisleReferenceMap(
+        referenceFrontPaths,
+        referenceBackPaths,
+        tierLayout.aisles,
+        chamferCache
+    );
+}
+
+export function resolveTierAisleStationRatios(
+    pathFront,
+    pathBack,
+    aisle,
+    aisleIndex,
+    chamferCache,
+    aisleReferenceMap = null
+) {
+    const stableReference = aisleReferenceMap?.get?.(aisleIndex) || null;
+    if (stableReference?.referencePath && Number.isFinite(stableReference.referenceU)) {
+        const resolvedFromReference = resolvePerpendicularAisleStationRatiosFromReference(
+            pathFront,
+            pathBack,
+            aisle,
+            stableReference.referencePath,
+            stableReference.referenceU,
+            chamferCache
+        );
+        if (resolvedFromReference) return resolvedFromReference;
+    }
+
+    return resolveAisleStationRatios(pathFront, pathBack, aisle, chamferCache);
+}
+
+export function buildResolvedTierAisleRatioMap(pathA, pathB, tierLayout, chamferCache, aisleReferenceMap = null) {
+    const byPath = new Map();
+    if (!tierLayout || !Array.isArray(tierLayout.aisles)) return byPath;
+
+    for (let i = 0; i < tierLayout.aisles.length; i += 1) {
+        const aisle = tierLayout.aisles[i];
+        const pathIndex = Math.max(0, Math.floor(Number(aisle?.pathIndex) || 0));
+        const pA = pathA[pathIndex];
+        const pB = pathB[pathIndex];
+        if (!pA || !pB) continue;
+
+        const ratios = resolveTierAisleStationRatios(
+            pA,
+            pB,
+            aisle,
+            i,
+            chamferCache,
+            aisleReferenceMap
+        );
+        if (!ratios || !Number.isFinite(ratios.uFront)) continue;
+
+        if (!byPath.has(pathIndex)) byPath.set(pathIndex, new Map());
+        byPath.get(pathIndex).set(i, normalizePathU(pA, ratios.uFront));
+    }
+
+    return byPath;
+}
+
+export function pickBestRowAisleSampling(centerOffset, getPathsForOffset, tierLayout, chamferCache, aisleReferenceMap = null) {
+    const baseOffset = Number(centerOffset) || 0;
+    const offsetsToTry = [0, 0.02, -0.02, 0.05, -0.05];
+
+    let best = null;
+    for (let i = 0; i < offsetsToTry.length; i += 1) {
+        const testOffset = baseOffset + offsetsToTry[i];
+        const paths = getPathsForOffset(testOffset);
+        if (!paths || !paths.length) continue;
+
+        const aisleRatiosByPath = buildResolvedTierAisleRatioMap(
+            paths,
+            paths,
+            tierLayout,
+            chamferCache,
+            aisleReferenceMap
+        );
+        let score = 0;
+        aisleRatiosByPath.forEach((map) => {
+            score += map?.size || 0;
+        });
+
+        if (!best || score > best.score) {
+            best = { paths, aisleRatiosByPath, score, sampledOffset: testOffset };
+            if (score >= (tierLayout?.aisles?.length || 0)) break;
+        }
+    }
+
+    return best || { paths: [], aisleRatiosByPath: new Map(), score: 0, sampledOffset: baseOffset };
+}
+
+function normalizePathU(path, u) {
+    if (!path) return Number(u) || 0;
+    return path.closed ? normalizeUnit(u) : clamp01(u);
+}
+
+export function getTierRenderedAisleWidthIn(tierLayout, aisleIndex) {
+    const renderedWidthIn = Number(tierLayout?.sectionSummary?.aisles?.[aisleIndex]?.renderedWidthIn);
+    if (Number.isFinite(renderedWidthIn) && renderedWidthIn > 0) {
+        return renderedWidthIn;
+    }
+
+    const maxRenderedWidthIn = Number(tierLayout?.sectionSummary?.maxRenderedAisleWidthIn);
+    if (Number.isFinite(maxRenderedWidthIn) && maxRenderedWidthIn > 0) {
+        return maxRenderedWidthIn;
+    }
+
+    const legacyRenderedWidthIn = Number(tierLayout?.sectionSummary?.renderedAisleWidthIn);
+    if (Number.isFinite(legacyRenderedWidthIn) && legacyRenderedWidthIn > 0) {
+        return legacyRenderedWidthIn;
+    }
+
+    const layoutWidthFt = Number(tierLayout?.aisleWidthFt);
+    if (Number.isFinite(layoutWidthFt) && layoutWidthFt > 0) {
+        return layoutWidthFt * 12.0;
+    }
+
+    return 0;
+}
+
+export function getTierRenderedAisleWidthFt(tierLayout, aisleIndex) {
+    return Math.max(0, getTierRenderedAisleWidthIn(tierLayout, aisleIndex) / 12.0);
+}
+
+function normalizeRenderedWidthIn(widthIn) {
+    return Math.max(0, Number(widthIn) || 0);
+}
+
+function serializeRoundedVector(vector = []) {
+    return (vector || [])
+        .map((value) => normalizeRenderedWidthIn(value).toFixed(6))
+        .join('|');
+}
+
+function sameRoundedVector(a = [], b = []) {
+    return serializeRoundedVector(a) === serializeRoundedVector(b);
+}
+
+function widestVectorInCycle(vectors = []) {
+    const width = vectors.reduce((max, vector) => Math.max(max, Array.isArray(vector) ? vector.length : 0), 0);
+    const widest = new Array(width).fill(0);
+
+    vectors.forEach((vector) => {
+        for (let i = 0; i < width; i += 1) {
+            widest[i] = Math.max(widest[i], normalizeRenderedWidthIn(vector?.[i]));
+        }
+    });
+
+    return widest;
+}
+
+function buildSectionSeatCountFromRenderedWidths(centerGapFt, leftRenderedWidthFt, rightRenderedWidthFt, seatWidthIn) {
+    const usableGapFt = Math.max(
+        0,
+        (Number(centerGapFt) || 0) - (Math.max(0, Number(leftRenderedWidthFt) || 0) * 0.5) - (Math.max(0, Number(rightRenderedWidthFt) || 0) * 0.5)
+    );
+    return seatingLengthToSeatCount(usableGapFt, seatWidthIn);
+}
+
+function buildSectionRecords(slots, rowCount) {
+    return (slots || []).map((slot) => ({
+        ...slot,
+        rowSeatCounts: new Array(Math.max(0, Math.floor(Number(rowCount) || 0))).fill(0)
+    }));
+}
+
+function measureSectionsFromRenderedWidths({
+    rows = [],
+    sectionRecords = [],
     resolveRowAisleSampling = null,
     seatWidthIn = 20,
-    minAisleWidthIn = 0,
-    maxAisleWidthIn = 0,
-    egressFactor = 0,
-    maxSeatsBetweenAisles = NaN
+    renderedWidthsIn = []
 } = {}) {
     const safeRows = Array.isArray(rows) ? rows : [];
-    const safeAisles = Array.isArray(tierLayout?.aisles) ? tierLayout.aisles : [];
-    const safeSectionBoundaries = Array.isArray(tierLayout?.sectionBoundaries) ? tierLayout.sectionBoundaries : [];
+    const safeSectionRecords = Array.isArray(sectionRecords) ? sectionRecords : [];
     const resolvedSeatWidthIn = normalizeSeatWidthIn(seatWidthIn);
-    const resolvedAisleWidthFt = normalizeAisleWidthFt(tierLayout?.aisleWidthFt);
-    const resolvedRenderedAisleWidthIn = resolvedAisleWidthFt * 12.0;
-    const resolvedMinAisleWidthIn = Math.max(0, Number(minAisleWidthIn) || 0);
-    const resolvedMaxAisleWidthIn = Math.max(resolvedMinAisleWidthIn, Number(maxAisleWidthIn) || resolvedMinAisleWidthIn);
-    const legalMaxOccupantsPerAisle = computeMaximumOccupantsPerAisle({
-        maxAisleWidthIn: resolvedMaxAisleWidthIn,
-        egressFactor
-    });
-    const { slots, allSectionPathsClosed } = buildTierLayoutSectionSlots(
-        Array.isArray(referencePaths) ? referencePaths : [],
-        safeSectionBoundaries
-    );
-
-    const sectionRecords = slots.map((slot) => ({
-        ...slot,
-        rowSeatCounts: new Array(safeRows.length).fill(0)
-    }));
 
     if (typeof resolveRowAisleSampling === 'function') {
         for (let rowIndex = 0; rowIndex < safeRows.length; rowIndex += 1) {
@@ -1921,8 +2086,8 @@ export function buildTierAisleLayoutSummary({
                 ? sampledRow.aisleRatiosByPath
                 : new Map();
 
-            for (let sectionIndex = 0; sectionIndex < sectionRecords.length; sectionIndex += 1) {
-                const section = sectionRecords[sectionIndex];
+            for (let sectionIndex = 0; sectionIndex < safeSectionRecords.length; sectionIndex += 1) {
+                const section = safeSectionRecords[sectionIndex];
                 const path = paths[section.pathIndex];
                 const aisleMap = aisleRatiosByPath.get(section.pathIndex);
                 if (!path || !(path.length > 0) || !(aisleMap instanceof Map)) continue;
@@ -1931,16 +2096,20 @@ export function buildTierAisleLayoutSummary({
                 const uB = aisleMap.get(section.aisleIndexB);
                 if (!Number.isFinite(uA) || !Number.isFinite(uB)) continue;
 
-                section.rowSeatCounts[rowIndex] = countSeatsFromCenterlineGapFt({
-                    centerGapFt: sectionDistanceOnPath(path, uA, uB),
-                    aisleWidthFt: resolvedAisleWidthFt,
-                    seatWidthIn: resolvedSeatWidthIn
-                });
+                const leftRenderedWidthFt = normalizeRenderedWidthIn(renderedWidthsIn[section.aisleIndexA]) / 12.0;
+                const rightRenderedWidthFt = normalizeRenderedWidthIn(renderedWidthsIn[section.aisleIndexB]) / 12.0;
+                const centerGapFt = sectionDistanceOnPath(path, uA, uB);
+                section.rowSeatCounts[rowIndex] = buildSectionSeatCountFromRenderedWidths(
+                    centerGapFt,
+                    leftRenderedWidthFt,
+                    rightRenderedWidthFt,
+                    resolvedSeatWidthIn
+                );
             }
         }
     }
 
-    const sections = sectionRecords.map((section) => {
+    const sections = safeSectionRecords.map((section) => {
         const rowSeatCounts = section.rowSeatCounts
             .map((value) => Math.max(0, Math.round(Number(value) || 0)));
         const occupancy = rowSeatCounts.reduce((sum, value) => sum + value, 0);
@@ -1964,12 +2133,94 @@ export function buildTierAisleLayoutSummary({
         };
     });
 
-    const aisleOccupancyTotals = computeAisleTributaryOccupancies({
-        aisleCount: safeAisles.length,
-        sections
+    const rowSummaries = safeRows.map((row, rowIndex) => {
+        const pathSeatCounts = new Map();
+        let seatCount = 0;
+        let sectionCount = 0;
+        let maxContinuousSectionSeats = 0;
+
+        sections.forEach((section) => {
+            const sectionSeatCount = Math.max(0, Math.round(Number(section?.rowSeatCounts?.[rowIndex]) || 0));
+            seatCount += sectionSeatCount;
+            if (sectionSeatCount > 0) {
+                sectionCount += 1;
+                maxContinuousSectionSeats = Math.max(maxContinuousSectionSeats, sectionSeatCount);
+                pathSeatCounts.set(
+                    section.pathIndex,
+                    Math.max(0, Number(pathSeatCounts.get(section.pathIndex)) || 0) + sectionSeatCount
+                );
+            }
+        });
+
+        return {
+            rowIndex,
+            rowNumber: Number.isFinite(Number(row?.row_number)) ? Number(row.row_number) : (rowIndex + 1),
+            seatCount,
+            sectionCount,
+            maxContinuousSectionSeats,
+            pathSeatCounts: Array.from(pathSeatCounts.entries())
+                .sort((a, b) => a[0] - b[0])
+                .map(([pathIndex, seatCountOnPath]) => ({ pathIndex, seatCount: seatCountOnPath }))
+        };
     });
-    const aisleSummaries = safeAisles.map((aisle, aisleIndex) => {
-        const tributaryOccupancy = Math.max(0, Number(aisleOccupancyTotals[aisleIndex]) || 0);
+
+    return {
+        sections,
+        rowSummaries
+    };
+}
+
+function stampRowSummariesWithLengths({
+    rowSummaries = [],
+    rows = [],
+    bowlConfig = null,
+    offsetCorrection = 0,
+    getRowLengthFt = null
+} = {}) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    const safeSummaries = Array.isArray(rowSummaries) ? rowSummaries : [];
+    const mirrorRuns = String(bowlConfig?.type || '').toLowerCase() === 'sides' ? 2 : 1;
+
+    return safeSummaries.map((summary, rowIndex) => {
+        const row = safeRows[rowIndex] || null;
+        const linearLengthFt = row && typeof getRowLengthFt === 'function'
+            ? Math.max(0, Number(getRowLengthFt((row.x - row.tread_depth) - offsetCorrection, row, rowIndex)) || 0)
+            : null;
+        const seatCountPerRun = mirrorRuns > 1
+            ? Math.round((Math.max(0, Number(summary?.seatCount) || 0) / mirrorRuns))
+            : Math.max(0, Number(summary?.seatCount) || 0);
+        const sectionCountPerRun = mirrorRuns > 1
+            ? Math.round((Math.max(0, Number(summary?.sectionCount) || 0) / mirrorRuns))
+            : Math.max(0, Number(summary?.sectionCount) || 0);
+
+        return {
+            ...summary,
+            linearLengthFt,
+            linearLengthPerRunFt: Number.isFinite(linearLengthFt) ? (linearLengthFt / mirrorRuns) : null,
+            seatCountPerRun,
+            sectionCountPerRun
+        };
+    });
+}
+
+function buildAisleSummaries({
+    aisles = [],
+    aisleOccupancyTotals = [],
+    egressFactor = 0,
+    minAisleWidthIn = 0,
+    maxAisleWidthIn = 0,
+    renderedWidthsIn = []
+} = {}) {
+    const safeAisles = Array.isArray(aisles) ? aisles : [];
+    const resolvedMinAisleWidthIn = Math.max(0, Number(minAisleWidthIn) || 0);
+    const resolvedMaxAisleWidthIn = Math.max(resolvedMinAisleWidthIn, Number(maxAisleWidthIn) || resolvedMinAisleWidthIn);
+    const legalMaxOccupantsPerAisle = computeMaximumOccupantsPerAisle({
+        maxAisleWidthIn: resolvedMaxAisleWidthIn,
+        egressFactor
+    });
+
+    return safeAisles.map((aisle, aisleIndex) => {
+        const tributaryOccupancy = Math.max(0, Number(aisleOccupancyTotals?.[aisleIndex]) || 0);
         const requiredWidthIn = computeRequiredAisleWidthIn({
             tributaryOccupancy,
             egressFactor
@@ -1980,6 +2231,7 @@ export function buildTierAisleLayoutSummary({
             minAisleWidthIn: resolvedMinAisleWidthIn,
             maxAisleWidthIn: resolvedMaxAisleWidthIn
         });
+        const renderedWidthIn = normalizeRenderedWidthIn(renderedWidthsIn?.[aisleIndex]);
 
         return {
             aisleIndex,
@@ -1987,17 +2239,137 @@ export function buildTierAisleLayoutSummary({
             tributaryOccupancy,
             requiredWidthIn,
             governingWidthIn,
-            renderedWidthIn: resolvedRenderedAisleWidthIn,
+            renderedWidthIn,
+            renderedWidthFt: renderedWidthIn / 12.0,
             legalMaxOccupantsPerAisle,
             withinMaxWidth: validateTributaryAisleCapacity({
                 tributaryOccupancy,
                 maxAisleWidthIn: resolvedMaxAisleWidthIn,
                 egressFactor
             }),
-            renderedWidthCompliant: resolvedRenderedAisleWidthIn + 1e-9 >= governingWidthIn
+            renderedWidthCompliant: renderedWidthIn + 1e-9 >= governingWidthIn
         };
     });
+}
 
+export function buildTierAisleLayoutSummary({
+    rows = [],
+    tierLayout = null,
+    referencePaths = [],
+    resolveRowAisleSampling = null,
+    seatWidthIn = 20,
+    minAisleWidthIn = 0,
+    maxAisleWidthIn = 0,
+    egressFactor = 0,
+    maxSeatsBetweenAisles = NaN,
+    getRowLengthFt = null,
+    bowlConfig = null,
+    offsetCorrection = 0,
+    layoutSolveConverged = true
+} = {}) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    const safeAisles = Array.isArray(tierLayout?.aisles) ? tierLayout.aisles : [];
+    const safeSectionBoundaries = Array.isArray(tierLayout?.sectionBoundaries) ? tierLayout.sectionBoundaries : [];
+    const resolvedSeatWidthIn = normalizeSeatWidthIn(seatWidthIn);
+    const resolvedMinAisleWidthIn = Math.max(0, Number(minAisleWidthIn) || 0);
+    const resolvedMaxAisleWidthIn = Math.max(resolvedMinAisleWidthIn, Number(maxAisleWidthIn) || resolvedMinAisleWidthIn);
+    const legalMaxOccupantsPerAisle = computeMaximumOccupantsPerAisle({
+        maxAisleWidthIn: resolvedMaxAisleWidthIn,
+        egressFactor
+    });
+    const { slots, allSectionPathsClosed } = buildTierLayoutSectionSlots(
+        Array.isArray(referencePaths) ? referencePaths : [],
+        safeSectionBoundaries
+    );
+
+    const evaluateRenderedWidths = (renderedWidthsIn) => {
+        const measured = measureSectionsFromRenderedWidths({
+            rows: safeRows,
+            sectionRecords: buildSectionRecords(slots, safeRows.length),
+            resolveRowAisleSampling,
+            seatWidthIn: resolvedSeatWidthIn,
+            renderedWidthsIn
+        });
+        const aisleOccupancyTotals = computeAisleTributaryOccupancies({
+            aisleCount: safeAisles.length,
+            sections: measured.sections
+        });
+
+        return {
+            sections: measured.sections,
+            rowSummaries: stampRowSummariesWithLengths({
+                rowSummaries: measured.rowSummaries,
+                rows: safeRows,
+                bowlConfig,
+                offsetCorrection,
+                getRowLengthFt
+            }),
+            aisleOccupancyTotals,
+            aisleSummaries: buildAisleSummaries({
+                aisles: safeAisles,
+                aisleOccupancyTotals,
+                egressFactor,
+                minAisleWidthIn: resolvedMinAisleWidthIn,
+                maxAisleWidthIn: resolvedMaxAisleWidthIn,
+                renderedWidthsIn
+            })
+        };
+    };
+
+    const initialRenderedWidthIn = resolvedMinAisleWidthIn > 0
+        ? resolvedMinAisleWidthIn
+        : ((Math.max(0, Number(tierLayout?.aisleWidthFt) || 0)) * 12.0);
+    let renderedWidthsIn = new Array(safeAisles.length).fill(initialRenderedWidthIn);
+    let renderedWidthSolveConverged = true;
+    let renderedWidthSolveIterations = safeAisles.length ? 0 : 1;
+    let evaluated = evaluateRenderedWidths(renderedWidthsIn);
+
+    if (safeAisles.length) {
+        const seenVectors = new Map();
+        const seenOrder = [];
+
+        for (let pass = 0; pass < 12; pass += 1) {
+            renderedWidthSolveIterations = pass + 1;
+            const nextWidthsIn = evaluated.aisleSummaries.map((aisle) => aisle.governingWidthIn);
+            const currentKey = serializeRoundedVector(renderedWidthsIn);
+            const nextKey = serializeRoundedVector(nextWidthsIn);
+
+            if (sameRoundedVector(nextWidthsIn, renderedWidthsIn)) {
+                renderedWidthsIn = nextWidthsIn.slice();
+                break;
+            }
+
+            if (!seenVectors.has(currentKey)) {
+                seenVectors.set(currentKey, renderedWidthsIn.slice());
+                seenOrder.push(currentKey);
+            }
+
+            if (seenVectors.has(nextKey)) {
+                const cycleStart = seenOrder.indexOf(nextKey);
+                const cycleKeys = cycleStart >= 0 ? seenOrder.slice(cycleStart) : seenOrder.slice();
+                const cycleVectors = cycleKeys
+                    .map((key) => seenVectors.get(key))
+                    .filter((vector) => Array.isArray(vector));
+                cycleVectors.push(nextWidthsIn.slice());
+                renderedWidthsIn = widestVectorInCycle(cycleVectors);
+                evaluated = evaluateRenderedWidths(renderedWidthsIn);
+                renderedWidthSolveConverged = false;
+                break;
+            }
+
+            renderedWidthsIn = nextWidthsIn.slice();
+            evaluated = evaluateRenderedWidths(renderedWidthsIn);
+
+            if (pass === 11) {
+                renderedWidthSolveConverged = false;
+            }
+        }
+    }
+
+    const sections = evaluated.sections;
+    const rowSummaries = evaluated.rowSummaries;
+    const aisleOccupancyTotals = evaluated.aisleOccupancyTotals;
+    const aisleSummaries = evaluated.aisleSummaries;
     const backRowSectionSeatCounts = sections.map((section) => section.backRowSeats);
     const sectionOccupancyTotals = sections.map((section) => section.occupancy);
     const avgBackRowSeatsPerSection = backRowSectionSeatCounts.length
@@ -2011,11 +2383,25 @@ export function buildTierAisleLayoutSummary({
     const governingWidthIn = aisleSummaries.length
         ? Math.max(...aisleSummaries.map((aisle) => aisle.governingWidthIn))
         : 0;
+    const minRenderedAisleWidthIn = aisleSummaries.length
+        ? Math.min(...aisleSummaries.map((aisle) => aisle.renderedWidthIn))
+        : 0;
+    const maxRenderedAisleWidthIn = aisleSummaries.length
+        ? Math.max(...aisleSummaries.map((aisle) => aisle.renderedWidthIn))
+        : 0;
+    const hasVariableRenderedAisleWidths = aisleSummaries.length > 1
+        && Math.abs(maxRenderedAisleWidthIn - minRenderedAisleWidthIn) > 1e-6;
+    const tierSeatCount = rowSummaries.reduce((sum, rowSummary) => sum + Math.max(0, Number(rowSummary?.seatCount) || 0), 0);
+    const largestSectionOccupancy = sectionOccupancyTotals.length ? Math.max(...sectionOccupancyTotals) : 0;
+    const largestContinuousRowSeatCount = rowSummaries.length
+        ? Math.max(...rowSummaries.map((rowSummary) => Math.max(0, Number(rowSummary?.maxContinuousSectionSeats) || 0)))
+        : 0;
     const seatLimit = Number(maxSeatsBetweenAisles);
     const seatCapCompliant = !(Number.isFinite(seatLimit) && seatLimit > 0)
         || sections.every((section) => section.maxSeatsPerRow <= seatLimit + 1e-9);
     const egressCapCompliant = aisleSummaries.every((aisle) => aisle.withinMaxWidth);
     const renderedWidthCompliant = aisleSummaries.every((aisle) => aisle.renderedWidthCompliant);
+    const converged = !!layoutSolveConverged && !!renderedWidthSolveConverged;
 
     return {
         actualAisles: safeAisles.length,
@@ -2030,27 +2416,33 @@ export function buildTierAisleLayoutSummary({
         legalMaxOccupantsPerAisle,
         requiredWidthIn,
         governingWidthIn,
-        renderedAisleWidthIn: resolvedRenderedAisleWidthIn,
+        renderedAisleWidthIn: maxRenderedAisleWidthIn,
+        tierSeatCount,
+        largestSectionOccupancy,
+        largestContinuousRowSeatCount,
+        maxRequiredAisleWidthIn: requiredWidthIn,
+        maxGoverningAisleWidthIn: governingWidthIn,
+        minRenderedAisleWidthIn,
+        maxRenderedAisleWidthIn,
+        hasVariableRenderedAisleWidths,
+        renderedWidthSolveConverged,
+        renderedWidthSolveIterations,
+        layoutSolveConverged,
+        converged,
         compliance: {
             seatCapCompliant,
             egressCapCompliant,
             renderedWidthCompliant,
-            isCompliant: seatCapCompliant && egressCapCompliant
+            isCompliant: seatCapCompliant && egressCapCompliant && renderedWidthCompliant
         },
+        rowSummaries,
         sections,
         aisles: aisleSummaries
     };
 }
 
-/**
- * Build a tier-level aisle layout from front-edge bowl geometry.
- * @param {Object} params
- * @returns {{aisles:Array,aisleWidthFt:number,targetAisles:number,forcedCount:number,sectionBoundaries:Array,axisExclusionFt:number}}
- */
-export function buildTierAisleLayout(params) {
+function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
     const {
-        frontSegments,
-        backSegments = null,
         targetAisles = 0,
         aisleWidthFt = 4,
         bowlConfig = null,
@@ -2061,13 +2453,9 @@ export function buildTierAisleLayout(params) {
         maxAisleWidthIn = NaN,
         egressFactor = NaN,
         rowCount = NaN
-    } = params || {};
+    } = params;
 
-    const paths = buildGeometryPaths(frontSegments);
-    const backPaths = (Array.isArray(backSegments) && backSegments.length)
-        ? buildGeometryPaths(backSegments)
-        : paths;
-    if (!paths.length) {
+    if (!Array.isArray(paths) || !paths.length) {
         return {
             aisles: [],
             aisleWidthFt: Math.max(0, Number(aisleWidthFt) || 0),
@@ -2078,7 +2466,10 @@ export function buildTierAisleLayout(params) {
         };
     }
 
-    const perimeterModel = buildPerimeterModel(paths, backPaths, bowlConfig);
+    const resolvedBackPaths = (Array.isArray(backPaths) && backPaths.length)
+        ? backPaths
+        : paths;
+    const perimeterModel = buildPerimeterModel(paths, resolvedBackPaths, bowlConfig);
     const safeTarget = Math.max(0, Math.round(Number(targetAisles) || 0));
     const widthFt = Math.max(0, Number(aisleWidthFt) || 0);
     const minSpacingFt = Math.max(widthFt * 1.05, 1.25);
@@ -2096,7 +2487,7 @@ export function buildTierAisleLayout(params) {
     const useIndependentSidesOpenDistribution =
         bowlType === 'sides' &&
         paths.length >= 2 &&
-        paths.every(p => p && !p.closed && p.length > EPS) &&
+        paths.every((path) => path && !path.closed && path.length > EPS) &&
         forcedAisles.length === 0;
     const useEvenOpenPathDistribution =
         paths.length === 1 &&
@@ -2113,7 +2504,6 @@ export function buildTierAisleLayout(params) {
         forcedAisles.length === 0;
 
     if (useIndependentSidesOpenDistribution) {
-        // "Sides" mode is two independent linear runs with mirrored egress.
         aisles = computeEvenAislesForOpenPaths(
             paths,
             Math.max(safeTarget, resolveOpenPathTargetAisles(paths, {
@@ -2126,8 +2516,6 @@ export function buildTierAisleLayout(params) {
             widthFt
         );
     } else if (useEvenOpenPathDistribution) {
-        // Linear/sliced open runs treat aisle lines as edge-to-edge boundaries.
-        // Rebuild the full set every time so added aisles re-space evenly.
         aisles = computeEvenOpenPathAisleStations(
             paths,
             Math.max(safeTarget, resolveOpenPathTargetAisles(paths, {
@@ -2204,8 +2592,183 @@ export function buildTierAisleLayout(params) {
         aisles,
         aisleWidthFt: widthFt,
         targetAisles: Math.max(safeTarget, aisles.length),
-        forcedCount: aisles.filter(a => a.forced).length,
+        forcedCount: aisles.filter((aisle) => aisle.forced).length,
         sectionBoundaries: buildSectionBoundaries(paths, aisles),
         axisExclusionFt
     };
+}
+
+export function buildTierAisleAnalysis({
+    tierIndex = 0,
+    rows = [],
+    bowlConfig = null,
+    offsetCorrection = 0,
+    egressParams = null,
+    getPathsForOffset = null,
+    getRowLengthFt = null
+} = {}) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    if (!safeRows.length || typeof getPathsForOffset !== 'function') return null;
+
+    const seatWidthIn = Math.max(1, Number(egressParams?.seatWidthIn) || 20);
+    const minAisleWidthIn = Math.max(0, Number(egressParams?.minAisleWidthIn) || 0);
+    const maxAisleWidthIn = Math.max(minAisleWidthIn, Number(egressParams?.maxAisleWidthIn) || minAisleWidthIn);
+    const egressFactor = Math.max(0, Number(egressParams?.egressFactor) || 0);
+    const maxSeatsBetweenAisles = Number(egressParams?.seatsBetweenAisles);
+    const placementWidthFt = Math.max(0, (maxAisleWidthIn > 0 ? maxAisleWidthIn : minAisleWidthIn) / 12.0);
+    const firstRow = safeRows[0];
+    const lastRow = safeRows[safeRows.length - 1];
+    if (!firstRow || !lastRow) return null;
+
+    const frontPaths = getPathsForOffset((firstRow.x - firstRow.tread_depth) - offsetCorrection);
+    const backPaths = getPathsForOffset(lastRow.x - offsetCorrection);
+    const referencePaths = getPathsForOffset((lastRow.x - (lastRow.tread_depth * 0.5)) - offsetCorrection);
+    if (!frontPaths.length || !backPaths.length || !referencePaths.length) return null;
+
+    const maxAttempts = Math.max(8, Math.min(128, safeRows.length * 6));
+    let requestedTargetAisles = 0;
+    let lastAnalysis = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const layout = buildTierAisleLayoutFromPaths(frontPaths, backPaths, {
+            targetAisles: requestedTargetAisles,
+            aisleWidthFt: placementWidthFt,
+            bowlConfig,
+            maxSeatsBetweenAisles,
+            seatWidthIn,
+            maxAisleWidthIn,
+            egressFactor,
+            rowCount: safeRows.length
+        });
+        const layoutForSummary = {
+            ...layout,
+            tierIndex,
+            seatWidthIn
+        };
+        const chamferCache = new Map();
+        const aisleReferenceMap = buildTierAisleReferenceMap({
+            rows: safeRows,
+            tierLayout: layoutForSummary,
+            offsetCorrection,
+            getPathsForOffset,
+            chamferCache
+        });
+        const summary = buildTierAisleLayoutSummary({
+            rows: safeRows,
+            tierLayout: layoutForSummary,
+            referencePaths,
+            resolveRowAisleSampling: (_rowIndex, row) => pickBestRowAisleSampling(
+                (row.x - (row.tread_depth * 0.5)) - offsetCorrection,
+                getPathsForOffset,
+                layoutForSummary,
+                chamferCache,
+                aisleReferenceMap
+            ),
+            seatWidthIn,
+            minAisleWidthIn,
+            maxAisleWidthIn,
+            egressFactor,
+            maxSeatsBetweenAisles,
+            getRowLengthFt,
+            bowlConfig,
+            offsetCorrection,
+            layoutSolveConverged: true
+        });
+
+        const analysis = {
+            tierIndex,
+            aisleWidthFt: Math.max(placementWidthFt, Math.max(0, Number(summary?.maxRenderedAisleWidthIn) || 0) / 12.0),
+            seatWidthIn,
+            aisles: layout.aisles || [],
+            targetAisles: layout.targetAisles || requestedTargetAisles,
+            forcedCount: layout.forcedCount || 0,
+            sectionBoundaries: layout.sectionBoundaries || [],
+            axisExclusionFt: layout.axisExclusionFt || 0,
+            sectionSummary: summary || null
+        };
+        lastAnalysis = analysis;
+
+        if (summary?.compliance?.isCompliant) {
+            return analysis;
+        }
+
+        requestedTargetAisles = Math.max(
+            requestedTargetAisles + 1,
+            Math.max(0, Number(layout.targetAisles) || 0) + 1,
+            (layout.aisles?.length || 0) + 1
+        );
+    }
+
+    if (lastAnalysis?.sectionSummary) {
+        lastAnalysis.sectionSummary.layoutSolveConverged = false;
+        lastAnalysis.sectionSummary.converged = false;
+        lastAnalysis.sectionSummary.compliance = {
+            ...lastAnalysis.sectionSummary.compliance,
+            isCompliant: false
+        };
+    }
+
+    return lastAnalysis;
+}
+
+export function buildConfigurationAisleSummary({ tierLayouts = [] } = {}) {
+    const safeTierLayouts = Array.isArray(tierLayouts) ? tierLayouts : [];
+    const tierSeatCounts = safeTierLayouts.map((tierLayout, index) => ({
+        tierIndex: Math.max(0, Math.floor(Number(tierLayout?.tierIndex) || index)),
+        tierSeatCount: Math.max(0, Number(tierLayout?.sectionSummary?.tierSeatCount) || 0)
+    }));
+
+    return {
+        totalOccupancyAllTiers: tierSeatCounts.reduce((sum, tier) => sum + tier.tierSeatCount, 0),
+        totalAislesAllTiers: safeTierLayouts.reduce((sum, tierLayout) => (
+            sum + Math.max(0, Number(tierLayout?.sectionSummary?.actualAisles) || 0)
+        ), 0),
+        totalSectionsAllTiers: safeTierLayouts.reduce((sum, tierLayout) => (
+            sum + Math.max(0, Number(tierLayout?.sectionSummary?.actualSections) || 0)
+        ), 0),
+        tierSeatCounts,
+        maxRequiredAisleWidthInOverall: safeTierLayouts.reduce((maxWidth, tierLayout) => (
+            Math.max(maxWidth, Math.max(0, Number(tierLayout?.sectionSummary?.maxRequiredAisleWidthIn) || 0))
+        ), 0)
+    };
+}
+
+/**
+ * Build a tier-level aisle layout from front-edge bowl geometry.
+ * @param {Object} params
+ * @returns {{aisles:Array,aisleWidthFt:number,targetAisles:number,forcedCount:number,sectionBoundaries:Array,axisExclusionFt:number}}
+ */
+export function buildTierAisleLayout(params) {
+    const {
+        frontSegments,
+        backSegments = null,
+        targetAisles = 0,
+        aisleWidthFt = 4,
+        bowlConfig = null,
+        axisToleranceFt = 2,
+        maxSeatsBetweenAisles = NaN,
+        seatWidthIn = 20,
+        maxOccupantsPerAisle = NaN,
+        maxAisleWidthIn = NaN,
+        egressFactor = NaN,
+        rowCount = NaN
+    } = params || {};
+    return buildTierAisleLayoutFromPaths(
+        buildGeometryPaths(frontSegments),
+        (Array.isArray(backSegments) && backSegments.length)
+            ? buildGeometryPaths(backSegments)
+            : buildGeometryPaths(frontSegments),
+        {
+            targetAisles,
+            aisleWidthFt,
+            bowlConfig,
+            axisToleranceFt,
+            maxSeatsBetweenAisles,
+            seatWidthIn,
+            maxOccupantsPerAisle,
+            maxAisleWidthIn,
+            egressFactor,
+            rowCount
+        }
+    );
 }

@@ -22,7 +22,7 @@ The goal of this file is to describe the codebase as it exists during the phased
 | --- | --- | --- | --- |
 | Root shell | Entry routing and page bootstrapping | `index.html`, `app.js` | `app.js` is the approved root exception and is intentionally thin. |
 | `pages/` | Route HTML/CSS shells and shared shell styling | `pages/configurator/*`, `pages/styles-shared.css` | The only live route shell is the configurator. |
-| `core/` | Protected solver and geometry math | `profile-solver.js`, `sightline-calc.js`, `aisle-layout.js`, `sports-templates.js`, `default-starting-profile.js` | No DOM, no persistence, no UI orchestration. |
+| `core/` | Protected solver and geometry math | `profile-solver.js`, `sightline-calc.js`, `aisle-layout.js`, `sports-templates.js` | No DOM, no persistence, no UI orchestration. |
 | `state/` | Single source of truth for serializable app state and DTO helpers | `app-state.js`, `project.js` | `AppState` is the one live state object used by the configurator. |
 | `ui/` | Configurator orchestration/controllers and shell/runtime adapters | `ui/app.js`, `editor-shell.js`, `project-chrome-shell.js`, `workspace-shell.js`, `render-runtime.js`, `project-shell-controller.js`, `scene3d-controller.js`, `editor-controls.js`, `editor-export-controller.js`, `stats-view-model.js`, `stats-panel.js`, `camera-bookmarks.js` | `ui/app.js` is the composition root; `editor-shell.js` is now a thin facade over focused shell owners. |
 | `viz/` | 2D and 3D rendering from precomputed inputs | `field-renderer.js`, `profile-renderer.js`, `scene3d.js` | Renderers consume solver output and runtime artifacts; they do not own app state. |
@@ -57,7 +57,6 @@ Repository/
 |   |-- sightline-calc.js                      # Sightline math, C-value quality helpers, analyzer utilities.
 |   |-- aisle-layout.js                        # Aisle and path geometry helpers used by renderers and Rhino export flow.
 |   |-- sports-templates.js                    # Sport templates, defaults, and supported sport name list.
-|   `-- default-starting-profile.js            # Default serialized startup profile used to seed AppState.
 |
 |-- state/                                     # Serializable application state and DTO normalization helpers.
 |   |-- AGENTS.md                              # Folder-specific state constraints for agents.

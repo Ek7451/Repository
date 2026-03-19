@@ -53,7 +53,19 @@ function createMetrics(overrides = {}) {
 }
 
 function buildStatsDto(input = {}) {
-    return buildStatsViewModel(input);
+    const tierMetricsByIndex = input.tierMetricsByIndex instanceof Map ? input.tierMetricsByIndex : new Map();
+    const totalOccupancyAllTiers = Number.isFinite(Number(input?.configurationSummary?.totalOccupancyAllTiers))
+        ? Number(input.configurationSummary.totalOccupancyAllTiers)
+        : Array.from(tierMetricsByIndex.values()).reduce((sum, metrics) => (
+            sum + Math.max(0, Number(metrics?.capacity) || 0)
+        ), 0);
+
+    return buildStatsViewModel({
+        ...input,
+        configurationSummary: input.configurationSummary ?? {
+            totalOccupancyAllTiers
+        }
+    });
 }
 
 describe('StatsPanel', () => {

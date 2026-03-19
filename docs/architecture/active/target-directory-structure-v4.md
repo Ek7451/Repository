@@ -126,7 +126,6 @@ Repository/
 |   |-- sightline-calc.js                   # Sightline and C-value helpers.
 |   |-- aisle-layout.js                     # Aisle/path geometry helpers reused by rendering/export.
 |   |-- sports-templates.js                 # Sport templates and supported sport defaults.
-|   `-- default-starting-profile.js         # Serialized startup profile seed.
 |
 |-- state/                                  # Canonical serializable app state and DTO builders.
 |   |-- AGENTS.md                           # State-layer working constraints.

@@ -10,11 +10,14 @@ import {
     buildGeometryPaths,
     sampleAisleBand,
     samplePathPointByRatio,
-    buildTierAisleLayout,
+    buildTierAisleAnalysis,
     buildTierAisleLayoutSummary,
-    buildPerpendicularAisleReferenceMap,
-    resolveAisleStationRatios,
-    resolvePerpendicularAisleStationRatiosFromReference
+    buildTierAisleReferenceMap,
+    buildResolvedTierAisleRatioMap,
+    getTierRenderedAisleWidthFt,
+    getTierRenderedAisleWidthIn,
+    pickBestRowAisleSampling,
+    resolveTierAisleStationRatios
 } from '../core/aisle-layout.js';
 
 const FIELD_THEME_COLORS = {
@@ -883,24 +886,21 @@ export class FieldRenderer {
 
     buildTierAisleLayouts(solvers, bowlConfig, tierMetricsByIndex, offsetCorrection = 0, egressParams = null) {
         const tierAisleLayouts = [];
+        void tierMetricsByIndex;
 
         (solvers || []).forEach((solver, index) => {
             if (!solver?.rows?.length) return;
 
-            const tierIndex = getSolverTierIndex(solver, index);
-            const metrics = tierMetricsByIndex?.get?.(tierIndex);
-            if (!metrics) return;
-
             const tierLayout = this.generateTierAisleLayout(
                 solver,
                 bowlConfig,
-                metrics,
+                null,
                 offsetCorrection,
                 egressParams
             );
             if (!tierLayout) return;
 
-            tierLayout.tierIndex = tierIndex;
+            tierLayout.tierIndex = getSolverTierIndex(solver, index);
             tierAisleLayouts.push(tierLayout);
         });
 
@@ -967,64 +967,18 @@ export class FieldRenderer {
     }
 
     generateTierAisleLayout(solver, bowlConfig, tierMetrics, offsetCorrection = 0, egressParams = null) {
-        if (!solver || !solver.rows || solver.rows.length === 0 || !tierMetrics) return null;
+        void tierMetrics;
+        if (!solver || !solver.rows || solver.rows.length === 0) return null;
 
-        const firstRow = solver.rows[0];
-        const lastRow = solver.rows[solver.rows.length - 1];
-        const frontOffset = (firstRow.x - firstRow.tread_depth) - offsetCorrection;
-        const backOffset = (lastRow.x) - offsetCorrection;
-        const frontSegments = this._getBowlGeometry(bowlConfig, frontOffset);
-        const backSegments = this._getBowlGeometry(bowlConfig, backOffset);
-
-        const targetAisles = Math.max(0, Math.round(Number(tierMetrics.numAisles) || 0));
-        const aisleWidthFt = Math.max(0, (Number(tierMetrics.aisleWidth) || 0) / 12.0);
-        const maxSeatsBetweenAisles = egressParams ? Number(egressParams.seatsBetweenAisles) : NaN;
-        const seatWidthIn = egressParams ? Number(egressParams.seatWidthIn) : NaN;
-        const minAisleWidthIn = egressParams ? Number(egressParams.minAisleWidthIn) : NaN;
-        const maxAisleWidthIn = egressParams ? Number(egressParams.maxAisleWidthIn) : NaN;
-        const egressFactor = egressParams ? Number(egressParams.egressFactor) : NaN;
-
-        const layout = buildTierAisleLayout({
-            frontSegments,
-            backSegments,
-            targetAisles,
-            aisleWidthFt,
-            bowlConfig,
-            maxSeatsBetweenAisles,
-            seatWidthIn,
-            maxAisleWidthIn,
-            egressFactor,
-            rowCount: solver.rows.length
-        });
-
-        const tierSummary = this._summarizeTierLayoutSections(
-            solver,
-            bowlConfig,
-            {
-                ...layout,
-                tierIndex: solver.tierIndex !== undefined ? solver.tierIndex : 0,
-                seatWidthIn: Number.isFinite(seatWidthIn) ? seatWidthIn : NaN
-            },
-            offsetCorrection,
-            {
-                maxSeatsBetweenAisles,
-                minAisleWidthIn,
-                maxAisleWidthIn,
-                egressFactor
-            }
-        );
-
-        return {
+        return buildTierAisleAnalysis({
             tierIndex: solver.tierIndex !== undefined ? solver.tierIndex : 0,
-            aisleWidthFt: layout.aisleWidthFt,
-            seatWidthIn: Number.isFinite(seatWidthIn) ? seatWidthIn : NaN,
-            aisles: layout.aisles || [],
-            targetAisles: layout.targetAisles || targetAisles,
-            forcedCount: layout.forcedCount || 0,
-            sectionBoundaries: layout.sectionBoundaries || [],
-            axisExclusionFt: layout.axisExclusionFt || 0,
-            sectionSummary: tierSummary || null
-        };
+            rows: solver.rows,
+            bowlConfig,
+            offsetCorrection,
+            egressParams,
+            getPathsForOffset: (offset) => buildGeometryPaths(this._getBowlGeometry(bowlConfig, offset)),
+            getRowLengthFt: (offset) => this.calculateRowLength(bowlConfig, offset)
+        });
     }
 
     _summarizeTierLayoutSections(solver, bowlConfig, tierLayout, offsetCorrection = 0, egressOptions = {}) {
@@ -1134,98 +1088,33 @@ export class FieldRenderer {
         getPathsForOffset,
         chamferCache
     ) {
-        const byAisle = new Map();
-        if (!solver || !Array.isArray(solver.rows) || solver.rows.length === 0) return byAisle;
-        if (!tierLayout || !Array.isArray(tierLayout.aisles) || tierLayout.aisles.length === 0) return byAisle;
-
-        const firstRow = solver.rows[0];
-        const lastRow = solver.rows[solver.rows.length - 1];
-        if (!firstRow || !lastRow || typeof getPathsForOffset !== 'function') return byAisle;
         void _bowlConfig;
-
-        const referenceFrontPaths = getPathsForOffset((firstRow.x - firstRow.tread_depth) - offsetCorrection);
-        const referenceBackPaths = getPathsForOffset(lastRow.x - offsetCorrection);
-        if (!referenceFrontPaths.length || !referenceBackPaths.length) return byAisle;
-
-        return buildPerpendicularAisleReferenceMap(
-            referenceFrontPaths,
-            referenceBackPaths,
-            tierLayout.aisles,
+        return buildTierAisleReferenceMap({
+            rows: solver?.rows || [],
+            tierLayout,
+            offsetCorrection,
+            getPathsForOffset,
             chamferCache
-        );
+        });
     }
 
     _resolveTierAisleStationRatios(pathFront, pathBack, aisle, aisleIndex, chamferCache, aisleReferenceMap = null) {
-        const stableReference = aisleReferenceMap?.get?.(aisleIndex) || null;
-        if (stableReference?.referencePath && Number.isFinite(stableReference.referenceU)) {
-            const resolvedFromReference = resolvePerpendicularAisleStationRatiosFromReference(
-                pathFront,
-                pathBack,
-                aisle,
-                stableReference.referencePath,
-                stableReference.referenceU,
-                chamferCache
-            );
-            if (resolvedFromReference) return resolvedFromReference;
-        }
-
-        return resolveAisleStationRatios(pathFront, pathBack, aisle, chamferCache);
+        return resolveTierAisleStationRatios(
+            pathFront,
+            pathBack,
+            aisle,
+            aisleIndex,
+            chamferCache,
+            aisleReferenceMap
+        );
     }
 
     _buildResolvedAisleRatioMap(pathA, pathB, tierLayout, chamferCache, aisleReferenceMap = null) {
-        const byPath = new Map();
-        if (!tierLayout || !Array.isArray(tierLayout.aisles)) return byPath;
-
-        for (let i = 0; i < tierLayout.aisles.length; i++) {
-            const aisle = tierLayout.aisles[i];
-            const pathIndex = Math.max(0, Math.floor(Number(aisle.pathIndex) || 0));
-            const pA = pathA[pathIndex];
-            const pB = pathB[pathIndex];
-            if (!pA || !pB) continue;
-            const ratios = this._resolveTierAisleStationRatios(
-                pA,
-                pB,
-                aisle,
-                i,
-                chamferCache,
-                aisleReferenceMap
-            );
-            if (!ratios || !Number.isFinite(ratios.uFront)) continue;
-            if (!byPath.has(pathIndex)) byPath.set(pathIndex, new Map());
-            byPath.get(pathIndex).set(i, normalizePathU(pA, ratios.uFront));
-        }
-        return byPath;
+        return buildResolvedTierAisleRatioMap(pathA, pathB, tierLayout, chamferCache, aisleReferenceMap);
     }
 
     _pickBestRowLabelSampling(centerOffset, getPathsForOffset, tierLayout, chamferCache, aisleReferenceMap = null) {
-        const baseOffset = Number(centerOffset) || 0;
-        // Small perturbations avoid pathological centerline sampling exactly on a corner/chamfer vertex.
-        const offsetsToTry = [0, 0.02, -0.02, 0.05, -0.05];
-
-        let best = null;
-        for (let i = 0; i < offsetsToTry.length; i++) {
-            const testOffset = baseOffset + offsetsToTry[i];
-            const paths = getPathsForOffset(testOffset);
-            if (!paths || !paths.length) continue;
-            const aisleRatiosByPath = this._buildResolvedAisleRatioMap(
-                paths,
-                paths,
-                tierLayout,
-                chamferCache,
-                aisleReferenceMap
-            );
-
-            let score = 0;
-            aisleRatiosByPath.forEach(m => { score += m?.size || 0; });
-
-            if (!best || score > best.score) {
-                best = { paths, aisleRatiosByPath, score, sampledOffset: testOffset };
-                // Early exit if we resolved every aisle across all paths for this row.
-                if (score >= (tierLayout?.aisles?.length || 0)) break;
-            }
-        }
-
-        return best || { paths: [], aisleRatiosByPath: new Map(), score: 0, sampledOffset: baseOffset };
+        return pickBestRowAisleSampling(centerOffset, getPathsForOffset, tierLayout, chamferCache, aisleReferenceMap);
     }
 
     _buildTierSectionTemplates(referencePaths, tierLayout, sectionBase) {
@@ -1429,9 +1318,6 @@ export class FieldRenderer {
         if (!tierLayout || !tierLayout.aisles || tierLayout.aisles.length === 0) return [];
         if (!solver || !solver.rows || solver.rows.length === 0) return [];
 
-        const widthFt = Math.max(0, Number(tierLayout.aisleWidthFt) || 0);
-        if (widthFt <= 0) return [];
-
         const polygons = [];
         const pathCache = new Map();
         const getPathsForOffset = (offset) => {
@@ -1477,6 +1363,8 @@ export class FieldRenderer {
                 );
                 if (!ratios) continue;
 
+                const widthFt = getTierRenderedAisleWidthFt(tierLayout, i);
+                if (widthFt <= 0) continue;
                 const bandFront = sampleAisleBand(pathFront, ratios.uFront, widthFt);
                 const bandBack = sampleAisleBand(pathBack, ratios.uBack, widthFt);
                 if (!bandFront || !bandBack) continue;
@@ -1512,9 +1400,8 @@ export class FieldRenderer {
             return { sectionLabels: [], rowSeatLabels: [] };
         }
 
-        const aisleWidthFt = Math.max(0, Number(tierLayout.aisleWidthFt) || 0);
         const seatWidthIn = Math.max(1, Number(tierLayout.seatWidthIn) || 0);
-        if (!(seatWidthIn > 0) || !(aisleWidthFt > 0)) {
+        if (!(seatWidthIn > 0)) {
             return { sectionLabels: [], rowSeatLabels: [] };
         }
 
@@ -1584,7 +1471,10 @@ export class FieldRenderer {
                     const ptB = samplePathPointByRatio(path, uB);
                     const rightIsA = (ptA.x > ptB.x + 1e-6) || (Math.abs(ptA.x - ptB.x) <= 1e-6 && ptA.y >= ptB.y);
                     const centerGapFt = sectionDistanceOnPath(path, uA, uB);
-                    const labelCenterOffsetFt = (aisleWidthFt * 0.5) + ROW_SEATCOUNT_LABEL_EDGE_OFFSET_FT;
+                    const adjacentAisleWidthFt = rightIsA
+                        ? getTierRenderedAisleWidthFt(tierLayout, slot.aisleIndexA)
+                        : getTierRenderedAisleWidthFt(tierLayout, slot.aisleIndexB);
+                    const labelCenterOffsetFt = (adjacentAisleWidthFt * 0.5) + ROW_SEATCOUNT_LABEL_EDGE_OFFSET_FT;
                     const edgeInsetT = centerGapFt > 1e-6
                         ? Math.max(
                             ROW_SEATCOUNT_LABEL_MIN_T,
@@ -1772,7 +1662,8 @@ export class FieldRenderer {
                 }
             }
 
-            if (Number.isFinite(aisleSummary?.governingWidthIn) && aisleSummary.governingWidthIn > 0 && widthFrontPath && widthBackPath) {
+            const renderedWidthIn = getTierRenderedAisleWidthIn(tierLayout, aisleIndex);
+            if (renderedWidthIn > 0 && widthFrontPath && widthBackPath) {
                 const widthRatios = this._resolveTierAisleStationRatios(
                     widthFrontPath,
                     widthBackPath,
@@ -1789,7 +1680,7 @@ export class FieldRenderer {
                         pathIndex,
                         x: (frontPoint.x + backPoint.x) * 0.5,
                         y: (frontPoint.y + backPoint.y) * 0.5,
-                        text: formatAisleWidthLabel(aisleSummary.governingWidthIn)
+                        text: formatAisleWidthLabel(renderedWidthIn)
                     });
                 }
             }
@@ -1804,9 +1695,6 @@ export class FieldRenderer {
     _drawTierAisles(ctx, solver, bowlConfig, tierLayout, offsetCorrection, scale, fx, fy) {
         if (!tierLayout || !tierLayout.aisles || tierLayout.aisles.length === 0) return;
         if (!solver || !solver.rows || solver.rows.length === 0) return;
-
-        const widthFt = Math.max(0, Number(tierLayout.aisleWidthFt) || 0);
-        if (widthFt <= 0) return;
 
         const pathCache = new Map();
         const getPathsForOffset = (offset) => {
@@ -1858,6 +1746,8 @@ export class FieldRenderer {
                 );
                 if (!ratios) continue;
 
+                const widthFt = getTierRenderedAisleWidthFt(tierLayout, i);
+                if (widthFt <= 0) continue;
                 const bandFront = sampleAisleBand(pathFront, ratios.uFront, widthFt);
                 const bandBack = sampleAisleBand(pathBack, ratios.uBack, widthFt);
                 if (!bandFront || !bandBack) continue;

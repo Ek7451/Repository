@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
     buildGeometryPaths,
     buildPerpendicularAisleReferenceMap,
+    buildConfigurationAisleSummary,
+    buildTierAisleAnalysis,
     buildTierAisleLayout,
     buildTierAisleLayoutSummary,
     resolveAisleStationRatios,
@@ -697,8 +699,16 @@ describe('aisle layout geometry seam', () => {
             allSectionPathsClosed: false,
             sectionOccupancyTotals: [4, 4],
             aisleOccupancyTotals: [2, 4, 2],
+            tierSeatCount: 8,
+            largestSectionOccupancy: 4,
+            largestContinuousRowSeatCount: 2,
             requiredWidthIn: 0.8,
             governingWidthIn: 48,
+            maxRequiredAisleWidthIn: 0.8,
+            maxGoverningAisleWidthIn: 48,
+            minRenderedAisleWidthIn: 48,
+            maxRenderedAisleWidthIn: 48,
+            renderedWidthSolveConverged: true,
             compliance: {
                 seatCapCompliant: true,
                 egressCapCompliant: true,
@@ -725,5 +735,58 @@ describe('aisle layout geometry seam', () => {
             expect.objectContaining({ aisleIndex: 1, tributaryOccupancy: 4, governingWidthIn: 48 }),
             expect.objectContaining({ aisleIndex: 2, tributaryOccupancy: 2, governingWidthIn: 48 })
         ]);
+        expect(summary.rowSummaries).toEqual([
+            expect.objectContaining({ rowIndex: 0, seatCount: 4, sectionCount: 2 }),
+            expect.objectContaining({ rowIndex: 1, seatCount: 4, sectionCount: 2 })
+        ]);
+    });
+
+    it('builds configuration totals from authoritative tier analyses only', () => {
+        const frontSegments = [
+            { cmd: 'moveTo', x: -15, y: 0 },
+            { cmd: 'lineTo', x: 15, y: 0 }
+        ];
+        const rows = [
+            { row_number: 1, x: 12, tread_depth: 2 },
+            { row_number: 2, x: 14, tread_depth: 2 }
+        ];
+        const getPathsForOffset = () => buildGeometryPaths(frontSegments);
+        const tierLayout = buildTierAisleAnalysis({
+            tierIndex: 0,
+            rows,
+            bowlConfig: { type: 'Side1', corner: 'None' },
+            offsetCorrection: 0,
+            egressParams: {
+                seatWidthIn: 20,
+                minAisleWidthIn: 48,
+                maxAisleWidthIn: 72,
+                egressFactor: 0.2,
+                seatsBetweenAisles: 24
+            },
+            getPathsForOffset,
+            getRowLengthFt: () => 30
+        });
+
+        expect(tierLayout).not.toBeNull();
+        expect(tierLayout.sectionSummary).toEqual(expect.objectContaining({
+            tierSeatCount: expect.any(Number),
+            rowSummaries: expect.any(Array),
+            aisles: expect.any(Array)
+        }));
+
+        const configurationSummary = buildConfigurationAisleSummary({
+            tierLayouts: [tierLayout]
+        });
+
+        expect(configurationSummary).toEqual({
+            totalOccupancyAllTiers: tierLayout.sectionSummary.tierSeatCount,
+            totalAislesAllTiers: tierLayout.sectionSummary.actualAisles,
+            totalSectionsAllTiers: tierLayout.sectionSummary.actualSections,
+            tierSeatCounts: [{
+                tierIndex: 0,
+                tierSeatCount: tierLayout.sectionSummary.tierSeatCount
+            }],
+            maxRequiredAisleWidthInOverall: tierLayout.sectionSummary.maxRequiredAisleWidthIn
+        });
     });
 });

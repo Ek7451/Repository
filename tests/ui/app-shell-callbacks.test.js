@@ -48,7 +48,7 @@ describe('SeatingBowlApp shell callbacks', () => {
         const app = new SeatingBowlApp();
 
         expect(app.getProjectChrome()).toEqual({
-            name: 'Football Study',
+            name: 'Ice Hockey Study',
             metadata: {
                 id: null,
                 name: '',
@@ -506,6 +506,7 @@ describe('SeatingBowlApp shell callbacks', () => {
     it('builds export context DTOs through the render runtime public API', () => {
         const app = new SeatingBowlApp();
 
+        app.state.sport = 'Football';
         app.state.setup.customRunoff = null;
         app.state.setup.focalX = 18;
         app.state.setup.focalZ = 9;
@@ -531,12 +532,12 @@ describe('SeatingBowlApp shell callbacks', () => {
             seatsBetweenAisles: 18
         });
         expect(exportContext.primaryTierParameters).toEqual({
-            targetCValue: 4,
-            firstRowDistance: 45,
-            firstRowElevation: 6,
+            targetCValue: 3.5,
+            firstRowDistance: 0,
+            firstRowElevation: 2,
             treadDepth: 33,
-            riserHeight: 10,
-            numRows: 30,
+            riserHeight: 12,
+            numRows: 15,
             eyeHeight: 3.75,
             eyeSetback: 6
         });
@@ -600,6 +601,7 @@ describe('SeatingBowlApp shell callbacks', () => {
 
     it('routes scene export access through the scene3d controller when building public export descriptors', async () => {
         const app = new SeatingBowlApp();
+        app.state.sport = 'Football';
         const exportSceneData = {
             bowlMeshes: [
                 {
@@ -709,6 +711,7 @@ describe('SeatingBowlApp shell callbacks', () => {
         app.statsPanel = /** @type {any} */ ({
             update: vi.fn()
         });
+        app.state.sport = 'Football';
 
         app.update();
 

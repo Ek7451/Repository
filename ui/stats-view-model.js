@@ -180,7 +180,8 @@ export function buildStatsViewModel({
     focalPointFt = { x: 0, z: 0 },
     bowlConfig = {},
     egressParams = {},
-    tierMetricsByIndex = new Map()
+    tierMetricsByIndex = new Map(),
+    configurationSummary = null
 } = {}) {
     const activeSolvers = (solvers || []).filter((solver) => solver && Array.isArray(solver.rows) && solver.rows.length > 0);
     if (!activeSolvers.length) return null;
@@ -226,7 +227,10 @@ export function buildStatsViewModel({
         tierMetricsByIndex,
         isMirroredSidesMode
     }));
-    const totalOccupancy = tiers.reduce((sum, tier) => sum + Math.max(0, Number(tier?.occupancy?.capacity) || 0), 0);
+    const totalOccupancy = Math.max(
+        0,
+        Number(configurationSummary?.totalOccupancyAllTiers) || 0
+    );
 
     return {
         summary: {

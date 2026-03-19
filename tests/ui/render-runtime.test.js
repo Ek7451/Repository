@@ -5,6 +5,20 @@ import { AppState } from '../../state/app-state.js';
 import { RenderRuntime } from '../../ui/render-runtime.js';
 
 function createTierLayout(tierIndex) {
+    const rowSeatCounts = [17, 17, 17, 17, 17, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18];
+    const rowSummaries = rowSeatCounts.map((seatCount, rowIndex) => ({
+        rowIndex,
+        rowNumber: rowIndex + 1,
+        seatCount,
+        sectionCount: 1,
+        maxContinuousSectionSeats: seatCount,
+        pathSeatCounts: [{ pathIndex: 0, seatCount }],
+        linearLengthFt: 140,
+        linearLengthPerRunFt: 140,
+        seatCountPerRun: seatCount,
+        sectionCountPerRun: 1
+    }));
+
     return {
         tierIndex,
         aisleWidthFt: 4,
@@ -35,9 +49,53 @@ function createTierLayout(tierIndex) {
             allSectionPathsClosed: true,
             backRowSectionSeatCounts: [18],
             sectionOccupancyTotals: [265],
+            aisleOccupancyTotals: [133],
             avgBackRowSeatsPerSection: 18,
             maxBackRowSeatsPerSection: 18,
-            minBackRowSeatsPerSection: 18
+            minBackRowSeatsPerSection: 17,
+            tierSeatCount: 265,
+            largestSectionOccupancy: 265,
+            largestContinuousRowSeatCount: 18,
+            maxRequiredAisleWidthIn: 26.6,
+            maxGoverningAisleWidthIn: 48,
+            minRenderedAisleWidthIn: 48,
+            maxRenderedAisleWidthIn: 48,
+            hasVariableRenderedAisleWidths: false,
+            renderedWidthSolveConverged: true,
+            renderedWidthSolveIterations: 1,
+            converged: true,
+            compliance: {
+                seatCapCompliant: true,
+                egressCapCompliant: true,
+                renderedWidthCompliant: true,
+                isCompliant: true
+            },
+            rowSummaries,
+            sections: [{
+                pathIndex: 0,
+                slotIndex: 0,
+                aisleIndexA: 0,
+                aisleIndexB: 0,
+                rowSeatCounts,
+                occupancy: 265,
+                frontRowSeats: 17,
+                backRowSeats: 18,
+                minSeatsPerRow: 17,
+                maxSeatsPerRow: 18,
+                avgSeatsPerRow: +(265 / rowSeatCounts.length).toFixed(2)
+            }],
+            aisles: [{
+                aisleIndex: 0,
+                pathIndex: 0,
+                tributaryOccupancy: 133,
+                requiredWidthIn: 26.6,
+                governingWidthIn: 48,
+                renderedWidthIn: 48,
+                renderedWidthFt: 4,
+                legalMaxOccupantsPerAisle: 360,
+                withinMaxWidth: true,
+                renderedWidthCompliant: true
+            }]
         }
     };
 }
@@ -57,6 +115,7 @@ describe('RenderRuntime', () => {
         const runtime = new RenderRuntime();
         const fieldGeometryPort = createFieldGeometryPort();
 
+        state.sport = 'Football';
         state.setup.customRunoff = 30;
         state.setup.focalX = 18;
         state.setup.focalZ = 9;
@@ -92,6 +151,16 @@ describe('RenderRuntime', () => {
         expect(snapshot.offsetCorrection).toBe(6);
         expect(snapshot.tierMetricsByIndex).toBeInstanceOf(Map);
         expect(snapshot.tierAisleLayouts).toHaveLength(2);
+        expect(snapshot.configurationSummary).toEqual({
+            totalOccupancyAllTiers: 530,
+            totalAislesAllTiers: 2,
+            totalSectionsAllTiers: 2,
+            tierSeatCounts: [
+                { tierIndex: 0, tierSeatCount: 265 },
+                { tierIndex: 1, tierSeatCount: 265 }
+            ],
+            maxRequiredAisleWidthInOverall: 26.6
+        });
         expect(snapshot.tierAisleLayouts[0]).toEqual(expect.objectContaining({
             tierIndex: 0,
             aisleWidthFt: 4,
@@ -113,6 +182,7 @@ describe('RenderRuntime', () => {
             })
         }));
         expect(snapshot.tierMetricsByIndex.get(0)).toMatchObject({
+            capacity: 265,
             numAisles: 1,
             numSections: 1,
             seatsPerBlock: '18.0',
@@ -158,7 +228,8 @@ describe('RenderRuntime', () => {
         });
         expect(snapshot.statsViewModel).toEqual(expect.objectContaining({
             summary: expect.objectContaining({
-                totalRows: expect.any(Number)
+                totalRows: expect.any(Number),
+                totalOccupancy: 530
             }),
             tiers: expect.any(Array)
         }));
@@ -179,6 +250,7 @@ describe('RenderRuntime', () => {
             focalPointFt: snapshot.focalPointFt,
             runoffDistance: 30,
             tierAisleLayouts: snapshot.tierAisleLayouts,
+            configurationSummary: snapshot.configurationSummary,
             structuralDepthFt: 1.5,
             offsetCorrection: 6
         }));

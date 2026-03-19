@@ -83,13 +83,26 @@ const VALID_RESULTS_TABS = new Set(['statsTab', 'detailsTab']);
  *         type?: string,
  *         cornerRad?: number,
  *         radius?: number,
- *         sideLength?: number
+ *         sideLength?: number,
+ *         structuralDepth?: number,
+ *         structuralProfileMode?: string,
+ *         straightAisleMode?: string,
+ *         chamferAisleMode?: string
+ *       },
+ *       occupancy?: {
+ *         seatWidth?: number,
+ *         minAisle?: number,
+ *         maxAisle?: number,
+ *         seatsBetweenAisles?: number,
+ *         egressFactor?: number
  *       },
  *       tier1?: {
  *         targetCValue?: number,
  *         numRows?: number,
  *         firstRowDist?: number,
+ *         firstRowDistance?: number,
  *         firstRowElev?: number,
+ *         firstRowElevation?: number,
  *         treadDepth?: number,
  *         riserHeight?: number,
  *         eyeHeight?: number,
@@ -129,8 +142,7 @@ function createDefaultTier(overrides = {}) {
     };
 }
 
-/** @returns {AppStateData} */
-function createDefaultStateData() {
+function createBaseDefaultStateData() {
     return {
         _version: APP_STATE_VERSION,
         sport: 'Football',
@@ -174,6 +186,60 @@ function createDefaultStateData() {
         ],
         bookmarks: []
     };
+}
+
+/** @returns {AppStateData} */
+function createDefaultStateData() {
+    const state = createBaseDefaultStateData();
+    const template = getTemplate('Ice Hockey');
+    const templateDefaults = template?.defaults && typeof template.defaults === 'object'
+        ? template.defaults
+        : {};
+    const defaultTier = state.tiers[0];
+    const templateSideLength = Number(template?.field_length ?? template?.straight_length);
+
+    state.sport = 'Ice Hockey';
+    state.setup.customRunoff = templateDefaults.setup?.customRunoff ?? template?.runoff ?? state.setup.customRunoff;
+    state.setup.focalX = clampTemplateFocalXFt(template, templateDefaults.setup?.focalX ?? state.setup.focalX);
+    state.setup.focalZ = templateDefaults.setup?.focalZ ?? state.setup.focalZ;
+    state.bowl.type = templateDefaults.bowl?.type ?? state.bowl.type;
+    state.bowl.cornerRad = templateDefaults.bowl?.cornerRad
+        ?? templateDefaults.bowl?.radius
+        ?? state.bowl.cornerRad;
+    state.bowl.sideLength = templateDefaults.bowl?.sideLength
+        ?? (Number.isFinite(templateSideLength) ? templateSideLength : state.bowl.sideLength);
+    state.bowl.structuralDepth = templateDefaults.bowl?.structuralDepth ?? state.bowl.structuralDepth;
+    state.bowl.structuralProfileMode = templateDefaults.bowl?.structuralProfileMode
+        ?? state.bowl.structuralProfileMode;
+    state.bowl.straightAisleMode = templateDefaults.bowl?.straightAisleMode
+        ?? state.bowl.straightAisleMode;
+    state.bowl.chamferAisleMode = templateDefaults.bowl?.chamferAisleMode
+        ?? state.bowl.chamferAisleMode;
+    state.occupancy.seatWidth = templateDefaults.occupancy?.seatWidth ?? state.occupancy.seatWidth;
+    state.occupancy.minAisle = templateDefaults.occupancy?.minAisle ?? state.occupancy.minAisle;
+    state.occupancy.maxAisle = templateDefaults.occupancy?.maxAisle ?? state.occupancy.maxAisle;
+    state.occupancy.seatsBetweenAisles = templateDefaults.occupancy?.seatsBetweenAisles
+        ?? state.occupancy.seatsBetweenAisles;
+    state.occupancy.egressFactor = templateDefaults.occupancy?.egressFactor ?? state.occupancy.egressFactor;
+    state.tiers[0] = createDefaultTier({
+        ...defaultTier,
+        enabled: true,
+        profileType: templateDefaults.tier1?.profileType ?? defaultTier.profileType,
+        cValue: templateDefaults.tier1?.targetCValue ?? defaultTier.cValue,
+        numRows: templateDefaults.tier1?.numRows ?? defaultTier.numRows,
+        firstRowDist: templateDefaults.tier1?.firstRowDist
+            ?? templateDefaults.tier1?.firstRowDistance
+            ?? defaultTier.firstRowDist,
+        firstRowElev: templateDefaults.tier1?.firstRowElev
+            ?? templateDefaults.tier1?.firstRowElevation
+            ?? defaultTier.firstRowElev,
+        treadDepth: templateDefaults.tier1?.treadDepth ?? defaultTier.treadDepth,
+        riserHeight: templateDefaults.tier1?.riserHeight ?? defaultTier.riserHeight,
+        eyeHeight: templateDefaults.tier1?.eyeHeight ?? defaultTier.eyeHeight,
+        eyeSetback: templateDefaults.tier1?.eyeSetback ?? defaultTier.eyeSetback
+    });
+
+    return state;
 }
 
 /** @returns {AppStateData} */
@@ -669,9 +735,26 @@ const appStateMethods = {
             bowl: {
                 type: templateDefaults.bowl?.type,
                 cornerRad: templateDefaults.bowl?.cornerRad ?? templateDefaults.bowl?.radius,
-                sideLength: templateDefaults.bowl?.sideLength ?? getTemplateSideLength(template, this.bowl.sideLength)
+                sideLength: templateDefaults.bowl?.sideLength ?? getTemplateSideLength(template, this.bowl.sideLength),
+                structuralDepth: templateDefaults.bowl?.structuralDepth,
+                structuralProfileMode: templateDefaults.bowl?.structuralProfileMode,
+                straightAisleMode: templateDefaults.bowl?.straightAisleMode,
+                chamferAisleMode: templateDefaults.bowl?.chamferAisleMode
             },
-            tiers: [templateDefaults.tier1 ?? {}, {}, {}]
+            occupancy: {
+                seatWidth: templateDefaults.occupancy?.seatWidth,
+                minAisle: templateDefaults.occupancy?.minAisle,
+                maxAisle: templateDefaults.occupancy?.maxAisle,
+                seatsBetweenAisles: templateDefaults.occupancy?.seatsBetweenAisles,
+                egressFactor: templateDefaults.occupancy?.egressFactor
+            },
+            tiers: [{
+                ...templateDefaults.tier1,
+                firstRowDist: templateDefaults.tier1?.firstRowDist
+                    ?? templateDefaults.tier1?.firstRowDistance,
+                firstRowElev: templateDefaults.tier1?.firstRowElev
+                    ?? templateDefaults.tier1?.firstRowElevation
+            }, {}, {}]
         };
 
         return this.mergeJSON(partialState);

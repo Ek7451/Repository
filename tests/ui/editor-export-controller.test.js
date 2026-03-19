@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { ProfileSolver } from '../../core/profile-solver.js';
 import { EditorExportController } from '../../ui/editor-export-controller.js';
 
 function createSolver({ tierIndex = 0 } = {}) {
@@ -43,6 +42,20 @@ function createSolver({ tierIndex = 0 } = {}) {
 }
 
 function createFieldRenderer() {
+    const rowSeatCounts = [60, 60];
+    const rowSummaries = rowSeatCounts.map((seatCount, rowIndex) => ({
+        rowIndex,
+        rowNumber: rowIndex + 1,
+        seatCount,
+        sectionCount: 1,
+        maxContinuousSectionSeats: seatCount,
+        pathSeatCounts: [{ pathIndex: 0, seatCount }],
+        linearLengthFt: rowIndex === 0 ? 120 : 132,
+        linearLengthPerRunFt: rowIndex === 0 ? 120 : 132,
+        seatCountPerRun: seatCount,
+        sectionCountPerRun: 1
+    }));
+
     return {
         calculateRowLength: vi.fn(() => 120),
         generateTierAisleLayout: vi.fn(() => ({
@@ -57,11 +70,46 @@ function createFieldRenderer() {
                 actualSections: 1,
                 allSectionPathsClosed: true,
                 backRowSectionSeatCounts: [60],
-                sectionOccupancyTotals: [60],
+                sectionOccupancyTotals: [120],
                 aisleOccupancyTotals: [30],
+                avgBackRowSeatsPerSection: 60,
+                maxBackRowSeatsPerSection: 60,
+                minBackRowSeatsPerSection: 60,
+                tierSeatCount: 120,
+                largestSectionOccupancy: 120,
+                maxRequiredAisleWidthIn: 6,
+                maxGoverningAisleWidthIn: 48,
+                minRenderedAisleWidthIn: 48,
+                maxRenderedAisleWidthIn: 48,
                 requiredWidthIn: 6,
                 governingWidthIn: 48,
                 renderedAisleWidthIn: 48,
+                rowSummaries,
+                sections: [{
+                    pathIndex: 0,
+                    slotIndex: 0,
+                    aisleIndexA: 0,
+                    aisleIndexB: 0,
+                    rowSeatCounts,
+                    occupancy: 120,
+                    frontRowSeats: 60,
+                    backRowSeats: 60,
+                    minSeatsPerRow: 60,
+                    maxSeatsPerRow: 60,
+                    avgSeatsPerRow: 60
+                }],
+                aisles: [{
+                    aisleIndex: 0,
+                    pathIndex: 0,
+                    tributaryOccupancy: 30,
+                    requiredWidthIn: 6,
+                    governingWidthIn: 48,
+                    renderedWidthIn: 48,
+                    renderedWidthFt: 4,
+                    legalMaxOccupantsPerAisle: 360,
+                    withinMaxWidth: true,
+                    renderedWidthCompliant: true
+                }],
                 compliance: {
                     seatCapCompliant: true,
                     egressCapCompliant: true,
@@ -163,6 +211,13 @@ function createExportContext(overrides = {}) {
         solvers: [createSolver()],
         activeSolvers: [createSolver()],
         tierAisleLayouts: [],
+        configurationSummary: {
+            totalOccupancyAllTiers: 120,
+            totalAislesAllTiers: 1,
+            totalSectionsAllTiers: 1,
+            tierSeatCounts: [{ tierIndex: 0, tierSeatCount: 120 }],
+            maxRequiredAisleWidthInOverall: 6
+        },
         structuralDepthFt: 1.5,
         offsetCorrection: 0,
         ...overrides
@@ -203,14 +258,6 @@ afterEach(() => {
 
 describe('EditorExportController', () => {
     test('builds the current json export descriptor contract', async () => {
-        const calculateTierMetrics = vi.spyOn(ProfileSolver, 'calculateTierMetrics').mockReturnValue(/** @type {any} */ ({
-            requiredWidth: 80,
-            aisleWidth: 48,
-            numAisles: 1,
-            numSections: 1,
-            seatsPerRow: 60,
-            occupantsPerSection: 120
-        }));
         const controller = createController();
 
         const descriptor = await controller.buildDescriptor('json');
@@ -236,26 +283,26 @@ describe('EditorExportController', () => {
                 targetCValue: 4
             },
             totals: {
-                enabledTierCount: 1
+                enabledTierCount: 1,
+                totalOccupancy: 120
             }
         });
         expect(payload.tiers).toHaveLength(1);
         expect(payload.tiers[0]).toMatchObject({
             tierIndex: 0,
-            totalOccupancy: 60,
+            totalOccupancy: 120,
             actualLayout: {
                 sectionCount: 1
             },
             egressFinal: {
                 requiredWidthIn: 6,
-                governingWidthIn: 48
+                governingWidthIn: 48,
+                renderedWidthMinIn: 48,
+                renderedWidthMaxIn: 48,
+                renderedWidthVaries: false
             }
         });
-        expect(payload.tiers[0].egressEstimate).toMatchObject({
-            estimatedSeatsPerSectionAvg: 120
-        });
-
-        calculateTierMetrics.mockRestore();
+        expect(payload.tiers[0].egressEstimate).toBeNull();
     });
 
     test('builds the current config export descriptor contract', async () => {
@@ -298,14 +345,6 @@ describe('EditorExportController', () => {
     });
 
     test('builds the current plan dxf descriptor contract', async () => {
-        const calculateTierMetrics = vi.spyOn(ProfileSolver, 'calculateTierMetrics').mockReturnValue(/** @type {any} */ ({
-            requiredWidth: 80,
-            aisleWidth: 48,
-            numAisles: 1,
-            numSections: 1,
-            seatsPerRow: 60,
-            occupantsPerSection: 120
-        }));
         const controller = createController();
 
         const descriptor = await controller.buildDescriptor('plan-dxf');
@@ -317,8 +356,6 @@ describe('EditorExportController', () => {
         expect(descriptor.content).toContain('Field_Edge');
         expect(descriptor.content).toContain('Tier_1_Plan');
         expect(descriptor.content).toContain('Tier_1_Aisles');
-
-        calculateTierMetrics.mockRestore();
     });
 
     test('short-circuits rhino export when there is no scene geometry', async () => {
@@ -336,10 +373,6 @@ describe('EditorExportController', () => {
     });
 
     test('uses core tier-index fallback when building the public study-results descriptor', async () => {
-        const calculateTierMetrics = vi.spyOn(ProfileSolver, 'calculateTierMetrics').mockReturnValue(/** @type {any} */ ({
-            capacity: 120,
-            numAisles: 2
-        }));
         const getBowlGeometrySegments = vi.fn(() => []);
         const getTierSectionMetricsOverlayData = vi.fn(() => ({ sectionLabels: [], rowSeatLabels: [] }));
         const getTierAisleBandPolygons = vi.fn(() => []);
@@ -348,7 +381,72 @@ describe('EditorExportController', () => {
                 activeSolvers: [{ tierIndex: '4', rows: [{ x: 20, tread_depth: 2 }] }],
                 bowlConfig: { type: 'Full' },
                 egressParams: { seatWidthIn: 20 },
-                tierAisleLayouts: [{ tierIndex: '4', aisleWidthFt: 4 }]
+                tierAisleLayouts: [{
+                    tierIndex: '4',
+                    aisleWidthFt: 4,
+                    aisles: [{ pathIndex: 0 }],
+                    sectionSummary: {
+                        actualAisles: 1,
+                        actualSections: 1,
+                        tierSeatCount: 24,
+                        maxRequiredAisleWidthIn: 4.8,
+                        maxGoverningAisleWidthIn: 48,
+                        minRenderedAisleWidthIn: 48,
+                        maxRenderedAisleWidthIn: 48,
+                        largestSectionOccupancy: 24,
+                        backRowSectionSeatCounts: [24],
+                        aisleOccupancyTotals: [12],
+                        rowSummaries: [{
+                            rowIndex: 0,
+                            rowNumber: 1,
+                            seatCount: 24,
+                            sectionCount: 1,
+                            maxContinuousSectionSeats: 24,
+                            pathSeatCounts: [{ pathIndex: 0, seatCount: 24 }],
+                            linearLengthFt: 100,
+                            linearLengthPerRunFt: 100,
+                            seatCountPerRun: 24,
+                            sectionCountPerRun: 1
+                        }],
+                        sections: [{
+                            pathIndex: 0,
+                            slotIndex: 0,
+                            aisleIndexA: 0,
+                            aisleIndexB: 0,
+                            rowSeatCounts: [24],
+                            occupancy: 24,
+                            frontRowSeats: 24,
+                            backRowSeats: 24,
+                            minSeatsPerRow: 24,
+                            maxSeatsPerRow: 24,
+                            avgSeatsPerRow: 24
+                        }],
+                        aisles: [{
+                            aisleIndex: 0,
+                            pathIndex: 0,
+                            tributaryOccupancy: 12,
+                            requiredWidthIn: 4.8,
+                            governingWidthIn: 48,
+                            renderedWidthIn: 48,
+                            renderedWidthFt: 4,
+                            legalMaxOccupantsPerAisle: 360,
+                            withinMaxWidth: true,
+                            renderedWidthCompliant: true
+                        }],
+                        compliance: {
+                            seatCapCompliant: true,
+                            egressCapCompliant: true,
+                            renderedWidthCompliant: true
+                        }
+                    }
+                }],
+                configurationSummary: {
+                    totalOccupancyAllTiers: 24,
+                    totalAislesAllTiers: 1,
+                    totalSectionsAllTiers: 1,
+                    tierSeatCounts: [{ tierIndex: 4, tierSeatCount: 24 }],
+                    maxRequiredAisleWidthInOverall: 4.8
+                }
             }),
             getFieldGeometryPort: () => ({
                 calculateRowLength: vi.fn(() => 100),
@@ -367,8 +465,5 @@ describe('EditorExportController', () => {
             tierNumber: 5,
             name: 'Tier 5'
         });
-        expect(calculateTierMetrics).toHaveBeenCalledTimes(1);
-
-        calculateTierMetrics.mockRestore();
     });
 });

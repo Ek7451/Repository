@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, test } from 'vitest';
-import { DEFAULT_STARTUP_PROFILE } from '../../core/default-starting-profile.js';
 import {
     APP_STATE_VERSION,
     AppState,
@@ -24,11 +23,12 @@ describe('AppState', () => {
     });
 
     test('hydrates legacy phase5 configs into the single AppState object', () => {
-        const legacyBowl = { ...DEFAULT_STARTUP_PROFILE.bowl };
+        const startupProfile = createDefaultAppStateData();
+        const legacyBowl = { ...startupProfile.bowl };
         delete legacyBowl.straightAisleMode;
         delete legacyBowl.chamferAisleMode;
         const legacyConfig = {
-            ...DEFAULT_STARTUP_PROFILE,
+            ...startupProfile,
             _version: 'phase5',
             bowl: {
                 ...legacyBowl,
@@ -39,7 +39,7 @@ describe('AppState', () => {
                 clipSide: 'negative'
             },
             setup: {
-                ...DEFAULT_STARTUP_PROFILE.setup,
+                ...startupProfile.setup,
                 customRunoff: null
             },
             bookmarks: [
@@ -68,7 +68,7 @@ describe('AppState', () => {
             thumbnail: ''
         });
         expect(exported._version).toBe(APP_STATE_VERSION);
-        expect(exported.ui.activeViewTab).toBe(DEFAULT_STARTUP_PROFILE.ui.activeViewTab);
+        expect(exported.ui.activeViewTab).toBe(startupProfile.ui.activeViewTab);
         expect(exported.bowl.straightAisleMode).toBe('perpendicular');
         expect(exported.bowl.chamferAisleMode).toBe('radial');
         expect(AppState.bowl).not.toHaveProperty('clipEnabled');
@@ -82,7 +82,7 @@ describe('AppState', () => {
     });
 
     test('applies sport template defaults without creating a parallel state tree', () => {
-        AppState.fromJSON(DEFAULT_STARTUP_PROFILE);
+        AppState.fromJSON(createDefaultAppStateData());
         AppState.tiers[1].numRows = 18;
 
         const state = AppState.applySportDefaults({
@@ -92,12 +92,27 @@ describe('AppState', () => {
                 field_length: 345,
                 defaults: {
                     setup: { customRunoff: 20, focalZ: 1.5 },
-                    bowl: { radius: 2 },
+                    bowl: {
+                        type: 'Side1',
+                        radius: 2,
+                        sideLength: 340,
+                        structuralDepth: 18,
+                        structuralProfileMode: 'sloped',
+                        straightAisleMode: 'radial',
+                        chamferAisleMode: 'perpendicular'
+                    },
+                    occupancy: {
+                        seatWidth: 21,
+                        minAisle: 44,
+                        maxAisle: 66,
+                        seatsBetweenAisles: 18,
+                        egressFactor: 0.3
+                    },
                     tier1: {
                         targetCValue: 3.5,
                         numRows: 30,
-                        firstRowDist: 32,
-                        firstRowElev: 2,
+                        firstRowDistance: 32,
+                        firstRowElevation: 2,
                         treadDepth: 33,
                         riserHeight: 8,
                         eyeHeight: 3.75,
@@ -111,8 +126,18 @@ describe('AppState', () => {
         expect(AppState.sport).toBe('Soccer');
         expect(AppState.setup.customRunoff).toBe(20);
         expect(AppState.setup.focalZ).toBe(1.5);
+        expect(AppState.bowl.type).toBe('Side1');
         expect(AppState.bowl.cornerRad).toBe(2);
-        expect(AppState.bowl.sideLength).toBe(345);
+        expect(AppState.bowl.sideLength).toBe(340);
+        expect(AppState.bowl.structuralDepth).toBe(18);
+        expect(AppState.bowl.structuralProfileMode).toBe('sloped');
+        expect(AppState.bowl.straightAisleMode).toBe('radial');
+        expect(AppState.bowl.chamferAisleMode).toBe('perpendicular');
+        expect(AppState.occupancy.seatWidth).toBe(21);
+        expect(AppState.occupancy.minAisle).toBe(44);
+        expect(AppState.occupancy.maxAisle).toBe(66);
+        expect(AppState.occupancy.seatsBetweenAisles).toBe(18);
+        expect(AppState.occupancy.egressFactor).toBe(0.3);
         expect(AppState.tiers[0].cValue).toBe(3.5);
         expect(AppState.tiers[1].numRows).toBe(18);
     });
@@ -123,15 +148,23 @@ describe('AppState', () => {
 
         expect(first).not.toBe(second);
         expect(first._version).toBe(APP_STATE_VERSION);
+        expect(first.sport).toBe('Ice Hockey');
         expect(second.tiers[0].enabled).toBe(true);
-        expect(first.setup.focalX).toBe(0);
-        expect(first.bowl.structuralDepth).toBe(DEFAULT_STARTUP_PROFILE.bowl.structuralDepth);
+        expect(first.setup.focalX).toBe(-10);
+        expect(first.setup.customRunoff).toBe(-10);
+        expect(first.setup.focalZ).toBe(2.5);
+        expect(first.bowl.cornerRad).toBe(16);
+        expect(first.bowl.sideLength).toBe(200);
+        expect(first.bowl.structuralDepth).toBe(6);
         expect(first.bowl.structuralProfileMode).toBe('stepped');
         expect(first.bowl.straightAisleMode).toBe('perpendicular');
         expect(first.bowl.chamferAisleMode).toBe('radial');
 
         first.tiers[0].numRows = 99;
-        expect(second.tiers[0].numRows).toBe(30);
+        expect(second.tiers[0].cValue).toBe(3.5);
+        expect(second.tiers[0].numRows).toBe(15);
+        expect(second.tiers[0].firstRowDist).toBe(0);
+        expect(second.tiers[0].firstRowElev).toBe(2);
     });
 
     test('clamps focalX while hydrating and when the selected sport changes', () => {
@@ -172,6 +205,7 @@ describe('AppState', () => {
             arc_angle: 90
         };
 
+        state.sport = 'Football';
         state.setup.customRunoff = null;
         state.setup.focalX = 12.5;
         state.setup.focalZ = 7.5;
@@ -210,12 +244,12 @@ describe('AppState', () => {
             seatsBetweenAisles: 18
         });
         expect(buildPrimaryTierParameters(state)).toEqual({
-            targetCValue: 4,
-            firstRowDistance: 45,
-            firstRowElevation: 6,
+            targetCValue: 3.5,
+            firstRowDistance: 0,
+            firstRowElevation: 2,
             treadDepth: 33,
-            riserHeight: 10,
-            numRows: 30,
+            riserHeight: 12,
+            numRows: 15,
             eyeHeight: 3.75,
             eyeSetback: 6
         });
