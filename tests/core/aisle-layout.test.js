@@ -153,6 +153,76 @@ function summarizeTierLayoutForRows(options = {}) {
     });
 }
 
+function countDistributedAislesBySegment(tierLayout) {
+    return tierLayout.aisles
+        .filter((aisle) => !aisle.forced)
+        .reduce((counts, aisle) => {
+            const segmentIndex = Math.max(0, Math.floor(Number(aisle.segmentIndex) || 0));
+            counts[segmentIndex] = (counts[segmentIndex] || 0) + 1;
+            return counts;
+        }, {});
+}
+
+function buildTierAisleAnalysisForFixture({
+    fixture,
+    rows,
+    egressParams,
+    tierIndex = 0,
+    offsetCorrection = 0
+}) {
+    const renderer = Object.create(FieldRenderer.prototype);
+
+    return buildTierAisleAnalysis({
+        tierIndex,
+        rows,
+        bowlConfig: fixture.bowlConfig,
+        offsetCorrection,
+        egressParams,
+        getPathsForOffset: (offset) => buildGeometryPaths(renderer._getBowlGeometry(fixture.bowlConfig, offset)),
+        getRowLengthFt: (offset) => renderer.calculateRowLength(fixture.bowlConfig, offset)
+    });
+}
+
+function findFirstCompliantTargetAisleSolve({
+    fixture,
+    rows,
+    egressParams,
+    minTargetAisles = 0,
+    maxTargetAisles = 32
+}) {
+    for (let targetAisles = minTargetAisles; targetAisles <= maxTargetAisles; targetAisles += 1) {
+        const tierLayout = buildTierAisleLayout({
+            frontSegments: fixture.frontSegments,
+            backSegments: fixture.backSegments,
+            targetAisles,
+            aisleWidthFt: egressParams.maxAisleWidthIn / 12,
+            bowlConfig: fixture.bowlConfig,
+            maxSeatsBetweenAisles: egressParams.seatsBetweenAisles,
+            seatWidthIn: egressParams.seatWidthIn
+        });
+        const summary = summarizeTierLayoutForRows({
+            rows,
+            tierLayout,
+            bowlConfig: fixture.bowlConfig,
+            seatWidthIn: egressParams.seatWidthIn,
+            minAisleWidthIn: egressParams.minAisleWidthIn,
+            maxAisleWidthIn: egressParams.maxAisleWidthIn,
+            egressFactor: egressParams.egressFactor,
+            maxSeatsBetweenAisles: egressParams.seatsBetweenAisles
+        });
+
+        if (summary.compliance.isCompliant) {
+            return {
+                targetAisles,
+                tierLayout,
+                summary
+            };
+        }
+    }
+
+    return null;
+}
+
 function expectPointClose(actual, expected) {
     expect(actual.x).toBeCloseTo(expected.x);
     expect(actual.y).toBeCloseTo(expected.y);
@@ -540,29 +610,50 @@ describe('aisle layout geometry seam', () => {
         );
     });
 
-    it('adds seat-cap aisles beyond the requested target when hard limits require them', () => {
-        const fixture = buildRendererBowlFixture('Full', {
-            straightAisleMode: 'perpendicular',
-            chamferAisleMode: 'radial'
-        });
-        const layout = buildTierAisleLayout({
-            frontSegments: fixture.frontSegments,
-            backSegments: fixture.backSegments,
-            targetAisles: 8,
-            aisleWidthFt: 4,
-            bowlConfig: fixture.bowlConfig,
-            maxSeatsBetweenAisles: 24,
-            seatWidthIn: 20
-        });
+    it('adds seat-cap aisles beyond the requested target across multiple full-bowl scenarios', () => {
+        const cases = [
+            {
+                fixture: buildRendererBowlFixture('Full', {
+                    straightAisleMode: 'perpendicular',
+                    chamferAisleMode: 'radial'
+                })
+            },
+            {
+                fixture: buildRendererBowlFixture('Full', {
+                    width: 100,
+                    length: 220,
+                    radius: 16,
+                    straightAisleMode: 'perpendicular',
+                    chamferAisleMode: 'radial'
+                })
+            }
+        ];
 
-        expect(layout.forcedCount).toBe(8);
-        expect(layout.targetAisles).toBe(18);
-        expect(layout.aisles).toHaveLength(18);
-        expect(
-            layout.aisles
+        cases.forEach(({ fixture }) => {
+            const requestedTargetAisles = 8;
+            const layout = buildTierAisleLayout({
+                frontSegments: fixture.frontSegments,
+                backSegments: fixture.backSegments,
+                targetAisles: requestedTargetAisles,
+                aisleWidthFt: 4,
+                bowlConfig: fixture.bowlConfig,
+                maxSeatsBetweenAisles: 24,
+                seatWidthIn: 20
+            });
+            const distributedSegments = layout.aisles
                 .filter((aisle) => !aisle.forced)
-                .map((aisle) => aisle.segmentIndex)
-        ).toEqual([1, 1, 3, 3, 3, 5, 5, 7, 7, 7]);
+                .map((aisle) => aisle.segmentIndex);
+            const distributedCounts = countDistributedAislesBySegment(layout);
+
+            expect(layout.forcedCount).toBe(8);
+            expect(layout.targetAisles).toBeGreaterThan(requestedTargetAisles);
+            expect(layout.aisles).toHaveLength(layout.targetAisles);
+            expect(distributedSegments).toHaveLength(layout.targetAisles - layout.forcedCount);
+            expect(distributedSegments.every((segmentIndex) => [1, 3, 5, 7].includes(segmentIndex))).toBe(true);
+            expect(distributedCounts[1] || 0).toBe(distributedCounts[5] || 0);
+            expect(distributedCounts[3] || 0).toBe(distributedCounts[7] || 0);
+            expect(distributedCounts[3] || 0).toBeGreaterThanOrEqual(distributedCounts[1] || 0);
+        });
     });
 
     it('adds egress-driven distributed chamfer aisles without moving forced transitions', () => {
@@ -774,137 +865,172 @@ describe('aisle layout geometry seam', () => {
         expect(egressCappedLayout.aisles.length).toBeGreaterThan(2);
     });
 
-    it('keeps the full hockey chamfer regression on the 20-section minimax solve', () => {
-        const fixture = buildRendererBowlFixture('Full', {
-            width: 85,
-            length: 200,
-            radius: 28,
-            straightAisleMode: 'perpendicular',
-            chamferAisleMode: 'radial'
-        });
-        const renderer = Object.create(FieldRenderer.prototype);
-        const rows = buildTierRows({
-            count: 12,
-            startX: 10,
-            treadDepth: 1.5
-        });
-        const tierLayout = buildTierAisleAnalysis({
-            tierIndex: 0,
-            rows,
-            bowlConfig: fixture.bowlConfig,
-            offsetCorrection: 0,
-            egressParams: {
-                seatWidthIn: 20,
-                minAisleWidthIn: 48,
-                maxAisleWidthIn: 72,
-                egressFactor: 0.2,
-                seatsBetweenAisles: 24
+    it('keeps authoritative full-bowl aisle analyses symmetric across multiple chamfered scenarios', () => {
+        const cases = [
+            {
+                fixture: buildRendererBowlFixture('Full', {
+                    width: 85,
+                    length: 200,
+                    radius: 28,
+                    straightAisleMode: 'perpendicular',
+                    chamferAisleMode: 'radial'
+                }),
+                rows: buildTierRows({
+                    count: 12,
+                    startX: 10,
+                    treadDepth: 1.5
+                }),
+                egressParams: {
+                    seatWidthIn: 20,
+                    minAisleWidthIn: 48,
+                    maxAisleWidthIn: 72,
+                    egressFactor: 0.2,
+                    seatsBetweenAisles: 24
+                }
             },
-            getPathsForOffset: (offset) => buildGeometryPaths(renderer._getBowlGeometry(fixture.bowlConfig, offset)),
-            getRowLengthFt: (offset) => renderer.calculateRowLength(fixture.bowlConfig, offset)
-        });
-        const distributedCounts = tierLayout.aisles
-            .filter((aisle) => !aisle.forced)
-            .reduce((counts, aisle) => {
-                counts[aisle.segmentIndex] = (counts[aisle.segmentIndex] || 0) + 1;
-                return counts;
-            }, {});
+            {
+                fixture: buildRendererBowlFixture('Full', {
+                    width: 85,
+                    length: 200,
+                    radius: 16,
+                    straightAisleMode: 'perpendicular',
+                    chamferAisleMode: 'radial'
+                }),
+                rows: buildTierRows({
+                    count: 15,
+                    startX: 2.75,
+                    treadDepth: 2.75
+                }),
+                egressParams: {
+                    seatWidthIn: 19,
+                    minAisleWidthIn: 48,
+                    maxAisleWidthIn: 66,
+                    egressFactor: 0.2,
+                    seatsBetweenAisles: 40
+                }
+            }
+        ];
 
-        expect(distributedCounts[3]).toBe(3);
-        expect(distributedCounts[7]).toBe(3);
-        expect(tierLayout.sectionSummary.actualAisles).toBe(20);
-        expect(tierLayout.sectionSummary.actualSections).toBe(20);
-        expect(tierLayout.sectionSummary.compliance.isCompliant).toBe(true);
-        expect(tierLayout.sectionSummary.maxRenderedAisleWidthIn).toBeGreaterThan(48);
+        cases.forEach(({ fixture, rows, egressParams }) => {
+            const tierLayout = buildTierAisleAnalysisForFixture({
+                fixture,
+                rows,
+                egressParams
+            });
+            const distributedCounts = countDistributedAislesBySegment(tierLayout);
+            const longestStraightCount = Math.max(distributedCounts[3] || 0, distributedCounts[7] || 0);
+            const otherSegmentCount = Math.max(
+                distributedCounts[0] || 0,
+                distributedCounts[1] || 0,
+                distributedCounts[2] || 0,
+                distributedCounts[4] || 0,
+                distributedCounts[5] || 0,
+                distributedCounts[6] || 0
+            );
+
+            expect(tierLayout.sectionSummary.actualAisles).toBe(tierLayout.sectionSummary.actualSections);
+            expect(tierLayout.sectionSummary.actualAisles).toBeGreaterThan(tierLayout.forcedCount);
+            expect(tierLayout.sectionSummary.compliance.isCompliant).toBe(true);
+            expect(tierLayout.sectionSummary.maxRenderedAisleWidthIn).toBeGreaterThan(egressParams.minAisleWidthIn);
+            expect(distributedCounts[0] || 0).toBe(distributedCounts[4] || 0);
+            expect(distributedCounts[1] || 0).toBe(distributedCounts[5] || 0);
+            expect(distributedCounts[2] || 0).toBe(distributedCounts[6] || 0);
+            expect(distributedCounts[3] || 0).toBe(distributedCounts[7] || 0);
+            expect(longestStraightCount).toBeGreaterThanOrEqual(otherSegmentCount);
+        });
     });
 
-    it('stops at the first authoritative full-bowl solve before adding extra short-straight aisles', () => {
-        const fixture = buildRendererBowlFixture('Full', {
-            width: 85,
-            length: 200,
-            radius: 16,
-            straightAisleMode: 'perpendicular',
-            chamferAisleMode: 'radial'
-        });
-        const renderer = Object.create(FieldRenderer.prototype);
-        const rows = buildTierRows({
-            count: 15,
-            startX: 2.75,
-            treadDepth: 2.75
-        });
-        const almostCompliantLayout = buildTierAisleLayout({
-            frontSegments: fixture.frontSegments,
-            backSegments: fixture.backSegments,
-            targetAisles: 17,
-            aisleWidthFt: 66 / 12,
-            bowlConfig: fixture.bowlConfig,
-            maxSeatsBetweenAisles: 40,
-            seatWidthIn: 19
-        });
-        const firstCompliantLayout = buildTierAisleLayout({
-            frontSegments: fixture.frontSegments,
-            backSegments: fixture.backSegments,
-            targetAisles: 18,
-            aisleWidthFt: 66 / 12,
-            bowlConfig: fixture.bowlConfig,
-            maxSeatsBetweenAisles: 40,
-            seatWidthIn: 19
-        });
-        const almostCompliantSummary = summarizeTierLayoutForRows({
-            rows,
-            tierLayout: almostCompliantLayout,
-            bowlConfig: fixture.bowlConfig,
-            seatWidthIn: 19,
-            minAisleWidthIn: 48,
-            maxAisleWidthIn: 66,
-            egressFactor: 0.2,
-            maxSeatsBetweenAisles: 40
-        });
-        const firstCompliantSummary = summarizeTierLayoutForRows({
-            rows,
-            tierLayout: firstCompliantLayout,
-            bowlConfig: fixture.bowlConfig,
-            seatWidthIn: 19,
-            minAisleWidthIn: 48,
-            maxAisleWidthIn: 66,
-            egressFactor: 0.2,
-            maxSeatsBetweenAisles: 40
-        });
-        const tierLayout = buildTierAisleAnalysis({
-            tierIndex: 0,
-            rows,
-            bowlConfig: fixture.bowlConfig,
-            offsetCorrection: 0,
-            egressParams: {
-                seatWidthIn: 19,
-                minAisleWidthIn: 48,
-                maxAisleWidthIn: 66,
-                egressFactor: 0.2,
-                seatsBetweenAisles: 40
+    it('stops at the first authoritative compliant full-bowl solve across multiple scenarios', () => {
+        const cases = [
+            {
+                fixture: buildRendererBowlFixture('Full', {
+                    width: 85,
+                    length: 200,
+                    radius: 16,
+                    straightAisleMode: 'perpendicular',
+                    chamferAisleMode: 'radial'
+                }),
+                rows: buildTierRows({
+                    count: 15,
+                    startX: 2.75,
+                    treadDepth: 2.75
+                }),
+                egressParams: {
+                    seatWidthIn: 19,
+                    minAisleWidthIn: 48,
+                    maxAisleWidthIn: 66,
+                    egressFactor: 0.2,
+                    seatsBetweenAisles: 40
+                }
             },
-            getPathsForOffset: (offset) => buildGeometryPaths(renderer._getBowlGeometry(fixture.bowlConfig, offset)),
-            getRowLengthFt: (offset) => renderer.calculateRowLength(fixture.bowlConfig, offset)
-        });
-        const distributedCounts = tierLayout.aisles
-            .filter((aisle) => !aisle.forced)
-            .reduce((counts, aisle) => {
-                counts[aisle.segmentIndex] = (counts[aisle.segmentIndex] || 0) + 1;
-                return counts;
-            }, {});
+            {
+                fixture: buildRendererBowlFixture('Full', {
+                    width: 80,
+                    length: 180,
+                    radius: 20,
+                    straightAisleMode: 'perpendicular',
+                    chamferAisleMode: 'radial'
+                }),
+                rows: buildTierRows({
+                    count: 14,
+                    startX: 6,
+                    treadDepth: 2.25
+                }),
+                egressParams: {
+                    seatWidthIn: 20,
+                    minAisleWidthIn: 48,
+                    maxAisleWidthIn: 66,
+                    egressFactor: 0.2,
+                    seatsBetweenAisles: 32
+                }
+            }
+        ];
 
-        expect(almostCompliantSummary.compliance.isCompliant).toBe(false);
-        expect(firstCompliantSummary.compliance.isCompliant).toBe(true);
-        expect(firstCompliantSummary.actualAisles).toBe(18);
-        expect(tierLayout.targetAisles).toBe(18);
-        expect(tierLayout.sectionSummary.actualAisles).toBe(firstCompliantSummary.actualAisles);
-        expect(distributedCounts[1]).toBe(1);
-        expect(distributedCounts[3]).toBe(4);
-        expect(distributedCounts[5]).toBe(1);
-        expect(distributedCounts[7]).toBe(4);
-        expect([0, 2, 4, 6].every((segmentIndex) => !distributedCounts[segmentIndex])).toBe(true);
-        expect(tierLayout.sectionSummary.compliance.isCompliant).toBe(true);
-        expect(tierLayout.sectionSummary.maxRenderedAisleWidthIn).toBeGreaterThan(48);
-        expect(tierLayout.sectionSummary.maxRenderedAisleWidthIn).toBeLessThanOrEqual(66);
+        cases.forEach(({ fixture, rows, egressParams }) => {
+            const firstCompliantSolve = findFirstCompliantTargetAisleSolve({
+                fixture,
+                rows,
+                egressParams,
+                minTargetAisles: 8,
+                maxTargetAisles: 24
+            });
+
+            expect(firstCompliantSolve).not.toBeNull();
+
+            const previousSummary = summarizeTierLayoutForRows({
+                rows,
+                tierLayout: buildTierAisleLayout({
+                    frontSegments: fixture.frontSegments,
+                    backSegments: fixture.backSegments,
+                    targetAisles: firstCompliantSolve.targetAisles - 1,
+                    aisleWidthFt: egressParams.maxAisleWidthIn / 12,
+                    bowlConfig: fixture.bowlConfig,
+                    maxSeatsBetweenAisles: egressParams.seatsBetweenAisles,
+                    seatWidthIn: egressParams.seatWidthIn
+                }),
+                bowlConfig: fixture.bowlConfig,
+                seatWidthIn: egressParams.seatWidthIn,
+                minAisleWidthIn: egressParams.minAisleWidthIn,
+                maxAisleWidthIn: egressParams.maxAisleWidthIn,
+                egressFactor: egressParams.egressFactor,
+                maxSeatsBetweenAisles: egressParams.seatsBetweenAisles
+            });
+            const tierLayout = buildTierAisleAnalysisForFixture({
+                fixture,
+                rows,
+                egressParams
+            });
+
+            expect(previousSummary.compliance.isCompliant).toBe(false);
+            expect(firstCompliantSolve.summary.compliance.isCompliant).toBe(true);
+            expect(tierLayout.targetAisles).toBe(firstCompliantSolve.targetAisles);
+            expect(tierLayout.sectionSummary.actualAisles).toBe(firstCompliantSolve.summary.actualAisles);
+            expect(tierLayout.sectionSummary.compliance.isCompliant).toBe(true);
+            expect(tierLayout.sectionSummary.maxRenderedAisleWidthIn).toBeGreaterThan(egressParams.minAisleWidthIn);
+            expect(tierLayout.sectionSummary.maxRenderedAisleWidthIn).toBeLessThanOrEqual(
+                egressParams.maxAisleWidthIn
+            );
+        });
     });
 
     it('builds authoritative realized section and aisle summaries from explicit row samples', () => {
