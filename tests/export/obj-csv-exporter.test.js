@@ -271,6 +271,82 @@ describe('buildStudyResultsJsonPayload', () => {
             estimatedNumSections: 1
         });
     });
+
+    test('does not synthesize final egress exports from legacy metrics when section summary is missing', () => {
+        const payload = buildStudyResultsJsonPayload({
+            solvers: [createSolver()],
+            sportName: 'Football',
+            profileType: 'Parabolic',
+            template: {
+                name: 'Football',
+                shape: 'rectangle',
+                field_length: 360,
+                field_width: 160,
+                runoff: 20
+            },
+            bowlConfig: {
+                width: 160,
+                type: 'end'
+            },
+            egressParams: {
+                seatWidthIn: 20,
+                minAisleWidthIn: 48,
+                maxAisleWidthIn: 72,
+                egressFactor: 0.2,
+                seatsBetweenAisles: 20
+            },
+            focalPointFt: { x: 0, z: 1 },
+            primaryTierParameters: {
+                targetCValue: 12,
+                firstRowDistance: 8,
+                firstRowElevation: 1,
+                treadDepth: 24,
+                riserHeight: 12,
+                numRows: 2,
+                eyeHeight: 4,
+                eyeSetback: 6
+            },
+            configurationSummary: {
+                totalOccupancyAllTiers: 0,
+                totalAislesAllTiers: 0,
+                totalSectionsAllTiers: 0
+            },
+            tierArtifacts: [{
+                tierIndex: 0,
+                tierMetricsEstimate: {
+                    requiredWidth: 48,
+                    aisleWidth: 48,
+                    numAisles: 2,
+                    numSections: 1
+                },
+                tierMetrics: {
+                    capacity: 22,
+                    capacityWidth: '12.0',
+                    governingWidth: '48.0',
+                    aisleWidth: '48.0',
+                    renderedAisleWidth: '48.0',
+                    numAisles: 2,
+                    numSections: 1,
+                    occupantsPerAisleLine: 11
+                },
+                tierLayout: null,
+                overlayData: {
+                    sectionLabels: [],
+                    rowSeatLabels: []
+                }
+            }]
+        });
+
+        expect(payload.tiers[0]).toMatchObject({
+            totalOccupancy: 0,
+            egressFinal: null,
+            egressEstimate: {
+                requiredWidthIn: 48,
+                estimatedNumAisles: 2,
+                estimatedNumSections: 1
+            }
+        });
+    });
 });
 
 describe('buildStudyResultsJsonExportDescriptor', () => {

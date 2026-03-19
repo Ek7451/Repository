@@ -101,8 +101,6 @@ function buildTierExportRecord({
         0,
         Number(sectionSummary?.maxRenderedAisleWidthIn)
             || Number(sectionSummary?.renderedAisleWidthIn)
-            || Number(finalMetrics?.renderedAisleWidth)
-            || (Number(tierLayout?.aisleWidthFt) || 0) * 12.0
     );
     const minRenderedWidthIn = Math.max(
         0,
@@ -168,8 +166,7 @@ function buildTierExportRecord({
 
     const totalOccupancy = Math.max(
         0,
-        Number(sectionSummary?.tierSeatCount)
-            || Number(finalMetrics?.capacity)
+        Number(sectionSummary?.tierSeatCount) || 0
     );
     const rowTotals = rowRecords.map((row) => row.seatsInRowActual);
     const sectionTotals = sectionRecords.map((section) => section.occupancy);
@@ -213,31 +210,29 @@ function buildTierExportRecord({
             sectionsPerRow: summarizeValues(sectionsPerRowCounts),
             rowsPerSection: summarizeValues(rowsPerSectionCounts)
         },
-        egressFinal: (sectionSummary || finalMetrics) ? {
+        egressFinal: sectionSummary ? {
             requiredWidthIn: Number.isFinite(Number(sectionSummary?.maxRequiredAisleWidthIn ?? sectionSummary?.requiredWidthIn))
                 ? +Number(sectionSummary.maxRequiredAisleWidthIn ?? sectionSummary.requiredWidthIn).toFixed(2)
-                : (Number.isFinite(Number(finalMetrics.capacityWidth)) ? +Number(finalMetrics.capacityWidth).toFixed(2) : null),
+                : null,
             governingWidthIn: Number.isFinite(Number(sectionSummary?.maxGoverningAisleWidthIn ?? sectionSummary?.governingWidthIn))
                 ? +Number(sectionSummary.maxGoverningAisleWidthIn ?? sectionSummary.governingWidthIn).toFixed(2)
-                : (Number.isFinite(Number(finalMetrics.governingWidth)) ? +Number(finalMetrics.governingWidth).toFixed(2) : null),
+                : null,
             renderedCommonWidthIn: maxRenderedWidthIn > 0 ? +maxRenderedWidthIn.toFixed(2) : null,
             renderedWidthMinIn: minRenderedWidthIn > 0 ? +minRenderedWidthIn.toFixed(2) : null,
             renderedWidthMaxIn: maxRenderedWidthIn > 0 ? +maxRenderedWidthIn.toFixed(2) : null,
             renderedWidthVaries: !!sectionSummary?.hasVariableRenderedAisleWidths,
             finalNumAisles: Number.isFinite(Number(sectionSummary?.actualAisles))
                 ? Math.round(Number(sectionSummary.actualAisles))
-                : (Number.isFinite(finalMetrics?.numAisles) ? finalMetrics.numAisles : null),
+                : null,
             finalNumSections: Number.isFinite(Number(sectionSummary?.actualSections))
                 ? Math.round(Number(sectionSummary.actualSections))
-                : (Number.isFinite(finalMetrics?.numSections) ? finalMetrics.numSections : null),
+                : null,
             largestSectionOccupancy: Number.isFinite(Number(sectionSummary?.largestSectionOccupancy))
                 ? +Number(sectionSummary.largestSectionOccupancy).toFixed(2)
                 : null,
             maxTributaryOccupancyPerAisle: Number.isFinite(Number(maxTributaryOccupancyPerAisle))
                 ? +Number(maxTributaryOccupancyPerAisle).toFixed(2)
-                : (Number.isFinite(finalMetrics?.occupantsPerAisleLine)
-                    ? +Number(finalMetrics.occupantsPerAisleLine).toFixed(2)
-                    : null)
+                : null
         } : null,
         egressEstimate: estimateMetrics ? {
             requiredWidthIn: Number.isFinite(Number(estimateMetrics.requiredWidth))

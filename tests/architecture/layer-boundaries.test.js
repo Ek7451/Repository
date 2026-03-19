@@ -45,6 +45,12 @@ const liveStateCouplingChecks = [
         reason: 'reads persisted UI state directly'
     }
 ];
+const nonCoreAisleTruthSymbols = [
+    'computeAssignedAisleWidthIn',
+    'computeRequiredAisleWidthIn',
+    'computeAisleTributaryOccupancies',
+    'countSeatsFromCenterlineGapFt'
+];
 
 function collectJsFiles(dirPath) {
     if (!fs.existsSync(dirPath)) return [];
@@ -243,6 +249,36 @@ describe('architecture layer boundaries', () => {
         }
 
         expect(violations).toEqual([]);
+    });
+
+    it('keeps authoritative aisle math calls inside core only', () => {
+        const violations = [];
+
+        for (const layerName of layerDirs.filter((layerName) => layerName !== 'core')) {
+            const files = collectJsFiles(path.join(repoRoot, layerName));
+
+            for (const filePath of files) {
+                const sourceText = fs.readFileSync(filePath, 'utf8');
+
+                for (const symbolName of nonCoreAisleTruthSymbols) {
+                    if (new RegExp(`\\b${symbolName}\\b`).test(sourceText)) {
+                        violations.push(`${toRepoPath(filePath)} references ${symbolName}`);
+                    }
+                }
+            }
+        }
+
+        expect(violations).toEqual([]);
+    });
+
+    it('reads total occupancy in the stats view model from configurationSummary instead of reducing UI metrics', () => {
+        const sourceText = fs.readFileSync(
+            path.join(repoRoot, 'ui', 'stats-view-model.js'),
+            'utf8'
+        );
+
+        expect(sourceText).toContain('configurationSummary?.totalOccupancyAllTiers');
+        expect(sourceText).not.toContain('Array.from(tierMetricsByIndex.values()).reduce');
     });
 });
 

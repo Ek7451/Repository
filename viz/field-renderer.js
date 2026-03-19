@@ -11,11 +11,8 @@ import {
     sampleAisleBand,
     samplePathPointByRatio,
     buildTierAisleAnalysis,
-    buildTierAisleLayoutSummary,
     buildTierAisleReferenceMap,
     buildResolvedTierAisleRatioMap,
-    getTierRenderedAisleWidthFt,
-    getTierRenderedAisleWidthIn,
     pickBestRowAisleSampling,
     resolveTierAisleStationRatios
 } from '../core/aisle-layout.js';
@@ -45,6 +42,29 @@ const FIELD_THEME_COLORS = {
         legendText: '#b2bdca'
     }
 };
+
+function getSectionSummaryAisle(tierLayout, aisleIndex) {
+    const aisle = tierLayout?.sectionSummary?.aisles?.[aisleIndex] ?? null;
+    return aisle && typeof aisle === 'object' ? aisle : null;
+}
+
+function getSectionSummaryAisleWidthFt(tierLayout, aisleIndex) {
+    return Math.max(0, Number(getSectionSummaryAisle(tierLayout, aisleIndex)?.renderedWidthFt) || 0);
+}
+
+function getSectionSummaryAisleWidthIn(tierLayout, aisleIndex) {
+    return Math.max(0, Number(getSectionSummaryAisle(tierLayout, aisleIndex)?.renderedWidthIn) || 0);
+}
+
+function resolveSectionTemplateBoundaryU(path, aisleMap, boundaryKind, aisleIndex, fallbackU) {
+    if (!path) return Number(fallbackU) || 0;
+    if (boundaryKind === 'edge' || !Number.isFinite(Number(aisleIndex))) {
+        return normalizePathU(path, fallbackU);
+    }
+
+    const aisleU = aisleMap instanceof Map ? aisleMap.get(aisleIndex) : NaN;
+    return Number.isFinite(aisleU) ? normalizePathU(path, aisleU) : normalizePathU(path, fallbackU);
+}
 
 const FIELD_TIER_PLAN_COLORS = {
     light: [
@@ -981,56 +1001,6 @@ export class FieldRenderer {
         });
     }
 
-    _summarizeTierLayoutSections(solver, bowlConfig, tierLayout, offsetCorrection = 0, egressOptions = {}) {
-        if (!solver || !Array.isArray(solver.rows) || solver.rows.length === 0) return null;
-        if (!tierLayout || !Array.isArray(tierLayout.aisles) || !Array.isArray(tierLayout.sectionBoundaries)) return null;
-
-        const seatWidthIn = Math.max(1, Number(tierLayout.seatWidthIn) || 0);
-        if (!(seatWidthIn > 0)) return null;
-
-        const pathCache = new Map();
-        const getPathsForOffset = (offset) => {
-            const key = offset.toFixed(6);
-            if (!pathCache.has(key)) {
-                pathCache.set(key, buildGeometryPaths(this._getBowlGeometry(bowlConfig, offset)));
-            }
-            return pathCache.get(key);
-        };
-
-        const backRow = solver.rows[solver.rows.length - 1];
-        if (!backRow) return null;
-        const referencePaths = getPathsForOffset((backRow.x - (backRow.tread_depth * 0.5)) - offsetCorrection);
-        if (!referencePaths.length) return null;
-
-        const chamferCache = new Map();
-        const aisleReferenceMap = this._buildTierAisleReferenceMap(
-            solver,
-            bowlConfig,
-            tierLayout,
-            offsetCorrection,
-            getPathsForOffset,
-            chamferCache
-        );
-
-        return buildTierAisleLayoutSummary({
-            rows: solver.rows,
-            tierLayout,
-            referencePaths,
-            resolveRowAisleSampling: (_rowIndex, row) => this._pickBestRowLabelSampling(
-                (row.x - (row.tread_depth * 0.5)) - offsetCorrection,
-                getPathsForOffset,
-                tierLayout,
-                chamferCache,
-                aisleReferenceMap
-            ),
-            seatWidthIn,
-            minAisleWidthIn: egressOptions?.minAisleWidthIn,
-            maxAisleWidthIn: egressOptions?.maxAisleWidthIn,
-            egressFactor: egressOptions?.egressFactor,
-            maxSeatsBetweenAisles: egressOptions?.maxSeatsBetweenAisles
-        });
-    }
-
     _drawWorldTextLabel(ctx, scale, x, y, text, options = {}) {
         if (!Number.isFinite(x) || !Number.isFinite(y) || !text) return;
         const safeScale = Math.max(1e-6, Number(scale) || 1);
@@ -1119,7 +1089,7 @@ export class FieldRenderer {
 
     _buildTierSectionTemplates(referencePaths, tierLayout, sectionBase) {
         const out = new Map();
-        if (!tierLayout || !Array.isArray(tierLayout.sectionBoundaries)) return out;
+        if (!tierLayout) return out;
 
         // Resolve reference aisle stations directly from stored aisle data (front-path basis).
         const refAisleByPath = new Map();
@@ -1131,35 +1101,85 @@ export class FieldRenderer {
             refAisleByPath.get(pathIndex).set(aisleIndex, u);
         });
 
+        const summarySections = Array.isArray(tierLayout?.sectionSummary?.sections)
+            ? tierLayout.sectionSummary.sections
+            : [];
         let nextSectionNumber = sectionBase;
-        for (let pathIndex = 0; pathIndex < tierLayout.sectionBoundaries.length; pathIndex++) {
+        const pathCount = Math.max(
+            Array.isArray(referencePaths) ? referencePaths.length : 0,
+            Array.isArray(tierLayout.sectionBoundaries) ? tierLayout.sectionBoundaries.length : 0
+        );
+        for (let pathIndex = 0; pathIndex < pathCount; pathIndex++) {
             const path = referencePaths[pathIndex];
-            const boundaries = tierLayout.sectionBoundaries[pathIndex];
             const aisleMap = refAisleByPath.get(pathIndex);
-            if (!path || !Array.isArray(boundaries) || boundaries.length < 2 || !aisleMap) continue;
+            if (!path) continue;
 
             const slots = [];
-            const slotCount = path.closed ? boundaries.length : Math.max(0, boundaries.length - 1);
-            for (let i = 0; i < slotCount; i++) {
-                const a = boundaries[i];
-                const b = path.closed ? boundaries[(i + 1) % boundaries.length] : boundaries[i + 1];
-                const uA = aisleMap.get(a.aisleIndex);
-                const uB = aisleMap.get(b.aisleIndex);
-                if (!Number.isFinite(uA) || !Number.isFinite(uB)) continue;
-                const normUA = normalizePathU(path, uA);
-                const normUB = normalizePathU(path, uB);
-                const midU = interpolatePathSectionU(path, normUA, normUB, 0.5);
-                const midPt = samplePathPointByRatio(path, midU);
-                slots.push({
-                    slotIndex: i,
-                    aisleIndexA: a.aisleIndex,
-                    aisleIndexB: b.aisleIndex,
-                    uA: normUA,
-                    uB: normUB,
-                    midU,
-                    midPt,
-                    sectionNumber: null
+            const pathSections = summarySections.filter((section) => (
+                Math.max(0, Math.floor(Number(section?.pathIndex) || 0)) === pathIndex
+            ));
+
+            if (pathSections.length > 0) {
+                pathSections.forEach((section) => {
+                    const normUA = resolveSectionTemplateBoundaryU(
+                        path,
+                        aisleMap,
+                        section?.startBoundaryKind,
+                        section?.aisleIndexA,
+                        section?.startU
+                    );
+                    const normUB = resolveSectionTemplateBoundaryU(
+                        path,
+                        aisleMap,
+                        section?.endBoundaryKind,
+                        section?.aisleIndexB,
+                        section?.endU
+                    );
+                    const midU = interpolatePathSectionU(path, normUA, normUB, 0.5);
+                    const midPt = samplePathPointByRatio(path, midU);
+                    slots.push({
+                        slotIndex: Math.max(0, Math.floor(Number(section?.slotIndex) || 0)),
+                        aisleIndexA: Number.isFinite(Number(section?.aisleIndexA)) ? section.aisleIndexA : null,
+                        aisleIndexB: Number.isFinite(Number(section?.aisleIndexB)) ? section.aisleIndexB : null,
+                        startBoundaryKind: section?.startBoundaryKind || 'aisle',
+                        endBoundaryKind: section?.endBoundaryKind || 'aisle',
+                        uA: normUA,
+                        uB: normUB,
+                        midU,
+                        midPt,
+                        sectionNumber: null
+                    });
                 });
+            } else {
+                const boundaries = Array.isArray(tierLayout.sectionBoundaries?.[pathIndex])
+                    ? tierLayout.sectionBoundaries[pathIndex]
+                    : [];
+                if (boundaries.length >= 2 && aisleMap) {
+                    const slotCount = path.closed ? boundaries.length : Math.max(0, boundaries.length - 1);
+                    for (let i = 0; i < slotCount; i++) {
+                        const a = boundaries[i];
+                        const b = path.closed ? boundaries[(i + 1) % boundaries.length] : boundaries[i + 1];
+                        const uA = aisleMap.get(a.aisleIndex);
+                        const uB = aisleMap.get(b.aisleIndex);
+                        if (!Number.isFinite(uA) || !Number.isFinite(uB)) continue;
+                        const normUA = normalizePathU(path, uA);
+                        const normUB = normalizePathU(path, uB);
+                        const midU = interpolatePathSectionU(path, normUA, normUB, 0.5);
+                        const midPt = samplePathPointByRatio(path, midU);
+                        slots.push({
+                            slotIndex: i,
+                            aisleIndexA: a.aisleIndex,
+                            aisleIndexB: b.aisleIndex,
+                            startBoundaryKind: 'aisle',
+                            endBoundaryKind: 'aisle',
+                            uA: normUA,
+                            uB: normUB,
+                            midU,
+                            midPt,
+                            sectionNumber: null
+                        });
+                    }
+                }
             }
             if (slots.length < 1) continue;
 
@@ -1363,7 +1383,7 @@ export class FieldRenderer {
                 );
                 if (!ratios) continue;
 
-                const widthFt = getTierRenderedAisleWidthFt(tierLayout, i);
+                const widthFt = getSectionSummaryAisleWidthFt(tierLayout, i);
                 if (widthFt <= 0) continue;
                 const bandFront = sampleAisleBand(pathFront, ratios.uFront, widthFt);
                 const bandBack = sampleAisleBand(pathBack, ratios.uBack, widthFt);
@@ -1455,25 +1475,44 @@ export class FieldRenderer {
             sectionTemplates.forEach((slots, pathIndex) => {
                 const path = centerPaths[pathIndex];
                 const aisleMap = aisleRatiosByPath.get(pathIndex);
-                if (!path || !aisleMap || slots.length < 1) return;
+                if (!path || slots.length < 1) return;
 
                 for (let i = 0; i < slots.length; i++) {
                     const slot = slots[i];
-                    const sectionRecord = sectionByKey.get(`${pathIndex}:${i}`);
+                    const sectionRecord = sectionByKey.get(`${pathIndex}:${slot.slotIndex}`);
                     const seatCount = Math.max(0, Math.round(Number(sectionRecord?.rowSeatCounts?.[r]) || 0));
                     if (!(seatCount > 0)) continue;
 
-                    const uA = aisleMap.get(slot.aisleIndexA);
-                    const uB = aisleMap.get(slot.aisleIndexB);
+                    const uA = resolveSectionTemplateBoundaryU(
+                        path,
+                        aisleMap,
+                        slot.startBoundaryKind,
+                        slot.aisleIndexA,
+                        slot.uA
+                    );
+                    const uB = resolveSectionTemplateBoundaryU(
+                        path,
+                        aisleMap,
+                        slot.endBoundaryKind,
+                        slot.aisleIndexB,
+                        slot.uB
+                    );
                     if (!Number.isFinite(uA) || !Number.isFinite(uB)) continue;
 
                     const ptA = samplePathPointByRatio(path, uA);
                     const ptB = samplePathPointByRatio(path, uB);
+                    const hasAisleA = Number.isFinite(Number(slot.aisleIndexA));
+                    const hasAisleB = Number.isFinite(Number(slot.aisleIndexB));
                     const rightIsA = (ptA.x > ptB.x + 1e-6) || (Math.abs(ptA.x - ptB.x) <= 1e-6 && ptA.y >= ptB.y);
                     const centerGapFt = sectionDistanceOnPath(path, uA, uB);
-                    const adjacentAisleWidthFt = rightIsA
-                        ? getTierRenderedAisleWidthFt(tierLayout, slot.aisleIndexA)
-                        : getTierRenderedAisleWidthFt(tierLayout, slot.aisleIndexB);
+                    const preferredAisleIndex = hasAisleA && !hasAisleB
+                        ? slot.aisleIndexA
+                        : ((!hasAisleA && hasAisleB)
+                            ? slot.aisleIndexB
+                            : (rightIsA ? slot.aisleIndexA : slot.aisleIndexB));
+                    const adjacentAisleWidthFt = Number.isFinite(Number(preferredAisleIndex))
+                        ? getSectionSummaryAisleWidthFt(tierLayout, preferredAisleIndex)
+                        : 0;
                     const labelCenterOffsetFt = (adjacentAisleWidthFt * 0.5) + ROW_SEATCOUNT_LABEL_EDGE_OFFSET_FT;
                     const edgeInsetT = centerGapFt > 1e-6
                         ? Math.max(
@@ -1481,7 +1520,7 @@ export class FieldRenderer {
                             Math.min(ROW_SEATCOUNT_LABEL_MAX_T, labelCenterOffsetFt / centerGapFt)
                         )
                         : 0.2;
-                    const labelU = rightIsA
+                    const labelU = preferredAisleIndex === slot.aisleIndexA
                         ? interpolatePathSectionU(path, uA, uB, edgeInsetT)
                         : interpolatePathSectionU(path, uA, uB, 1 - edgeInsetT);
                     const labelPt = samplePathPointByRatio(path, labelU);
@@ -1491,7 +1530,7 @@ export class FieldRenderer {
                         rowIndex: r,
                         sectionNumber: Number.isFinite(slot.sectionNumber) ? slot.sectionNumber : null,
                         pathIndex,
-                        slotIndex: i,
+                        slotIndex: slot.slotIndex,
                         x: labelPt.x,
                         y: labelPt.y,
                         seatCount,
@@ -1537,11 +1576,35 @@ export class FieldRenderer {
 
                 let labelX = NaN;
                 let labelY = NaN;
-                if (frontPath && backPath && frontAisles && backAisles) {
-                    const uFA = frontAisles.get(slot.aisleIndexA);
-                    const uFB = frontAisles.get(slot.aisleIndexB);
-                    const uBA = backAisles.get(slot.aisleIndexA);
-                    const uBB = backAisles.get(slot.aisleIndexB);
+                if (frontPath && backPath) {
+                    const uFA = resolveSectionTemplateBoundaryU(
+                        frontPath,
+                        frontAisles,
+                        slot.startBoundaryKind,
+                        slot.aisleIndexA,
+                        slot.uA
+                    );
+                    const uFB = resolveSectionTemplateBoundaryU(
+                        frontPath,
+                        frontAisles,
+                        slot.endBoundaryKind,
+                        slot.aisleIndexB,
+                        slot.uB
+                    );
+                    const uBA = resolveSectionTemplateBoundaryU(
+                        backPath,
+                        backAisles,
+                        slot.startBoundaryKind,
+                        slot.aisleIndexA,
+                        slot.uA
+                    );
+                    const uBB = resolveSectionTemplateBoundaryU(
+                        backPath,
+                        backAisles,
+                        slot.endBoundaryKind,
+                        slot.aisleIndexB,
+                        slot.uB
+                    );
                     if ([uFA, uFB, uBA, uBB].every(Number.isFinite)) {
                         const midFront = samplePathPointByRatio(frontPath, interpolatePathSectionU(frontPath, uFA, uFB, 0.5));
                         const midBack = samplePathPointByRatio(backPath, interpolatePathSectionU(backPath, uBA, uBB, 0.5));
@@ -1556,14 +1619,14 @@ export class FieldRenderer {
                     labelY = fallbackPt.y;
                 }
 
-                const sectionRecord = sectionByKey.get(`${pathIndex}:${i}`);
+                const sectionRecord = sectionByKey.get(`${pathIndex}:${slot.slotIndex}`);
                 const occupancy = Number.isFinite(sectionRecord?.occupancy)
                     ? Math.round(sectionRecord.occupancy)
                     : null;
                 sectionLabels.push({
                     tierIndex: tierIdx,
                     pathIndex,
-                    slotIndex: i,
+                    slotIndex: slot.slotIndex,
                     sectionNumber: slot.sectionNumber,
                     x: labelX,
                     y: labelY,
@@ -1662,7 +1725,7 @@ export class FieldRenderer {
                 }
             }
 
-            const renderedWidthIn = getTierRenderedAisleWidthIn(tierLayout, aisleIndex);
+            const renderedWidthIn = getSectionSummaryAisleWidthIn(tierLayout, aisleIndex);
             if (renderedWidthIn > 0 && widthFrontPath && widthBackPath) {
                 const widthRatios = this._resolveTierAisleStationRatios(
                     widthFrontPath,
@@ -1746,7 +1809,7 @@ export class FieldRenderer {
                 );
                 if (!ratios) continue;
 
-                const widthFt = getTierRenderedAisleWidthFt(tierLayout, i);
+                const widthFt = getSectionSummaryAisleWidthFt(tierLayout, i);
                 if (widthFt <= 0) continue;
                 const bandFront = sampleAisleBand(pathFront, ratios.uFront, widthFt);
                 const bandBack = sampleAisleBand(pathBack, ratios.uBack, widthFt);

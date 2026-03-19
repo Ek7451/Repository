@@ -194,6 +194,8 @@ export class EditorControls {
         this._tier2Initialized = false;
         this._tier3Initialized = false;
         this._pendingManualCommitIds = new Set();
+        this._immediateManualCommitIds = new Set();
+        this._manualCommitRegistrations = new Map();
     }
 
     init() {
@@ -208,6 +210,9 @@ export class EditorControls {
         this._cleanup.forEach((dispose) => dispose());
         this._cleanup = [];
         this._initialized = false;
+        this._pendingManualCommitIds.clear();
+        this._immediateManualCommitIds.clear();
+        this._manualCommitRegistrations.clear();
     }
 
     syncFromState() {
@@ -225,6 +230,7 @@ export class EditorControls {
         if (runoffInput) {
             runoffInput.value = String(this.state.setup?.customRunoff ?? '');
             this._clearPendingManualCommit('customRunoffInput');
+            this._clearImmediateManualCommit('customRunoffInput');
         }
         if (runoffSlider) {
             runoffSlider.value = String(runoffValue);
@@ -369,6 +375,10 @@ export class EditorControls {
     }
 
     _wireEvents() {
+        this._addListener(document, 'pointerdown', (event) => {
+            this._handleDocumentPointerDown(event);
+        });
+
         const sportSelect = getSelectElement('sportSelect');
         if (sportSelect) {
             this._addListener(sportSelect, 'change', () => {
@@ -404,11 +414,18 @@ export class EditorControls {
                     runoffSlider.value = String(nextValue);
                 });
             };
+            this._registerManualCommitHandler('customRunoffInput', runoffInput, commitRunoffInput);
+            this._addListener(runoffInput, 'pointerdown', () => {
+                this._markImmediateManualCommit('customRunoffInput');
+            });
             this._addListener(runoffInput, 'input', () => {
                 this._markManualInputPending('customRunoffInput');
                 if (runoffInput.value === '') {
                     this.state.setup.customRunoff = null;
                     runoffSlider.value = String(this._resolveRunoffDistance());
+                    if (this._consumeImmediateManualCommit('customRunoffInput')) {
+                        commitRunoffInput();
+                    }
                     return;
                 }
 
@@ -416,11 +433,19 @@ export class EditorControls {
                 if (!Number.isFinite(nextValue)) return;
                 this.state.setup.customRunoff = nextValue;
                 runoffSlider.value = runoffInput.value;
+                if (this._consumeImmediateManualCommit('customRunoffInput')) {
+                    commitRunoffInput();
+                }
             });
             this._addListener(runoffInput, 'blur', () => {
                 commitRunoffInput();
             });
             this._addListener(runoffInput, 'keydown', (event) => {
+                if (event?.key === 'ArrowUp' || event?.key === 'ArrowDown') {
+                    this._markImmediateManualCommit('customRunoffInput');
+                    return;
+                }
+                this._clearImmediateManualCommit('customRunoffInput');
                 if (event?.key !== 'Enter') return;
                 event.preventDefault?.();
                 commitRunoffInput();
@@ -430,6 +455,7 @@ export class EditorControls {
                 if (!Number.isFinite(nextValue)) return;
                 this.state.setup.customRunoff = nextValue;
                 this._clearPendingManualCommit('customRunoffInput');
+                this._clearImmediateManualCommit('customRunoffInput');
                 runoffInput.value = runoffSlider.value;
                 this._emitChange('state', 'customRunoffSlider');
             });
@@ -522,6 +548,7 @@ export class EditorControls {
                 if (nextValue === null) return;
                 setValueAtPath(this.state, path, nextValue);
                 this._clearPendingManualCommit(`${baseId}Input`);
+                this._clearImmediateManualCommit(`${baseId}Input`);
                 slider.value = String(nextValue);
                 if (input) input.value = String(nextValue);
                 this._emitChange('state', `${baseId}Slider`);
@@ -549,8 +576,13 @@ export class EditorControls {
                     if (slider) slider.value = String(nextValue);
                 });
             };
+            this._registerManualCommitHandler(`${baseId}Input`, input, commitManualInput);
+            this._addListener(input, 'pointerdown', () => {
+                this._markImmediateManualCommit(`${baseId}Input`);
+            });
             this._addListener(input, 'input', () => {
-                this._markManualInputPending(`${baseId}Input`);
+                const controlId = `${baseId}Input`;
+                this._markManualInputPending(controlId);
                 const nextValue = getClampedValue(input.value);
                 if (nextValue === null) return;
                 setValueAtPath(this.state, path, nextValue);
@@ -558,12 +590,20 @@ export class EditorControls {
                     input.value = String(nextValue);
                 }
                 if (slider) slider.value = String(nextValue);
+                if (this._consumeImmediateManualCommit(controlId)) {
+                    commitManualInput();
+                }
             });
 
             this._addListener(input, 'blur', () => {
                 commitManualInput();
             });
             this._addListener(input, 'keydown', (event) => {
+                if (event?.key === 'ArrowUp' || event?.key === 'ArrowDown') {
+                    this._markImmediateManualCommit(`${baseId}Input`);
+                    return;
+                }
+                this._clearImmediateManualCommit(`${baseId}Input`);
                 if (event?.key !== 'Enter') return;
                 event.preventDefault?.();
                 commitManualInput();
@@ -625,6 +665,7 @@ export class EditorControls {
         if (input) {
             input.value = String(value);
             this._clearPendingManualCommit(`${id}Input`);
+            this._clearImmediateManualCommit(`${id}Input`);
         }
         if (slider) slider.value = String(value);
     }
@@ -700,6 +741,35 @@ export class EditorControls {
         this._pendingManualCommitIds.delete(controlId.trim());
     }
 
+    _markImmediateManualCommit(controlId) {
+        if (typeof controlId !== 'string' || !controlId.trim()) return;
+        this._immediateManualCommitIds.add(controlId.trim());
+    }
+
+    _clearImmediateManualCommit(controlId) {
+        if (typeof controlId !== 'string' || !controlId.trim()) return;
+        this._immediateManualCommitIds.delete(controlId.trim());
+    }
+
+    _consumeImmediateManualCommit(controlId) {
+        const normalizedControlId = typeof controlId === 'string' ? controlId.trim() : '';
+        if (!normalizedControlId || !this._immediateManualCommitIds.has(normalizedControlId)) {
+            return false;
+        }
+
+        this._immediateManualCommitIds.delete(normalizedControlId);
+        return true;
+    }
+
+    _registerManualCommitHandler(controlId, element, commit) {
+        if (typeof controlId !== 'string' || !controlId.trim()) return;
+        if (!element || typeof commit !== 'function') return;
+        this._manualCommitRegistrations.set(controlId.trim(), {
+            element,
+            commit
+        });
+    }
+
     _commitManualInput(controlId, applyCommit) {
         const normalizedControlId = typeof controlId === 'string' ? controlId.trim() : '';
         if (!normalizedControlId || !this._pendingManualCommitIds.has(normalizedControlId)) {
@@ -711,8 +781,28 @@ export class EditorControls {
         }
 
         this._pendingManualCommitIds.delete(normalizedControlId);
+        this._immediateManualCommitIds.delete(normalizedControlId);
         this._emitChange('state', normalizedControlId);
         return true;
+    }
+
+    _handleDocumentPointerDown(event) {
+        const activeElement = document?.activeElement;
+        const activeControlId = typeof activeElement?.id === 'string' ? activeElement.id.trim() : '';
+        if (!activeControlId || !this._pendingManualCommitIds.has(activeControlId)) {
+            return;
+        }
+
+        const registration = this._manualCommitRegistrations.get(activeControlId);
+        if (!registration?.element || typeof registration.commit !== 'function') {
+            return;
+        }
+
+        if (event?.target === registration.element) {
+            return;
+        }
+
+        registration.commit();
     }
 
     _addListener(target, eventName, handler) {

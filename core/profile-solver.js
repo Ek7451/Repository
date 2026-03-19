@@ -17,10 +17,7 @@
  *     R = (C + N) * (D + T) / D - N
  */
 
-import {
-    computeMinimumBlockCountForSeatLimit,
-    computeTierEgressMetrics
-} from './egress-policy.js';
+import { computeTierEgressMetrics } from './egress-policy.js';
 import { computeUsableRunLengthIn, countSeatsFromUsableRunLengthIn } from './seat-math.js';
 
 export function getSolverTierIndex(solver, fallbackIndex = 0) {
@@ -326,33 +323,6 @@ export function buildTierMetricsByIndex({
     return tierMetricsByIndex;
 }
 
-function buildEstimateEgressSnapshot(metrics) {
-    if (!metrics || typeof metrics !== 'object') return null;
-
-    return {
-        numAisles: metrics.numAisles,
-        numSections: metrics.numSections,
-        seatsPerRow: metrics.seatsPerRow,
-        backRowSeatsPerRow: metrics.backRowSeatsPerRow,
-        seatsPerBlock: metrics.seatsPerBlock,
-        maxSeatsPerSectionRow: metrics.maxSeatsPerSectionRow,
-        occupantsPerSection: metrics.occupantsPerSection,
-        occupantsPerAisleLine: metrics.occupantsPerAisleLine,
-        capacityWidth: metrics.capacityWidth,
-        aisleWidth: metrics.aisleWidth,
-        minimumWidth: metrics.minimumWidth,
-        maximumWidth: metrics.maximumWidth,
-        governingWidth: metrics.governingWidth,
-        totalRowLength: metrics.totalRowLength,
-        totalSeatingLength: metrics.totalSeatingLength,
-        totalAisleLength: metrics.totalAisleLength,
-        blocksAddedForEgress: metrics.blocksAddedForEgress,
-        converged: metrics.converged,
-        legalMaxOccupantsPerAisle: metrics.legalMaxOccupantsPerAisle,
-        mirroredSideRuns: metrics.mirroredSideRuns
-    };
-}
-
 function getTierLayoutIndex(layout, fallbackIndex = 0) {
     const tierIndex = Number(layout?.tierIndex);
     return Number.isInteger(tierIndex) ? tierIndex : fallbackIndex;
@@ -439,10 +409,6 @@ function buildLegacyMetricsFromLayout({ solver, layout, egressParams }) {
     const maxAisleLoad = Array.isArray(summary.aisleOccupancyTotals) && summary.aisleOccupancyTotals.length
         ? Math.max(...summary.aisleOccupancyTotals.map((occupancy) => Math.max(0, Number(occupancy) || 0)))
         : 0;
-    const blocksAddedForEgress = Math.max(0, numSections - computeMinimumBlockCountForSeatLimit({
-        backRowSeatsPerRun: backRowSeatsPerRow,
-        seatsBetweenAisles: egressParams?.seatsBetweenAisles
-    }));
     const legalMaxOccupantsPerAisle = Array.isArray(summary.aisles) && summary.aisles.length
         ? Math.max(...summary.aisles.map((aisle) => Math.max(0, Number(aisle?.legalMaxOccupantsPerAisle) || 0)))
         : 0;
@@ -470,7 +436,8 @@ function buildLegacyMetricsFromLayout({ solver, layout, egressParams }) {
         maximumWidth: toFixedString(egressParams?.maxAisleWidthIn),
         legalMaxOccupantsPerAisle,
         governingWidth: toFixedString(summary.maxGoverningAisleWidthIn),
-        blocksAddedForEgress,
+        // This legacy display field is estimate-only; the authoritative layout path does not recompute it.
+        blocksAddedForEgress: 0,
         converged: summary.converged !== false,
         mirroredSideRuns: mirrorRuns,
         seatCapCompliant: summary?.compliance?.seatCapCompliant,
@@ -506,124 +473,6 @@ export function buildTierMetricsByIndexFromLayouts({
     });
 
     return tierMetricsByIndex;
-}
-
-export function reconcileTierMetricsByIndexWithLayoutSummaries({
-    tierMetricsByIndex,
-    tierAisleLayouts,
-    egressParams
-}) {
-    if (!(tierMetricsByIndex instanceof Map) || tierMetricsByIndex.size === 0) {
-        return tierMetricsByIndex instanceof Map ? tierMetricsByIndex : new Map();
-    }
-
-    const egressFactorVal = Number(egressParams?.egressFactor);
-    const tierLayoutByIndex = new Map((tierAisleLayouts || []).map((layout) => [
-        Math.max(0, Math.floor(Number(layout?.tierIndex) || 0)),
-        layout
-    ]));
-    const reconciledTierMetrics = new Map();
-
-    tierMetricsByIndex.forEach((metrics, tierIndex) => {
-        const layout = tierLayoutByIndex.get(Math.max(0, Math.floor(Number(tierIndex) || 0)));
-        const summary = layout?.sectionSummary;
-
-        if (!metrics || !summary) {
-            reconciledTierMetrics.set(tierIndex, metrics);
-            return;
-        }
-
-        const actualSections = Math.max(0, Math.floor(Number(summary.actualSections) || 0));
-        const actualAisles = Math.max(0, Math.floor(Number(summary.actualAisles) || 0));
-        const avgBackRowSeats = Number(summary.avgBackRowSeatsPerSection);
-        const maxBackRowSeats = Number(summary.maxBackRowSeatsPerSection);
-        const backRowSectionSeatCounts = Array.isArray(summary.backRowSectionSeatCounts)
-            ? summary.backRowSectionSeatCounts.map((value) => Math.max(0, Number(value) || 0))
-            : [];
-        const aisleOccupancyTotals = Array.isArray(summary.aisleOccupancyTotals)
-            ? summary.aisleOccupancyTotals
-                .map((value) => Math.max(0, Number(value) || 0))
-                .filter((value) => Number.isFinite(value) && value > 0)
-            : [];
-        const sectionOccupancyTotals = Array.isArray(summary.sectionOccupancyTotals)
-            ? summary.sectionOccupancyTotals
-                .map((value) => Math.max(0, Number(value) || 0))
-                .filter((value) => Number.isFinite(value) && value > 0)
-            : [];
-        const maxSectionOccupancy = sectionOccupancyTotals.length > 0
-            ? Math.max(...sectionOccupancyTotals)
-            : 0;
-
-        if (summary.allSectionPathsClosed !== true || actualSections <= 0) {
-            reconciledTierMetrics.set(tierIndex, metrics);
-            return;
-        }
-
-        const totalCapacity = sectionOccupancyTotals.length > 0
-            ? sectionOccupancyTotals.reduce((sum, value) => sum + value, 0)
-            : Math.max(0, Number(metrics.capacity) || 0);
-        const avgOccupantsPerSection = totalCapacity / actualSections;
-        const governingSectionOccupancy = maxSectionOccupancy > 0
-            ? maxSectionOccupancy
-            : avgOccupantsPerSection;
-        const aisleLoad = aisleOccupancyTotals.length > 0
-            ? Math.max(...aisleOccupancyTotals)
-            : (actualSections <= 1 ? (governingSectionOccupancy * 0.5) : governingSectionOccupancy);
-        const estimateEgress = metrics.egressEstimate || buildEstimateEgressSnapshot(metrics);
-        const baselineBlocksPerRow = Math.max(
-            1,
-            Math.round(
-                Math.max(
-                    1,
-                    Number(estimateEgress?.numSections) || 1
-                ) - Math.max(0, Number(estimateEgress?.blocksAddedForEgress) || 0)
-            )
-        );
-        const requiredWidth = Number.isFinite(Number(summary?.requiredWidthIn))
-            ? Number(summary.requiredWidthIn)
-            : (Number.isFinite(egressFactorVal) ? (aisleLoad * egressFactorVal) : Number(metrics.capacityWidth));
-        const governingWidth = Number.isFinite(Number(summary?.governingWidthIn))
-            ? Number(summary.governingWidthIn)
-            : Number(metrics.governingWidth);
-        const renderedAisleWidth = Number.isFinite(Number(summary?.renderedAisleWidthIn))
-            ? Number(summary.renderedAisleWidthIn)
-            : Number(metrics.aisleWidth);
-        const nextMetrics = {
-            ...metrics,
-            egressEstimate: estimateEgress,
-            capacity: Math.round(totalCapacity),
-            numSections: actualSections,
-            numAisles: actualAisles > 0 ? actualAisles : actualSections,
-            backRowSeatsPerRow: Math.round(backRowSectionSeatCounts.reduce((sum, value) => sum + (Number(value) || 0), 0)),
-            occupantsPerSection: Math.round(governingSectionOccupancy),
-            occupantsPerAisleLine: Math.round(aisleLoad),
-            renderedAisleWidth: Number.isFinite(renderedAisleWidth) ? renderedAisleWidth.toFixed(1) : metrics.aisleWidth,
-            legalMaxOccupantsPerAisle: Number.isFinite(Number(summary?.legalMaxOccupantsPerAisle))
-                ? Number(summary.legalMaxOccupantsPerAisle)
-                : metrics.legalMaxOccupantsPerAisle,
-            seatCapCompliant: summary?.compliance?.seatCapCompliant,
-            egressCapCompliant: summary?.compliance?.egressCapCompliant,
-            renderedWidthCompliant: summary?.compliance?.renderedWidthCompliant
-        };
-
-        if (Number.isFinite(avgBackRowSeats)) {
-            nextMetrics.seatsPerBlock = avgBackRowSeats.toFixed(1);
-        }
-        if (Number.isFinite(maxBackRowSeats)) {
-            nextMetrics.maxSeatsPerSectionRow = Math.round(maxBackRowSeats);
-        }
-
-        if (Number.isFinite(requiredWidth)) nextMetrics.capacityWidth = requiredWidth.toFixed(1);
-        if (Number.isFinite(governingWidth)) {
-            nextMetrics.governingWidth = governingWidth.toFixed(1);
-            nextMetrics.aisleWidth = governingWidth.toFixed(1);
-        }
-        nextMetrics.blocksAddedForEgress = Math.max(0, actualSections - baselineBlocksPerRow);
-
-        reconciledTierMetrics.set(tierIndex, nextMetrics);
-    });
-
-    return reconciledTierMetrics;
 }
 
 class RowData {

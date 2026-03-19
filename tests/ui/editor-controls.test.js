@@ -91,9 +91,35 @@ function createElement({
 }
 
 function createDocumentStub(elements) {
+    const listeners = new Map();
+
     return {
-        getElementById: vi.fn((id) => elements[id] ?? null),
-        createElement: vi.fn(() => createElement())
+        activeElement: null,
+        getElementById: vi.fn((id) => {
+            const element = elements[id] ?? null;
+            if (element && !element.id) {
+                element.id = id;
+            }
+            return element;
+        }),
+        createElement: vi.fn(() => createElement()),
+        addEventListener: vi.fn((eventName, handler) => {
+            const existing = listeners.get(eventName) || [];
+            existing.push(handler);
+            listeners.set(eventName, existing);
+        }),
+        removeEventListener: vi.fn((eventName, handler) => {
+            const existing = listeners.get(eventName) || [];
+            listeners.set(eventName, existing.filter((entry) => entry !== handler));
+        }),
+        dispatch(eventName, overrides = {}) {
+            const event = {
+                target: null,
+                preventDefault: vi.fn(),
+                ...overrides
+            };
+            (listeners.get(eventName) || []).forEach((handler) => handler(event));
+        }
     };
 }
 
@@ -480,6 +506,71 @@ describe('EditorControls', () => {
 
         elements.seatWidthInput.dispatch('blur');
         expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
+    test('commits number input changes immediately when using the native stepper arrows', () => {
+        const elements = {
+            seatWidthInput: createElement({ value: '20', step: '0.5' }),
+            seatWidthSlider: createElement({ value: '20', step: '0.5' })
+        };
+        const state = createState();
+        state.occupancy.seatWidth = 20;
+        const onChange = vi.fn();
+
+        vi.stubGlobal('document', createDocumentStub(elements));
+
+        const controls = new EditorControls({
+            state,
+            onChange
+        });
+
+        controls.init();
+
+        elements.seatWidthInput.dispatch('pointerdown');
+        elements.seatWidthInput.value = '20.5';
+        elements.seatWidthInput.dispatch('input');
+
+        expect(state.occupancy.seatWidth).toBe(20.5);
+        expect(elements.seatWidthSlider.value).toBe('20.5');
+        expect(onChange).toHaveBeenCalledTimes(1);
+        expect(onChange).toHaveBeenLastCalledWith({
+            reason: 'state',
+            controlId: 'seatWidthInput'
+        });
+    });
+
+    test('commits pending manual input when clicking anywhere else on the screen', () => {
+        const elements = {
+            seatWidthInput: createElement({ value: '20', step: '0.5' }),
+            seatWidthSlider: createElement({ value: '20', step: '0.5' }),
+            outsideTarget: createElement({ id: 'outsideTarget', type: 'button' })
+        };
+        const state = createState();
+        state.occupancy.seatWidth = 20;
+        const onChange = vi.fn();
+        const documentStub = createDocumentStub(elements);
+
+        vi.stubGlobal('document', documentStub);
+
+        const controls = new EditorControls({
+            state,
+            onChange
+        });
+
+        controls.init();
+
+        documentStub.activeElement = elements.seatWidthInput;
+        elements.seatWidthInput.value = '21.5';
+        elements.seatWidthInput.dispatch('input');
+        expect(onChange).not.toHaveBeenCalled();
+
+        documentStub.dispatch('pointerdown', { target: elements.outsideTarget });
+
+        expect(onChange).toHaveBeenCalledTimes(1);
+        expect(onChange).toHaveBeenLastCalledWith({
+            reason: 'state',
+            controlId: 'seatWidthInput'
+        });
     });
 
     test('applies tier defaults only on first enable and preserves later user positions', () => {

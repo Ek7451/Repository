@@ -585,7 +585,7 @@ describe('aisle layout geometry seam', () => {
         expect(references.has(forcedIndex)).toBe(false);
     });
 
-    it('keeps U-end discretionary extras on the straight interval before chamfer interiors', () => {
+    it('keeps U-end discretionary extras on straight intervals and includes terminal open-end runs', () => {
         ['U-End1', 'U-End2'].forEach((type) => {
             const fixture = buildRendererBowlFixture(type, {
                 straightAisleMode: 'perpendicular',
@@ -594,14 +594,16 @@ describe('aisle layout geometry seam', () => {
             const layout = buildTierAisleLayout({
                 frontSegments: fixture.frontSegments,
                 backSegments: fixture.backSegments,
-                targetAisles: 6,
+                targetAisles: 8,
                 aisleWidthFt: 4,
                 bowlConfig: fixture.bowlConfig
             });
 
             const distributed = layout.aisles.filter((aisle) => !aisle.forced);
-            expect(distributed).toHaveLength(2);
-            expect(distributed.every((aisle) => aisle.segmentIndex === 1)).toBe(true);
+            const distributedSegments = distributed.map((aisle) => aisle.segmentIndex);
+            expect(distributedSegments.length).toBeGreaterThan(0);
+            expect(distributedSegments.every((segmentIndex) => [0, 2, 4].includes(segmentIndex))).toBe(true);
+            expect(distributedSegments.some((segmentIndex) => [0, 4].includes(segmentIndex))).toBe(true);
             expect(distributed.every((aisle) => aisle.alignmentMode === 'perpendicular')).toBe(true);
         });
     });
@@ -719,13 +721,11 @@ describe('aisle layout geometry seam', () => {
         expect(summary.sections).toEqual([
             expect.objectContaining({
                 pathIndex: 0,
-                slotIndex: 0,
                 occupancy: 4,
                 rowSeatCounts: [2, 2]
             }),
             expect.objectContaining({
                 pathIndex: 0,
-                slotIndex: 1,
                 occupancy: 4,
                 rowSeatCounts: [2, 2]
             })
@@ -787,6 +787,66 @@ describe('aisle layout geometry seam', () => {
                 tierSeatCount: tierLayout.sectionSummary.tierSeatCount
             }],
             maxRequiredAisleWidthInOverall: tierLayout.sectionSummary.maxRequiredAisleWidthIn
+        });
+    });
+
+    it('adds terminal end aisles for U-end analyses and gives them side-like half-tributary loads', () => {
+        ['U-End1', 'U-End2'].forEach((type) => {
+            const fixture = buildRendererBowlFixture(type, {
+                width: 85,
+                length: 200,
+                radius: 28,
+                straightAisleMode: 'perpendicular',
+                chamferAisleMode: 'radial'
+            });
+            const renderer = Object.create(FieldRenderer.prototype);
+            const rows = Array.from({ length: 25 }, (_, index) => ({
+                row_number: index + 1,
+                x: 12 + (index * 2.5),
+                tread_depth: 2.5
+            }));
+
+            const tierLayout = buildTierAisleAnalysis({
+                tierIndex: 0,
+                rows,
+                bowlConfig: fixture.bowlConfig,
+                offsetCorrection: 0,
+                egressParams: {
+                    seatWidthIn: 20,
+                    minAisleWidthIn: 48,
+                    maxAisleWidthIn: 72,
+                    egressFactor: 0.2,
+                    seatsBetweenAisles: 24
+                },
+                getPathsForOffset: (offset) => buildGeometryPaths(renderer._getBowlGeometry(fixture.bowlConfig, offset)),
+                getRowLengthFt: (offset) => renderer.calculateRowLength(fixture.bowlConfig, offset)
+            });
+
+            const firstAisle = tierLayout.aisles[0];
+            const lastAisle = tierLayout.aisles[tierLayout.aisles.length - 1];
+            const firstSection = tierLayout.sectionSummary.sections[0];
+            const lastSection = tierLayout.sectionSummary.sections[tierLayout.sectionSummary.sections.length - 1];
+            const firstAisleSummary = tierLayout.sectionSummary.aisles[0];
+            const lastAisleSummary = tierLayout.sectionSummary.aisles[tierLayout.sectionSummary.aisles.length - 1];
+
+            expect(firstAisle).toEqual(expect.objectContaining({
+                anchorType: 'open_edge_terminal',
+                edge: 'start'
+            }));
+            expect(lastAisle).toEqual(expect.objectContaining({
+                anchorType: 'open_edge_terminal',
+                edge: 'end'
+            }));
+            expect(firstSection).toEqual(expect.objectContaining({
+                startBoundaryKind: 'aisle',
+                aisleIndexA: 0
+            }));
+            expect(lastSection).toEqual(expect.objectContaining({
+                endBoundaryKind: 'aisle',
+                aisleIndexB: tierLayout.aisles.length - 1
+            }));
+            expect(firstAisleSummary.tributaryOccupancy).toBeCloseTo(firstSection.occupancy / 2, 5);
+            expect(lastAisleSummary.tributaryOccupancy).toBeCloseTo(lastSection.occupancy / 2, 5);
         });
     });
 });

@@ -7,7 +7,6 @@ import {
     buildStructuralProfileGeometry,
     buildTierMetricsByIndex,
     buildTierMetricsByIndexFromLayouts,
-    reconcileTierMetricsByIndexWithLayoutSummaries,
     getSolverTierIndex,
     ProfileSolver
 } from '../../core/profile-solver.js';
@@ -231,6 +230,7 @@ describe('profile solver helper exports', () => {
             totalRowLength: '82',
             totalSeatingLength: '37',
             totalAisleLength: '45',
+            blocksAddedForEgress: 0,
             renderedWidthCompliant: true
         });
         expect(solver.rows[0]).toMatchObject({
@@ -242,80 +242,6 @@ describe('profile solver helper exports', () => {
             computedLength: 42,
             computedSeats: 12,
             computedBlocks: 1
-        });
-    });
-
-    it('reconciles tier metrics from closed layout summaries by stable tier index', () => {
-        const tierMetricsByIndex = new Map([
-            [0, {
-                capacity: 120,
-                numAisles: 5,
-                numSections: 4,
-                seatsPerBlock: '18.0',
-                maxSeatsPerSectionRow: 18,
-                occupantsPerSection: 30,
-                occupantsPerAisleLine: 30,
-                capacityWidth: '6.0'
-            }],
-            [2, {
-                capacity: 80,
-                numAisles: 4,
-                numSections: 4,
-                seatsPerBlock: '10.0',
-                maxSeatsPerSectionRow: 10,
-                occupantsPerSection: 20,
-                occupantsPerAisleLine: 20,
-                capacityWidth: '4.0'
-            }]
-        ]);
-
-        const reconciled = reconcileTierMetricsByIndexWithLayoutSummaries({
-            tierMetricsByIndex,
-            tierAisleLayouts: [{
-                tierIndex: 2,
-                sectionSummary: {
-                    actualSections: 2,
-                    actualAisles: 2,
-                    allSectionPathsClosed: true,
-                    backRowSectionSeatCounts: [11, 17],
-                    avgBackRowSeatsPerSection: 14,
-                    maxBackRowSeatsPerSection: 17,
-                    sectionOccupancyTotals: [32, 48],
-                    aisleOccupancyTotals: [40, 40],
-                    requiredWidthIn: 8,
-                    governingWidthIn: 48,
-                    renderedAisleWidthIn: 48,
-                    legalMaxOccupantsPerAisle: 360,
-                    compliance: {
-                        seatCapCompliant: true,
-                        egressCapCompliant: true,
-                        renderedWidthCompliant: true
-                    }
-                }
-            }],
-            egressParams: { egressFactor: 0.2 }
-        });
-
-        expect(reconciled).not.toBe(tierMetricsByIndex);
-        expect(reconciled.get(0)).toBe(tierMetricsByIndex.get(0));
-        expect(reconciled.get(2)).toMatchObject({
-            numAisles: 2,
-            numSections: 2,
-            backRowSeatsPerRow: 28,
-            seatsPerBlock: '14.0',
-            maxSeatsPerSectionRow: 17,
-            occupantsPerSection: 48,
-            occupantsPerAisleLine: 40,
-            capacityWidth: '8.0',
-            aisleWidth: '48.0',
-            governingWidth: '48.0',
-            renderedAisleWidth: '48.0',
-            legalMaxOccupantsPerAisle: 360,
-            egressEstimate: expect.objectContaining({
-                numAisles: 4,
-                numSections: 4,
-                capacityWidth: '4.0'
-            })
         });
     });
 

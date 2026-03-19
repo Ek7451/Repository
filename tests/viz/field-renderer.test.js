@@ -271,6 +271,49 @@ describe('FieldRenderer helper delegation surface', () => {
         }));
     });
 
+    it('builds section overlays from U-end terminal aisle summaries instead of edge slivers', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const solver = createTierSolver();
+        const bowlConfig = createFullChamferBowlConfig({
+            type: 'U-End1',
+            width: 85,
+            length: 200,
+            radius: 28
+        });
+        const tierLayout = renderer.generateTierAisleLayout(
+            solver,
+            bowlConfig,
+            createTierMetrics(),
+            0,
+            createEgressParams()
+        );
+
+        const overlay = renderer.getTierSectionMetricsOverlayData(solver, bowlConfig, tierLayout, 0);
+        const sections = tierLayout.sectionSummary.sections;
+        const firstSection = sections[0];
+        const lastSection = sections[sections.length - 1];
+
+        expect(tierLayout.aisles[0]).toEqual(expect.objectContaining({
+            anchorType: 'open_edge_terminal',
+            edge: 'start'
+        }));
+        expect(tierLayout.aisles[tierLayout.aisles.length - 1]).toEqual(expect.objectContaining({
+            anchorType: 'open_edge_terminal',
+            edge: 'end'
+        }));
+        expect(firstSection).toEqual(expect.objectContaining({
+            startBoundaryKind: 'aisle',
+            aisleIndexA: 0
+        }));
+        expect(lastSection).toEqual(expect.objectContaining({
+            endBoundaryKind: 'aisle',
+            aisleIndexB: tierLayout.aisles.length - 1
+        }));
+        expect(overlay.sectionLabels.length).toBe(sections.length);
+        expect(overlay.rowSeatLabels.some((label) => label.slotIndex === firstSection.slotIndex)).toBe(true);
+        expect(overlay.rowSeatLabels.some((label) => label.slotIndex === lastSection.slotIndex)).toBe(true);
+    });
+
     it('restores the canvas context after drawing section metrics overlays', () => {
         const renderer = Object.create(FieldRenderer.prototype);
         renderer._drawWorldTextLabel = vi.fn();

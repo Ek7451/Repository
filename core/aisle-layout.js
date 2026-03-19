@@ -552,10 +552,45 @@ function getAnchorSetsForIntervals(anchors) {
     return { front, back };
 }
 
+function buildIntervalAnchorSet(path, anchors = []) {
+    const safeAnchors = Array.isArray(anchors) ? anchors : [];
+    if (!path || path.closed) return safeAnchors;
+
+    const out = [];
+    const pushAnchor = (u, dist) => {
+        const safeDist = Math.max(0, Math.min(path.length, Number(dist) || 0));
+        const safeU = clamp01(Number.isFinite(Number(u)) ? Number(u) : (path.length > EPS ? (safeDist / path.length) : 0));
+        const pt = samplePathPoint(path, safeDist);
+        out.push({
+            u: safeU,
+            dist: safeDist,
+            x: pt.x,
+            y: pt.y
+        });
+    };
+
+    pushAnchor(0, 0);
+    safeAnchors.forEach((anchor) => {
+        if (!anchor) return;
+        pushAnchor(anchor.u, anchor.dist);
+    });
+    pushAnchor(1, path.length);
+
+    out.sort((a, b) => a.u - b.u);
+    const deduped = [];
+    for (let i = 0; i < out.length; i += 1) {
+        const prev = deduped[deduped.length - 1];
+        if (prev && Math.abs(prev.u - out[i].u) <= 1e-5) continue;
+        deduped.push(out[i]);
+    }
+
+    return deduped;
+}
+
 function buildPerimeterIntervals(pathFront, pathBack, anchors) {
     const anchorSets = getAnchorSetsForIntervals(anchors);
-    const frontAnchors = anchorSets.front;
-    const backAnchors = anchorSets.back;
+    const frontAnchors = buildIntervalAnchorSet(pathFront, anchorSets.front);
+    const backAnchors = buildIntervalAnchorSet(pathBack, anchorSets.back);
     const closed = pathFront
         ? !!pathFront.closed
         : !!(pathBack && pathBack.closed);
@@ -736,6 +771,9 @@ function resolveRadialStationRatios(pathFront, pathBack, aisle, cache = null) {
 
     let uFront = Number.isFinite(aisle.uFront) ? aisle.uFront : (Number.isFinite(aisle.u) ? aisle.u : NaN);
     let uBack = Number.isFinite(aisle.uBack) ? aisle.uBack : (Number.isFinite(aisle.u) ? aisle.u : NaN);
+    if (aisle.anchorType === 'open_edge_terminal') {
+        return normalizeResolvedStationRatios(pathFront, pathBack, uFront, uBack);
+    }
     const interval = getPerimeterIntervalByIndex(pathFront, pathBack, aisle, cache);
 
     if (interval && Number.isFinite(aisle.segmentT)) {
@@ -1357,6 +1395,50 @@ function buildForcedTransitionAisles(perimeterModel) {
     return out.sort(compareAislesByPathAndStation);
 }
 
+function buildOpenTerminalEdgeAisles(perimeterModel, bowlConfig, aisleWidthFt = 0) {
+    const out = [];
+    if (!perimeterModel || !Array.isArray(perimeterModel.paths)) return out;
+
+    const widthFt = Math.max(0, Number(aisleWidthFt) || 0);
+
+    for (let pathIndex = 0; pathIndex < perimeterModel.paths.length; pathIndex++) {
+        const pathRecord = perimeterModel.paths[pathIndex];
+        const path = pathRecord?.frontPath || pathRecord?.backPath;
+        const intervals = Array.isArray(pathRecord?.intervals) ? pathRecord.intervals : [];
+        if (!path || path.closed || path.length <= EPS || intervals.length < 1) continue;
+
+        const edgeInsetU = Math.max(0, Math.min(0.5, (widthFt * 0.5) / Math.max(EPS, path.length)));
+        const terminalSpecs = [
+            { interval: intervals[0], u: clamp01(edgeInsetU), edge: 'start' },
+            { interval: intervals[intervals.length - 1], u: clamp01(1 - edgeInsetU), edge: 'end' }
+        ];
+
+        for (let i = 0; i < terminalSpecs.length; i++) {
+            const spec = terminalSpecs[i];
+            const interval = spec.interval;
+            if (!interval || interval.family !== 'straight') continue;
+
+            const side = interval.front || interval.back;
+            const segmentT = side
+                ? resolvePathIntervalT(path, side.startU, side.endU, spec.u)
+                : undefined;
+
+            out.push({
+                pathIndex,
+                u: spec.u,
+                forced: false,
+                anchorType: 'open_edge_terminal',
+                edge: spec.edge,
+                segmentIndex: interval.index,
+                segmentT: Number.isFinite(segmentT) ? segmentT : undefined,
+                alignmentMode: selectAlignmentModeForFamily(interval.family, bowlConfig)
+            });
+        }
+    }
+
+    return out.sort(compareAislesByPathAndStation);
+}
+
 function buildMeasureWorstSeatsForInterval(intervalSide, seatWidthIn, aisleWidthFt, axisExclusionFt, endpointBufferFt) {
     return (count) => estimateWorstSeatsInInterval(
         intervalSide,
@@ -1853,23 +1935,37 @@ function buildTierLayoutSectionSlots(referencePaths, sectionBoundaries) {
         const boundaries = Array.isArray(sectionBoundaries[pathIndex]) ? sectionBoundaries[pathIndex] : [];
         const path = referencePaths[pathIndex] || null;
         const pathIsClosed = !!path?.closed;
-        const slotCount = pathIsClosed ? boundaries.length : Math.max(0, boundaries.length - 1);
+        const openBoundaries = pathIsClosed
+            ? boundaries
+            : [
+                { aisleIndex: null, u: 0, forced: false, boundaryKind: 'edge' },
+                ...boundaries.map((boundary) => ({
+                    ...boundary,
+                    boundaryKind: 'aisle'
+                })),
+                { aisleIndex: null, u: 1, forced: false, boundaryKind: 'edge' }
+            ];
+        const slotCount = pathIsClosed ? boundaries.length : Math.max(0, openBoundaries.length - 1);
 
         if (slotCount > 0 && !pathIsClosed) allSectionPathsClosed = false;
         if (slotCount <= 0) continue;
 
         for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
-            const aisleA = boundaries[slotIndex];
+            const aisleA = pathIsClosed ? boundaries[slotIndex] : openBoundaries[slotIndex];
             const aisleB = pathIsClosed
                 ? boundaries[(slotIndex + 1) % boundaries.length]
-                : boundaries[slotIndex + 1];
+                : openBoundaries[slotIndex + 1];
             if (!aisleA || !aisleB) continue;
 
             slots.push({
                 pathIndex,
                 slotIndex,
-                aisleIndexA: aisleA.aisleIndex,
-                aisleIndexB: aisleB.aisleIndex
+                aisleIndexA: Number.isFinite(Number(aisleA.aisleIndex)) ? aisleA.aisleIndex : null,
+                aisleIndexB: Number.isFinite(Number(aisleB.aisleIndex)) ? aisleB.aisleIndex : null,
+                startBoundaryKind: aisleA.boundaryKind || (pathIsClosed ? 'aisle' : 'edge'),
+                endBoundaryKind: aisleB.boundaryKind || (pathIsClosed ? 'aisle' : 'edge'),
+                startU: normalizePathU(path, Number(aisleA.u) || 0),
+                endU: normalizePathU(path, Number(aisleB.u) || 0)
             });
         }
     }
@@ -2008,16 +2104,6 @@ export function getTierRenderedAisleWidthIn(tierLayout, aisleIndex) {
         return maxRenderedWidthIn;
     }
 
-    const legacyRenderedWidthIn = Number(tierLayout?.sectionSummary?.renderedAisleWidthIn);
-    if (Number.isFinite(legacyRenderedWidthIn) && legacyRenderedWidthIn > 0) {
-        return legacyRenderedWidthIn;
-    }
-
-    const layoutWidthFt = Number(tierLayout?.aisleWidthFt);
-    if (Number.isFinite(layoutWidthFt) && layoutWidthFt > 0) {
-        return layoutWidthFt * 12.0;
-    }
-
     return 0;
 }
 
@@ -2067,12 +2153,24 @@ function buildSectionRecords(slots, rowCount) {
     }));
 }
 
+function shouldKeepMeasuredSection(section, aisles = []) {
+    if (!(Math.max(0, Number(section?.occupancy) || 0) > 0)) return false;
+
+    const leftAisle = Number.isFinite(Number(section?.aisleIndexA)) ? aisles[section.aisleIndexA] : null;
+    const rightAisle = Number.isFinite(Number(section?.aisleIndexB)) ? aisles[section.aisleIndexB] : null;
+    const dropsIntoOpenTerminalEdge =
+        (section?.startBoundaryKind === 'edge' && rightAisle?.anchorType === 'open_edge_terminal') ||
+        (section?.endBoundaryKind === 'edge' && leftAisle?.anchorType === 'open_edge_terminal');
+    return !dropsIntoOpenTerminalEdge;
+}
+
 function measureSectionsFromRenderedWidths({
     rows = [],
     sectionRecords = [],
     resolveRowAisleSampling = null,
     seatWidthIn = 20,
-    renderedWidthsIn = []
+    renderedWidthsIn = [],
+    aisles = []
 } = {}) {
     const safeRows = Array.isArray(rows) ? rows : [];
     const safeSectionRecords = Array.isArray(sectionRecords) ? sectionRecords : [];
@@ -2090,14 +2188,22 @@ function measureSectionsFromRenderedWidths({
                 const section = safeSectionRecords[sectionIndex];
                 const path = paths[section.pathIndex];
                 const aisleMap = aisleRatiosByPath.get(section.pathIndex);
-                if (!path || !(path.length > 0) || !(aisleMap instanceof Map)) continue;
+                if (!path || !(path.length > 0)) continue;
 
-                const uA = aisleMap.get(section.aisleIndexA);
-                const uB = aisleMap.get(section.aisleIndexB);
+                const uA = section.startBoundaryKind === 'edge'
+                    ? normalizePathU(path, section.startU)
+                    : (aisleMap instanceof Map ? aisleMap.get(section.aisleIndexA) : NaN);
+                const uB = section.endBoundaryKind === 'edge'
+                    ? normalizePathU(path, section.endU)
+                    : (aisleMap instanceof Map ? aisleMap.get(section.aisleIndexB) : NaN);
                 if (!Number.isFinite(uA) || !Number.isFinite(uB)) continue;
 
-                const leftRenderedWidthFt = normalizeRenderedWidthIn(renderedWidthsIn[section.aisleIndexA]) / 12.0;
-                const rightRenderedWidthFt = normalizeRenderedWidthIn(renderedWidthsIn[section.aisleIndexB]) / 12.0;
+                const leftRenderedWidthFt = Number.isFinite(section.aisleIndexA)
+                    ? (normalizeRenderedWidthIn(renderedWidthsIn[section.aisleIndexA]) / 12.0)
+                    : 0;
+                const rightRenderedWidthFt = Number.isFinite(section.aisleIndexB)
+                    ? (normalizeRenderedWidthIn(renderedWidthsIn[section.aisleIndexB]) / 12.0)
+                    : 0;
                 const centerGapFt = sectionDistanceOnPath(path, uA, uB);
                 section.rowSeatCounts[rowIndex] = buildSectionSeatCountFromRenderedWidths(
                     centerGapFt,
@@ -2131,7 +2237,7 @@ function measureSectionsFromRenderedWidths({
             maxSeatsPerRow,
             avgSeatsPerRow
         };
-    });
+    }).filter((section) => shouldKeepMeasuredSection(section, aisles));
 
     const rowSummaries = safeRows.map((row, rowIndex) => {
         const pathSeatCounts = new Map();
@@ -2288,7 +2394,8 @@ export function buildTierAisleLayoutSummary({
             sectionRecords: buildSectionRecords(slots, safeRows.length),
             resolveRowAisleSampling,
             seatWidthIn: resolvedSeatWidthIn,
-            renderedWidthsIn
+            renderedWidthsIn,
+            aisles: safeAisles
         });
         const aisleOccupancyTotals = computeAisleTributaryOccupancies({
             aisleCount: safeAisles.length,
@@ -2481,6 +2588,11 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
         maxAisleWidthIn,
         egressFactor
     });
+    const hasSeatCap = Number.isFinite(Number(maxSeatsBetweenAisles)) && Number(maxSeatsBetweenAisles) > 0;
+    const hasEgressCap = Number.isFinite(legalMaxOccupantsPerAisle) && legalMaxOccupantsPerAisle > 0 && Math.max(0, Math.round(Number(rowCount) || 0)) > 0;
+    const terminalEdgeAisles = forcedAisles.length > 0 && (hasSeatCap || hasEgressCap)
+        ? buildOpenTerminalEdgeAisles(perimeterModel, bowlConfig, widthFt)
+        : [];
 
     let aisles = [];
     const bowlType = String(bowlConfig && bowlConfig.type ? bowlConfig.type : '').toLowerCase();
@@ -2555,6 +2667,7 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
             }
         );
         aisles = [
+            ...terminalEdgeAisles,
             ...forcedAisles,
             ...materializeDistributedAisles(perimeterModel, intervalCounts, bowlConfig, {
                 axisExclusionFt,
