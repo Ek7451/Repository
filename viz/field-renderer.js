@@ -3,6 +3,7 @@
  * Renders top-down field shapes, runoff perimeters, and focal point markers.
  */
 
+import { computeAisleTributaryOccupancies } from '../core/egress-policy.js';
 import { getSolverTierIndex } from '../core/profile-solver.js';
 import { countSeatsFromCenterlineGapFt } from '../core/seat-math.js';
 import { getCValueQuality } from '../core/sightline-calc.js';
@@ -177,6 +178,8 @@ const SECTION_LABEL_FONT_PX_ZOOMED_OUT = 9.5;   // ~5% smaller than the prior fu
 const SECTION_LABEL_FONT_PX_ZOOMED_IN = 15.4;  // enlarged close-zoom behavior
 const SECTION_LABEL_STACKED_FONT_PX = 14;   // original 10
 const SECTION_OCC_LABEL_FONT_PX = 11.2;     // original 8
+const AISLE_OCC_LABEL_FONT_PX = 10.8;
+const AISLE_WIDTH_LABEL_FONT_PX = 10.2;
 const SECTION_LABEL_STACK_OFFSET_PX = 12.6; // original 9
 // Row seat-count labels should sit at a consistent distance from the visible aisle edge
 // across all tiers (not a % of section width, which varies by tier/chamfer).
@@ -232,6 +235,11 @@ function sectionDistanceOnPath(path, startU, endU) {
     if (!path || !(path.length > 0)) return 0;
     if (path.closed) return wrappedDistanceOnPath(path, startU, endU);
     return Math.abs(clampUnit01(endU) - clampUnit01(startU)) * path.length;
+}
+
+function formatAisleWidthLabel(widthIn) {
+    const rounded = Math.round((Math.max(0, Number(widthIn) || 0)) * 10) / 10;
+    return Number.isInteger(rounded) ? `${rounded}"` : `${rounded.toFixed(1)}"`;
 }
 
 function approximatePathSignedArea(path, samples = 160) {
@@ -973,6 +981,7 @@ export class FieldRenderer {
         const aisleWidthFt = Math.max(0, (Number(tierMetrics.aisleWidth) || 0) / 12.0);
         const maxSeatsBetweenAisles = egressParams ? Number(egressParams.seatsBetweenAisles) : NaN;
         const seatWidthIn = egressParams ? Number(egressParams.seatWidthIn) : NaN;
+        const maxOccupantsPerAisle = Number(tierMetrics.occupantsPerAisleLine);
 
         const layout = buildTierAisleLayout({
             frontSegments,
@@ -981,7 +990,9 @@ export class FieldRenderer {
             aisleWidthFt,
             bowlConfig,
             maxSeatsBetweenAisles,
-            seatWidthIn
+            seatWidthIn,
+            maxOccupantsPerAisle,
+            rowCount: solver.rows.length
         });
 
         const tierSummary = this._summarizeTierLayoutSections(
@@ -994,12 +1005,25 @@ export class FieldRenderer {
             },
             offsetCorrection
         );
+        const authoritativeAisleWidthIn = Number(tierMetrics.aisleWidth);
+        const aisleOccupancyTotals = Array.isArray(tierSummary?.aisleOccupancyTotals)
+            ? tierSummary.aisleOccupancyTotals
+            : [];
+        const aisles = (layout.aisles || []).map((aisle, aisleIndex) => ({
+            ...aisle,
+            occupantsServed: Number.isFinite(aisleOccupancyTotals[aisleIndex])
+                ? Math.round(Math.max(0, aisleOccupancyTotals[aisleIndex]))
+                : null,
+            aisleWidthIn: Number.isFinite(authoritativeAisleWidthIn)
+                ? authoritativeAisleWidthIn
+                : null
+        }));
 
         return {
             tierIndex: solver.tierIndex !== undefined ? solver.tierIndex : 0,
             aisleWidthFt: layout.aisleWidthFt,
             seatWidthIn: Number.isFinite(seatWidthIn) ? seatWidthIn : NaN,
-            aisles: layout.aisles || [],
+            aisles,
             targetAisles: layout.targetAisles || targetAisles,
             forcedCount: layout.forcedCount || 0,
             sectionBoundaries: layout.sectionBoundaries || [],
@@ -1078,6 +1102,13 @@ export class FieldRenderer {
                 .map((value) => Math.max(0, Number(value) || 0))
                 .filter((value) => Number.isFinite(value) && value > 0)
             : [];
+        const aisleOccupancyTotals = Array.isArray(overlayData?.aisleOccupancyTotals)
+            ? overlayData.aisleOccupancyTotals
+                .map((value) => {
+                    const numericValue = Number(value);
+                    return Number.isFinite(numericValue) ? Math.max(0, numericValue) : 0;
+                })
+            : [];
         let avgBackRowSeatsPerSection = 0;
         let maxBackRowSeatsPerSection = 0;
         let minBackRowSeatsPerSection = 0;
@@ -1094,6 +1125,7 @@ export class FieldRenderer {
             allSectionPathsClosed,
             backRowSectionSeatCounts,
             sectionOccupancyTotals,
+            aisleOccupancyTotals,
             avgBackRowSeatsPerSection,
             maxBackRowSeatsPerSection,
             minBackRowSeatsPerSection
@@ -1112,13 +1144,17 @@ export class FieldRenderer {
             paddingX = 4,
             paddingY = 2,
             offsetXPx = 0,
-            offsetYPx = 0
+            offsetYPx = 0,
+            rotationRad = 0
         } = options;
 
         ctx.save();
         ctx.translate(x, y);
         // Cancel world scaling + Y flip so labels are upright and pixel-sized.
         ctx.scale(1 / safeScale, -1 / safeScale);
+        if (rotationRad) {
+            ctx.rotate(Number(rotationRad) || 0);
+        }
         if (offsetXPx || offsetYPx) {
             ctx.translate(Number(offsetXPx) || 0, Number(offsetYPx) || 0);
         }
@@ -1539,6 +1575,42 @@ export class FieldRenderer {
             });
             ctx.restore();
         }
+
+        if (showSectionLabels) {
+            const aisleMetricLabels = this._getTierAisleMetricLabelData(
+                solver,
+                bowlConfig,
+                tierLayout,
+                offsetCorrection
+            );
+
+            ctx.save();
+            ctx.translate(fx, fy);
+            aisleMetricLabels.occupancyLabels.forEach((label) => {
+                this._drawWorldTextLabel(ctx, scale, label.x, label.y, label.text, {
+                    fontPx: AISLE_OCC_LABEL_FONT_PX,
+                    fontWeight: 700,
+                    textColor: '#0f172a',
+                    bgColor: 'rgba(255,255,255,0.95)',
+                    borderColor: 'rgba(15, 23, 42, 0.18)',
+                    paddingX: 4.5,
+                    paddingY: 1.8,
+                    rotationRad: label.rotationRad
+                });
+            });
+            aisleMetricLabels.widthLabels.forEach((label) => {
+                this._drawWorldTextLabel(ctx, scale, label.x, label.y, label.text, {
+                    fontPx: AISLE_WIDTH_LABEL_FONT_PX,
+                    fontWeight: 700,
+                    textColor: '#334155',
+                    bgColor: 'rgba(255,255,255,0.93)',
+                    borderColor: 'rgba(148, 163, 184, 0.34)',
+                    paddingX: 4,
+                    paddingY: 1.6
+                });
+            });
+            ctx.restore();
+        }
     }
 
     getTierAisleBandPolygons(solver, bowlConfig, tierLayout, offsetCorrection = 0) {
@@ -1724,6 +1796,18 @@ export class FieldRenderer {
             });
         }
 
+        const aisleOccupancyTotals = computeAisleTributaryOccupancies({
+            aisleCount: tierLayout.aisles.length,
+            sections: Array.from(sectionTemplates.entries()).flatMap(([pathIndex, slots]) => {
+                const totals = sectionSeatTotals.get(pathIndex);
+                return (slots || []).map((slot, slotIndex) => ({
+                    occupancy: Array.isArray(totals) ? totals[slotIndex] : 0,
+                    aisleIndexA: slot?.aisleIndexA,
+                    aisleIndexB: slot?.aisleIndexB
+                }));
+            })
+        });
+
         const sectionLabels = [];
         const firstRow = solver.rows[0];
         const lastRow = solver.rows[solver.rows.length - 1];
@@ -1798,9 +1882,111 @@ export class FieldRenderer {
         return {
             sectionLabels,
             rowSeatLabels,
+            aisleOccupancyTotals,
             sectionOccupancyTotals: Array.from(sectionSeatTotals.values()).flatMap((totals) =>
                 (Array.isArray(totals) ? totals : []).map((value) => Math.round(Math.max(0, Number(value) || 0)))
             )
+        };
+    }
+
+    _getTierAisleMetricLabelData(solver, bowlConfig, tierLayout, offsetCorrection = 0) {
+        const empty = { occupancyLabels: [], widthLabels: [] };
+        if (!tierLayout || !Array.isArray(tierLayout.aisles) || tierLayout.aisles.length === 0) {
+            return empty;
+        }
+        if (!solver || !Array.isArray(solver.rows) || solver.rows.length === 0) {
+            return empty;
+        }
+
+        const firstRow = solver.rows[0];
+        const lastRow = solver.rows[solver.rows.length - 1];
+        if (!firstRow || !lastRow) return empty;
+
+        const pathCache = new Map();
+        const getPathsForOffset = (offset) => {
+            const key = offset.toFixed(6);
+            if (!pathCache.has(key)) {
+                pathCache.set(key, buildGeometryPaths(this._getBowlGeometry(bowlConfig, offset)));
+            }
+            return pathCache.get(key);
+        };
+
+        const chamferCache = new Map();
+        const aisleReferenceMap = this._buildTierAisleReferenceMap(
+            solver,
+            bowlConfig,
+            tierLayout,
+            offsetCorrection,
+            getPathsForOffset,
+            chamferCache
+        );
+        const occupancyFrontPaths = getPathsForOffset((firstRow.x - (firstRow.tread_depth * 0.5)) - offsetCorrection);
+        const occupancyBackPaths = getPathsForOffset((lastRow.x - (lastRow.tread_depth * 0.5)) - offsetCorrection);
+        const widthFrontPaths = getPathsForOffset((firstRow.x - firstRow.tread_depth) - offsetCorrection);
+        const widthBackPaths = getPathsForOffset(firstRow.x - offsetCorrection);
+
+        const occupancyLabels = [];
+        const widthLabels = [];
+
+        for (let aisleIndex = 0; aisleIndex < tierLayout.aisles.length; aisleIndex++) {
+            const aisle = tierLayout.aisles[aisleIndex];
+            if (!aisle) continue;
+
+            const pathIndex = Math.max(0, Math.floor(Number(aisle.pathIndex) || 0));
+            const occupancyFrontPath = occupancyFrontPaths[pathIndex];
+            const occupancyBackPath = occupancyBackPaths[pathIndex];
+            const widthFrontPath = widthFrontPaths[pathIndex];
+            const widthBackPath = widthBackPaths[pathIndex];
+
+            if (Number.isFinite(aisle.occupantsServed) && occupancyFrontPath && occupancyBackPath) {
+                const occupancyRatios = this._resolveTierAisleStationRatios(
+                    occupancyFrontPath,
+                    occupancyBackPath,
+                    aisle,
+                    aisleIndex,
+                    chamferCache,
+                    aisleReferenceMap
+                );
+                if (occupancyRatios) {
+                    const frontPoint = samplePathPointByRatio(occupancyFrontPath, occupancyRatios.uFront);
+                    const backPoint = samplePathPointByRatio(occupancyBackPath, occupancyRatios.uBack);
+                    occupancyLabels.push({
+                        aisleIndex,
+                        pathIndex,
+                        x: (frontPoint.x + backPoint.x) * 0.5,
+                        y: (frontPoint.y + backPoint.y) * 0.5,
+                        text: `${Math.round(Math.max(0, Number(aisle.occupantsServed) || 0))}occ`,
+                        rotationRad: -Math.atan2(backPoint.y - frontPoint.y, backPoint.x - frontPoint.x)
+                    });
+                }
+            }
+
+            if (Number.isFinite(aisle.aisleWidthIn) && aisle.aisleWidthIn > 0 && widthFrontPath && widthBackPath) {
+                const widthRatios = this._resolveTierAisleStationRatios(
+                    widthFrontPath,
+                    widthBackPath,
+                    aisle,
+                    aisleIndex,
+                    chamferCache,
+                    aisleReferenceMap
+                );
+                if (widthRatios) {
+                    const frontPoint = samplePathPointByRatio(widthFrontPath, widthRatios.uFront);
+                    const backPoint = samplePathPointByRatio(widthBackPath, widthRatios.uBack);
+                    widthLabels.push({
+                        aisleIndex,
+                        pathIndex,
+                        x: (frontPoint.x + backPoint.x) * 0.5,
+                        y: (frontPoint.y + backPoint.y) * 0.5,
+                        text: formatAisleWidthLabel(aisle.aisleWidthIn)
+                    });
+                }
+            }
+        }
+
+        return {
+            occupancyLabels,
+            widthLabels
         };
     }
 

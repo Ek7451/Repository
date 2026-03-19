@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    computeAisleTributaryOccupancies,
     buildDistributedAisleCountMatrix,
     computeRequiredPerimeterSegmentCounts,
     computeAssignedAisleWidthIn,
@@ -10,6 +11,7 @@ import {
     computeTributaryOccupancyPerAisle,
     estimateWorstSeatsInInterval,
     findRequiredIntervalAisleCount,
+    findRequiredIntervalAisleCountForAisleLoad,
     solveUniformTierEgressPolicy,
     validatePerimeterSeatCaps,
     validateDistributedSeatCaps
@@ -52,6 +54,25 @@ describe('egress policy helpers', () => {
             measureWorstSeatsForCount: (count) => estimateWorstSeatsInInterval(30, count, { aisleWidthFt: 4, seatWidthIn: 20 }),
             maxCount: 10
         })).toBe(1);
+    });
+
+    it('finds interval aisle counts from the shared aisle-load cap', () => {
+        expect(findRequiredIntervalAisleCountForAisleLoad({
+            maxOccupantsPerAisle: 25,
+            rowCount: 4,
+            measureWorstSeatsForCount: (count) => estimateWorstSeatsInInterval(30, count, { aisleWidthFt: 4, seatWidthIn: 20 }),
+            maxCount: 10
+        })).toBe(1);
+    });
+
+    it('splits realized section occupancies into tributary aisle loads', () => {
+        expect(computeAisleTributaryOccupancies({
+            aisleCount: 3,
+            sections: [
+                { occupancy: 80, aisleIndexA: 0, aisleIndexB: 1 },
+                { occupancy: 60, aisleIndexA: 1, aisleIndexB: 2 }
+            ]
+        })).toEqual([40, 70, 30]);
     });
 
     it('preserves computeTierEgressMetrics public shape', () => {

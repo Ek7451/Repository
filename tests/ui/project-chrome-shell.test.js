@@ -243,6 +243,31 @@ describe('ProjectChrome shell characterization', () => {
         expect(document.getElementById).not.toHaveBeenCalledWith('loadConfigBtn');
     });
 
+    it('reads the selected config file and forwards the payload through the project shell port', async () => {
+        const file = {
+            text: vi.fn().mockResolvedValue('{"sport":"Football"}')
+        };
+        const input = {
+            files: [file],
+            value: 'selected.json'
+        };
+        const onConfigImported = vi.fn().mockResolvedValue(undefined);
+        const shell = new ProjectChromeShell({
+            onConfigImported
+        });
+
+        await shell._handleConfigImportChange({
+            target: input
+        });
+
+        expect(file.text).toHaveBeenCalledTimes(1);
+        expect(onConfigImported).toHaveBeenCalledWith({
+            file,
+            text: '{"sport":"Football"}'
+        });
+        expect(input.value).toBe('');
+    });
+
     it('renders icon-only manager actions with accessible labels', () => {
         const { elements } = createProjectChromeHarness();
 

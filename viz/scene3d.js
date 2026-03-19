@@ -59,6 +59,8 @@ function normalizeThemeName(theme) {
 }
 
 let BRAND_COLORS = SCENE_THEME_COLORS.light;
+const MIDDLE_CLICK_DOUBLE_MS = 400;
+const MIDDLE_CLICK_DRAG_PX = 6;
 
 function syncSceneThemeColors(theme = 'light') {
     theme = normalizeThemeName(theme);
@@ -104,6 +106,12 @@ export class Scene3D {
         this._gridHelper = null;
         /** @type {any} */
         this._shadowPlane = null;
+        this._lastMiddleClickTime = 0;
+        this._middlePointerState = null;
+        this._middlePointerDownHandler = null;
+        this._middlePointerMoveHandler = null;
+        this._middlePointerUpHandler = null;
+        this._middlePointerCancelHandler = null;
     }
 
     async init() {
@@ -191,21 +199,24 @@ export class Scene3D {
         window.addEventListener('resize', this._resizeHandler);
 
         // Double Middle Mouse Button to zoom extents
-        let lastMiddleClickTime = 0;
-        this.renderer.domElement.addEventListener('pointerup', (e) => {
-            if (e.button === 1) { // 1 = middle mouse button
-                const now = performance.now();
-                if (now - lastMiddleClickTime < 400) {
-                    // Small delay ensures OrbitControls processes the pointerup and clears its dragging state first
-                    setTimeout(() => {
-                        this._fitCameraToBowl();
-                    }, 10);
-                    lastMiddleClickTime = 0; // reset
-                } else {
-                    lastMiddleClickTime = now;
-                }
-            }
-        });
+        this._middlePointerDownHandler = (e) => this._handleMiddlePointerDown(e);
+        this._middlePointerMoveHandler = (e) => this._handleMiddlePointerMove(e);
+        this._middlePointerUpHandler = (e) => {
+            if (!this._handleMiddlePointerUp(e)) return;
+
+            // Small delay ensures OrbitControls processes pointerup and clears its drag state first.
+            setTimeout(() => {
+                this._fitCameraToBowl();
+            }, 10);
+        };
+        this._middlePointerCancelHandler = () => {
+            this._middlePointerState = null;
+            this._lastMiddleClickTime = 0;
+        };
+        this.renderer.domElement.addEventListener('pointerdown', this._middlePointerDownHandler);
+        this.renderer.domElement.addEventListener('pointermove', this._middlePointerMoveHandler);
+        this.renderer.domElement.addEventListener('pointerup', this._middlePointerUpHandler);
+        this.renderer.domElement.addEventListener('pointercancel', this._middlePointerCancelHandler);
 
         // Resize observer for container
         this._resizeObserver = new ResizeObserver(() => this._onResize());
@@ -284,7 +295,10 @@ export class Scene3D {
 
     _animate() {
         this._animId = requestAnimationFrame(() => this._animate());
-        if (this.controls) this.controls.update();
+        if (this.controls) {
+            this.controls.update();
+            this._stabilizeCameraDistance();
+        }
         if (this.renderer && this.scene && this.camera) {
             try {
                 this.renderer.render(this.scene, this.camera);
@@ -1130,6 +1144,81 @@ export class Scene3D {
         };
     }
 
+    _handleMiddlePointerDown(event) {
+        if (!event || event.button !== 1) return;
+
+        this._middlePointerState = {
+            pointerId: event.pointerId ?? null,
+            clientX: Number(event.clientX) || 0,
+            clientY: Number(event.clientY) || 0,
+            moved: false
+        };
+    }
+
+    _handleMiddlePointerMove(event) {
+        const state = this._middlePointerState;
+        if (!state) return;
+        if (state.pointerId !== null && event?.pointerId !== undefined && state.pointerId !== event.pointerId) return;
+
+        const dx = (Number(event?.clientX) || 0) - state.clientX;
+        const dy = (Number(event?.clientY) || 0) - state.clientY;
+        if ((dx * dx) + (dy * dy) > (MIDDLE_CLICK_DRAG_PX * MIDDLE_CLICK_DRAG_PX)) {
+            state.moved = true;
+        }
+    }
+
+    _handleMiddlePointerUp(event, now = performance.now()) {
+        if (!event || event.button !== 1) return false;
+
+        const state = this._middlePointerState;
+        this._middlePointerState = null;
+        if (!state) return false;
+
+        if (state.pointerId !== null && event.pointerId !== undefined && state.pointerId !== event.pointerId) {
+            this._lastMiddleClickTime = 0;
+            return false;
+        }
+
+        if (state.moved) {
+            this._lastMiddleClickTime = 0;
+            return false;
+        }
+
+        if ((now - this._lastMiddleClickTime) < MIDDLE_CLICK_DOUBLE_MS) {
+            this._lastMiddleClickTime = 0;
+            return true;
+        }
+
+        this._lastMiddleClickTime = now;
+        return false;
+    }
+
+    _stabilizeCameraDistance() {
+        if (!this.camera || !this.controls) return;
+
+        const minimumDistance = 8;
+        const target = this.controls.target;
+        const position = this.camera.position;
+        const direction = new this.THREE.Vector3().subVectors(position, target);
+
+        let distance = direction.length();
+        if (!Number.isFinite(distance) || distance <= 0) {
+            direction.set(1, 0.6, 1).normalize();
+            distance = 0;
+        } else {
+            direction.normalize();
+        }
+
+        if (distance < minimumDistance) {
+            position.copy(target).addScaledVector(direction, minimumDistance);
+            distance = minimumDistance;
+        }
+
+        this.camera.near = Math.max(0.1, distance / 1000);
+        this.camera.far = Math.max(5000, distance * 10);
+        this.camera.updateProjectionMatrix();
+    }
+
     _fitCameraToBowl() {
         if (!this.bowlGroup || this.bowlGroup.children.length === 0 || !this.camera || !this.controls) return;
 
@@ -1146,9 +1235,7 @@ export class Scene3D {
         if (boundsSuspicious) {
             this.controls.target.set(0, 20, 0);
             this.camera.position.set(260, 180, 340);
-            this.camera.near = 0.1;
-            this.camera.far = 5000;
-            this.camera.updateProjectionMatrix();
+            this._stabilizeCameraDistance();
             this.controls.update();
             return;
         }
@@ -1169,9 +1256,7 @@ export class Scene3D {
 
         // Position camera `distance` units away along the current view direction
         this.camera.position.copy(center).addScaledVector(direction, distance);
-        this.camera.near = Math.max(0.1, distance / 1000);
-        this.camera.far = Math.max(5000, distance * 10);
-        this.camera.updateProjectionMatrix();
+        this._stabilizeCameraDistance();
         this.controls.update();
     }
 
@@ -1446,6 +1531,18 @@ export class Scene3D {
         if (this._resizeHandler) window.removeEventListener('resize', this._resizeHandler);
         if (this._resizeObserver) this._resizeObserver.disconnect();
         if (this.renderer) {
+            if (this._middlePointerDownHandler) {
+                this.renderer.domElement.removeEventListener('pointerdown', this._middlePointerDownHandler);
+            }
+            if (this._middlePointerMoveHandler) {
+                this.renderer.domElement.removeEventListener('pointermove', this._middlePointerMoveHandler);
+            }
+            if (this._middlePointerUpHandler) {
+                this.renderer.domElement.removeEventListener('pointerup', this._middlePointerUpHandler);
+            }
+            if (this._middlePointerCancelHandler) {
+                this.renderer.domElement.removeEventListener('pointercancel', this._middlePointerCancelHandler);
+            }
             this.renderer.dispose();
             if (this.renderer.domElement && this.renderer.domElement.parentNode) {
                 this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);

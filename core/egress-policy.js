@@ -163,6 +163,81 @@ export function findRequiredIntervalAisleCount({
     return required;
 }
 
+/**
+ * @param {{
+ *   maxOccupantsPerAisle?: number,
+ *   rowCount?: number,
+ *   measureWorstSeatsForCount?: ((count: number) => number),
+ *   maxCount?: number
+ * }} [options]
+ */
+export function findRequiredIntervalAisleCountForAisleLoad({
+    maxOccupantsPerAisle,
+    rowCount,
+    measureWorstSeatsForCount,
+    maxCount = 500
+} = {}) {
+    const loadCap = Number(maxOccupantsPerAisle);
+    if (!(Number.isFinite(loadCap) && loadCap > 0)) return 0;
+    if (typeof measureWorstSeatsForCount !== 'function') return 0;
+
+    const resolvedRowCount = Math.max(1, Math.round(Number(rowCount) || 1));
+    const safeMaxCount = Math.max(0, Math.floor(Number(maxCount) || 0));
+    let required = 0;
+    while (required < safeMaxCount) {
+        const worstSeatsPerSection = Math.max(0, Number(measureWorstSeatsForCount(required)) || 0);
+        const occupantsPerSection = worstSeatsPerSection * resolvedRowCount;
+        const tributaryOccupancy = computeTributaryOccupancyPerAisle({
+            occupantsPerBlock: occupantsPerSection,
+            blockCount: required + 1
+        });
+        if (tributaryOccupancy <= loadCap + 1e-9) break;
+        required += 1;
+    }
+    return required;
+}
+
+/**
+ * @param {{
+ *   aisleCount?: number,
+ *   sections?: Array<{
+ *     occupancy?: number,
+ *     aisleIndexA?: number,
+ *     aisleIndexB?: number
+ *   }>
+ * }} [options]
+ */
+export function computeAisleTributaryOccupancies({
+    aisleCount,
+    sections
+} = {}) {
+    const resolvedAisleCount = Math.max(0, Math.floor(Number(aisleCount) || 0));
+    const occupancies = new Array(resolvedAisleCount).fill(0);
+    if (!occupancies.length) return occupancies;
+
+    const safeSections = Array.isArray(sections) ? sections : [];
+    safeSections.forEach((section) => {
+        const occupancy = Math.max(0, Number(section?.occupancy) || 0);
+        if (!(occupancy > 0)) return;
+
+        const aisleIndexA = Math.floor(Number(section?.aisleIndexA));
+        const aisleIndexB = Math.floor(Number(section?.aisleIndexB));
+        const hasA = Number.isInteger(aisleIndexA) && aisleIndexA >= 0 && aisleIndexA < resolvedAisleCount;
+        const hasB = Number.isInteger(aisleIndexB) && aisleIndexB >= 0 && aisleIndexB < resolvedAisleCount;
+        if (!hasA && !hasB) return;
+
+        if (hasA && hasB && aisleIndexA === aisleIndexB) {
+            occupancies[aisleIndexA] += occupancy;
+            return;
+        }
+
+        if (hasA) occupancies[aisleIndexA] += occupancy * 0.5;
+        if (hasB) occupancies[aisleIndexB] += occupancy * 0.5;
+    });
+
+    return occupancies;
+}
+
 export function buildDistributedAisleCountMatrix(perimeterModel, createCountMatrix, getEntries, resolveRequiredCount) {
     const counts = typeof createCountMatrix === 'function' ? createCountMatrix(perimeterModel) : [];
     const entries = typeof getEntries === 'function' ? getEntries(perimeterModel) : [];

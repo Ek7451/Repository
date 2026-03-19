@@ -1,10 +1,6 @@
 import { ProjectChromeShell } from './project-chrome-shell.js';
 import { WorkspaceShell } from './workspace-shell.js';
 
-function getInputElement(id) {
-    return /** @type {HTMLInputElement | null} */ (document.getElementById(id));
-}
-
 function getErrorReason(error) {
     if (error && typeof error === 'object' && typeof error.message === 'string') {
         return error.message;
@@ -28,13 +24,10 @@ export class EditorShell {
         this._onExportRequested = typeof settings.onExportRequested === 'function'
             ? settings.onExportRequested
             : null;
-        this._onConfigImported = typeof settings.onConfigImported === 'function'
-            ? settings.onConfigImported
-            : null;
-        this._cleanup = [];
         this._projectChromeShell = new ProjectChromeShell({
             projectActions: settings.projectActions,
             onExportRequested: (kind) => this._handleExportRequest(kind),
+            onConfigImported: settings.onConfigImported,
             isScene3DActive: () => this.isScene3DActive()
         });
         this._workspaceShell = new WorkspaceShell({
@@ -49,12 +42,9 @@ export class EditorShell {
     init() {
         this._projectChromeShell.init();
         this._workspaceShell.init();
-        this._bindConfigImport();
     }
 
     destroy() {
-        this._cleanup.forEach((dispose) => dispose());
-        this._cleanup = [];
         this._projectChromeShell.destroy();
         this._workspaceShell.destroy();
     }
@@ -159,18 +149,6 @@ export class EditorShell {
         return true;
     }
 
-    _bindConfigImport() {
-        const configFileInput = getInputElement('configFileInput');
-
-        if (configFileInput) {
-            const handleChange = (event) => {
-                void this._handleConfigImportChange(event);
-            };
-            configFileInput.addEventListener('change', handleChange);
-            this._cleanup.push(() => configFileInput.removeEventListener('change', handleChange));
-        }
-    }
-
     async _handleExportRequest(kind) {
         if (!this._onExportRequested) return;
 
@@ -182,21 +160,6 @@ export class EditorShell {
         } catch (error) {
             console.error(`${kind} export failed:`, error);
             alert(`Export failed: ${getErrorReason(error)}`);
-        }
-    }
-
-    async _handleConfigImportChange(event) {
-        const target = /** @type {HTMLInputElement | null} */ (event.target);
-        const file = target?.files?.[0];
-        if (!file) return;
-
-        try {
-            const text = await file.text();
-            await this._onConfigImported?.({ file, text });
-        } finally {
-            if (target) {
-                target.value = '';
-            }
         }
     }
 }

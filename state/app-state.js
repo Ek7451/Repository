@@ -147,7 +147,7 @@ function createDefaultStateData() {
             sideLength: 300,
             structuralDepth: 12,
             structuralProfileMode: 'stepped',
-            straightAisleMode: 'radial',
+            straightAisleMode: 'perpendicular',
             chamferAisleMode: 'radial'
         },
         occupancy: {

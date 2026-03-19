@@ -35,7 +35,7 @@ function createFullChamferBowlConfig(overrides = {}) {
 }
 
 function createTierMetrics() {
-    return { numAisles: 8, aisleWidth: 48 };
+    return { numAisles: 8, aisleWidth: 48, occupantsPerAisleLine: 80 };
 }
 
 function createEgressParams() {
@@ -154,6 +154,7 @@ describe('FieldRenderer helper delegation surface', () => {
                 actualSections: expect.any(Number),
                 allSectionPathsClosed: true,
                 backRowSectionSeatCounts: expect.any(Array),
+                aisleOccupancyTotals: expect.any(Array),
                 sectionOccupancyTotals: expect.any(Array),
                 avgBackRowSeatsPerSection: expect.any(Number),
                 maxBackRowSeatsPerSection: expect.any(Number),
@@ -176,13 +177,40 @@ describe('FieldRenderer helper delegation surface', () => {
             anchorType: 'segment_fraction',
             segmentIndex: expect.any(Number),
             segmentT: expect.any(Number),
-            alignmentMode: expect.stringMatching(/^(radial|perpendicular)$/)
+            alignmentMode: expect.stringMatching(/^(radial|perpendicular)$/),
+            occupantsServed: expect.any(Number),
+            aisleWidthIn: 48
         }));
         expect(
             layout.aisles
                 .filter((aisle) => !aisle.forced)
                 .every((aisle) => aisle.alignmentMode === 'radial' || aisle.alignmentMode === 'perpendicular')
         ).toBe(true);
+    });
+
+    it('builds aisle metric labels from precomputed aisle values', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const solver = createTierSolver();
+        const bowlConfig = createFullChamferBowlConfig();
+        const tierLayout = renderer.generateTierAisleLayout(
+            solver,
+            bowlConfig,
+            createTierMetrics(),
+            0,
+            createEgressParams()
+        );
+
+        const overlay = renderer._getTierAisleMetricLabelData(solver, bowlConfig, tierLayout, 0);
+
+        expect(overlay.occupancyLabels.length).toBeGreaterThan(0);
+        expect(overlay.widthLabels).toHaveLength(tierLayout.aisles.length);
+        expect(overlay.occupancyLabels[0]).toEqual(expect.objectContaining({
+            text: expect.stringMatching(/occ$/),
+            rotationRad: expect.any(Number)
+        }));
+        expect(overlay.widthLabels[0]).toEqual(expect.objectContaining({
+            text: expect.stringMatching(/"$/)
+        }));
     });
 
     it('keeps straight perpendicular aisle polygons on one tier-stable axis in plan view', () => {
@@ -444,5 +472,74 @@ describe('FieldRenderer helper delegation surface', () => {
             expect(sceneRatios.uFront).toBeCloseTo(fieldRatios.uFront);
             expect(sceneRatios.uBack).toBeCloseTo(fieldRatios.uBack);
         });
+    });
+});
+
+describe('Scene3D interaction guards', () => {
+    it('does not treat middle-button dolly drags as double-click zoom extents', async () => {
+        const { Scene3D } = await import('../../viz/scene3d.js');
+        const scene = Object.create(Scene3D.prototype);
+        scene._lastMiddleClickTime = 0;
+        scene._middlePointerState = null;
+
+        scene._handleMiddlePointerDown({ button: 1, pointerId: 11, clientX: 100, clientY: 120 });
+        scene._handleMiddlePointerMove({ pointerId: 11, clientX: 122, clientY: 148 });
+        expect(scene._handleMiddlePointerUp({ button: 1, pointerId: 11 }, 1000)).toBe(false);
+        expect(scene._lastMiddleClickTime).toBe(0);
+
+        scene._handleMiddlePointerDown({ button: 1, pointerId: 11, clientX: 100, clientY: 120 });
+        expect(scene._handleMiddlePointerUp({ button: 1, pointerId: 11 }, 1300)).toBe(false);
+
+        scene._handleMiddlePointerDown({ button: 1, pointerId: 11, clientX: 100, clientY: 120 });
+        expect(scene._handleMiddlePointerUp({ button: 1, pointerId: 11 }, 1500)).toBe(true);
+    });
+
+    it('leaves normal camera distances unchanged when stabilizing zoom', async () => {
+        const { Scene3D } = await import('../../viz/scene3d.js');
+        const THREE = await import('../../lib/three.module.js');
+        const scene = Object.create(Scene3D.prototype);
+        const updateProjectionMatrix = vi.fn();
+        scene.THREE = THREE;
+        scene.camera = {
+            position: new THREE.Vector3(0, 10, 40),
+            near: 1,
+            far: 1000,
+            updateProjectionMatrix
+        };
+        scene.controls = {
+            target: new THREE.Vector3(0, 10, 0)
+        };
+
+        scene._stabilizeCameraDistance();
+
+        expect(scene.camera.position.distanceTo(scene.controls.target)).toBeCloseTo(40);
+        expect(scene.camera.position.x).toBeCloseTo(0);
+        expect(scene.camera.position.y).toBeCloseTo(10);
+        expect(scene.camera.position.z).toBeCloseTo(40);
+        expect(updateProjectionMatrix).toHaveBeenCalledTimes(1);
+    });
+
+    it('pushes near-collapsed cameras back to the soft safety distance', async () => {
+        const { Scene3D } = await import('../../viz/scene3d.js');
+        const THREE = await import('../../lib/three.module.js');
+        const scene = Object.create(Scene3D.prototype);
+        const updateProjectionMatrix = vi.fn();
+        scene.THREE = THREE;
+        scene.camera = {
+            position: new THREE.Vector3(0, 0, 2),
+            near: 1,
+            far: 1000,
+            updateProjectionMatrix
+        };
+        scene.controls = {
+            target: new THREE.Vector3(0, 0, 0)
+        };
+
+        scene._stabilizeCameraDistance();
+
+        expect(scene.camera.position.distanceTo(scene.controls.target)).toBeCloseTo(8);
+        expect(scene.camera.near).toBeCloseTo(0.1);
+        expect(scene.camera.far).toBeCloseTo(5000);
+        expect(updateProjectionMatrix).toHaveBeenCalledTimes(1);
     });
 });

@@ -176,7 +176,8 @@ describe('profile solver helper exports', () => {
                     actualAisles: 2,
                     allSectionPathsClosed: true,
                     avgBackRowSeatsPerSection: 14,
-                    sectionOccupancyTotals: [32, 48]
+                    sectionOccupancyTotals: [32, 48],
+                    aisleOccupancyTotals: [40, 40]
                 }
             }],
             egressParams: { egressFactor: 0.2 }
@@ -189,8 +190,8 @@ describe('profile solver helper exports', () => {
             numSections: 2,
             seatsPerBlock: '14.0',
             occupantsPerSection: 48,
-            occupantsPerAisleLine: 48,
-            capacityWidth: '9.6'
+            occupantsPerAisleLine: 40,
+            capacityWidth: '8.0'
         });
     });
 
@@ -300,6 +301,53 @@ describe('profile solver helper exports', () => {
                 geometry.closedProfile.some((point) => point.x === startX && point.z === expectedFrontBottomZ)
             ).toBe(true);
         }
+    });
+
+    it('starts the sloped underside at the back of the first row for tiers 2 and 3', () => {
+        const solvers = buildActiveTierSolvers([
+            createTier({ enabled: false }),
+            createTier({ firstRowDist: 90, firstRowElev: 24, numRows: 3 }),
+            createTier({ firstRowDist: 135, firstRowElev: 42, numRows: 3 })
+        ], { x: 0, z: 0 });
+
+        for (const solver of solvers) {
+            const tierIndex = solver.tierIndex;
+            const firstRow = solver.rows[0];
+            const lastRow = solver.rows.at(-1);
+            const structuralDepthFt = 1.5;
+            const geometry = buildStructuralProfileGeometry(solver, {
+                structuralDepthFt,
+                structuralProfileMode: 'sloped',
+                tierIndex
+            });
+
+            expect(tierIndex === 1 || tierIndex === 2).toBe(true);
+            expect(geometry.undersideProfile[0]).toEqual({
+                x: firstRow.x,
+                z: firstRow.z - structuralDepthFt
+            });
+            expect(geometry.undersideProfile[1]).toEqual({
+                x: lastRow.x,
+                z: lastRow.z - structuralDepthFt
+            });
+        }
+    });
+
+    it('keeps non-tier-2-and-3 sloped underside behavior unchanged', () => {
+        const [solver] = buildActiveTierSolvers([
+            createTier({ firstRowElev: 6, numRows: 4 })
+        ], { x: 0, z: 0 });
+        const structuralDepthFt = 1.5;
+        const geometry = buildStructuralProfileGeometry(solver, {
+            structuralDepthFt,
+            structuralProfileMode: 'sloped',
+            tierIndex: 0
+        });
+
+        expect(geometry.undersideProfile[0]).toEqual({
+            x: (solver.rows[0].x - solver.treadDepthFt) + structuralDepthFt,
+            z: 0
+        });
     });
 
     it('dedupes large-depth structural geometry without extending below zero', () => {

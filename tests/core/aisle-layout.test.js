@@ -451,6 +451,48 @@ describe('aisle layout geometry seam', () => {
         ).toEqual([1, 1, 3, 3, 3, 5, 5, 7, 7, 7]);
     });
 
+    it('adds egress-driven distributed chamfer aisles without moving forced transitions', () => {
+        const fixture = buildRendererBowlFixture('Full', {
+            straightAisleMode: 'perpendicular',
+            chamferAisleMode: 'radial'
+        });
+        const relaxedLayout = buildTierAisleLayout({
+            frontSegments: fixture.frontSegments,
+            backSegments: fixture.backSegments,
+            targetAisles: 8,
+            aisleWidthFt: 4,
+            bowlConfig: fixture.bowlConfig,
+            seatWidthIn: 20,
+            rowCount: 12,
+            maxOccupantsPerAisle: 500
+        });
+        const strictLayout = buildTierAisleLayout({
+            frontSegments: fixture.frontSegments,
+            backSegments: fixture.backSegments,
+            targetAisles: 8,
+            aisleWidthFt: 4,
+            bowlConfig: fixture.bowlConfig,
+            seatWidthIn: 20,
+            rowCount: 12,
+            maxOccupantsPerAisle: 60
+        });
+
+        expect(strictLayout.forcedCount).toBe(relaxedLayout.forcedCount);
+        expect(
+            strictLayout.aisles
+                .filter((aisle) => aisle.forced)
+                .map((aisle) => ({ cornerOrdinal: aisle.cornerOrdinal, u: aisle.u }))
+        ).toEqual(
+            relaxedLayout.aisles
+                .filter((aisle) => aisle.forced)
+                .map((aisle) => ({ cornerOrdinal: aisle.cornerOrdinal, u: aisle.u }))
+        );
+        expect(strictLayout.aisles.length).toBeGreaterThan(relaxedLayout.aisles.length);
+        expect(
+            strictLayout.aisles.filter((aisle) => !aisle.forced && [0, 2, 4, 6].includes(aisle.segmentIndex)).length
+        ).toBeGreaterThan(0);
+    });
+
     it('stamps straight and chamfer distributed aisles with their configured alignment modes', () => {
         const fixture = buildRendererBowlFixture('Full', {
             straightAisleMode: 'perpendicular',

@@ -4,9 +4,10 @@
  */
 
 import {
-    computeRequiredPerimeterSegmentCounts,
+    buildDistributedAisleCountMatrix,
     estimateWorstSeatsInInterval as estimateWorstSeatsInIntervalByPolicy,
     findRequiredIntervalAisleCount,
+    findRequiredIntervalAisleCountForAisleLoad,
     validatePerimeterSeatCaps
 } from './egress-policy.js';
 
@@ -1359,34 +1360,53 @@ function buildMeasureWorstSeatsForInterval(intervalSide, seatWidthIn, aisleWidth
 
 function computeRequiredSegmentCounts(perimeterModel, options) {
     const maxSeatsBetweenAisles = Number(options?.maxSeatsBetweenAisles);
+    const maxOccupantsPerAisle = Number(options?.maxOccupantsPerAisle);
 
     const seatWidthIn = Math.max(1, Number(options?.seatWidthIn) || 20);
     const aisleWidthFt = Math.max(0, Number(options?.aisleWidthFt) || 0);
     const axisExclusionFt = Math.max(0, Number(options?.axisExclusionFt) || 0);
     const endpointBufferFt = Math.max(0, Number(options?.endpointBufferFt) || 0);
+    const resolvedRowCount = Math.max(1, Math.round(Number(options?.rowCount) || 1));
+    const hasSeatCap = Number.isFinite(maxSeatsBetweenAisles) && maxSeatsBetweenAisles > 0;
+    const hasEgressCap = Number.isFinite(maxOccupantsPerAisle) && maxOccupantsPerAisle > 0;
+    if (!hasSeatCap && !hasEgressCap) {
+        return createPerimeterCountMatrix(perimeterModel);
+    }
 
-    return computeRequiredPerimeterSegmentCounts({
+    return buildDistributedAisleCountMatrix(
         perimeterModel,
-        maxSeatsBetweenAisles,
-        createCountMatrix: createPerimeterCountMatrix,
-        getEntries: getPerimeterIntervalEntries,
-        resolveRequiredCount: ({ interval, measureWorstSeatsForCount, maxSeatsBetweenAisles: limit }) => {
+        createPerimeterCountMatrix,
+        getPerimeterIntervalEntries,
+        ({ interval, measureWorstSeatsForCount }) => {
             const intervalSide = interval?.back || interval?.front;
             if (!intervalSide || intervalSide.length <= EPS) return 0;
 
-            return findRequiredIntervalAisleCount({
-                maxSeatsBetweenAisles: limit,
-                maxCount: 500,
-                measureWorstSeatsForCount: measureWorstSeatsForCount || buildMeasureWorstSeatsForInterval(
-                    intervalSide,
-                    seatWidthIn,
-                    aisleWidthFt,
-                    axisExclusionFt,
-                    endpointBufferFt
-                )
-            });
+            const measureWorstSeats = measureWorstSeatsForCount || buildMeasureWorstSeatsForInterval(
+                intervalSide,
+                seatWidthIn,
+                aisleWidthFt,
+                axisExclusionFt,
+                endpointBufferFt
+            );
+            const seatCapRequired = hasSeatCap
+                ? findRequiredIntervalAisleCount({
+                    maxSeatsBetweenAisles,
+                    maxCount: 500,
+                    measureWorstSeatsForCount: measureWorstSeats
+                })
+                : 0;
+            const egressRequired = hasEgressCap
+                ? findRequiredIntervalAisleCountForAisleLoad({
+                    maxOccupantsPerAisle,
+                    rowCount: resolvedRowCount,
+                    maxCount: 500,
+                    measureWorstSeatsForCount: measureWorstSeats
+                })
+                : 0;
+
+            return Math.max(seatCapRequired, egressRequired);
         }
-    });
+    );
 }
 
 function normalizeRequiredCountsForSymmetry(perimeterModel, requiredCounts) {
@@ -1714,7 +1734,9 @@ export function buildTierAisleLayout(params) {
         bowlConfig = null,
         axisToleranceFt = 2,
         maxSeatsBetweenAisles = NaN,
-        seatWidthIn = 20
+        seatWidthIn = 20,
+        maxOccupantsPerAisle = NaN,
+        rowCount = NaN
     } = params || {};
 
     const paths = buildGeometryPaths(frontSegments);
@@ -1776,7 +1798,9 @@ export function buildTierAisleLayout(params) {
                 axisExclusionFt,
                 endpointBufferFt,
                 maxSeatsBetweenAisles,
-                seatWidthIn
+                seatWidthIn,
+                maxOccupantsPerAisle,
+                rowCount
             })
         );
         const intervalCounts = allocateDeterministicCounts(

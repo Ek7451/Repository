@@ -141,12 +141,16 @@ export class ProjectChromeShell {
         const settings = /** @type {{
             projectActions?: object | null,
             onExportRequested?: ((kind: string) => Promise<void> | void),
+            onConfigImported?: ((payload: { file: File, text: string }) => Promise<void> | void),
             isScene3DActive?: (() => boolean)
         }} */ (options && typeof options === 'object' ? options : {});
 
         this._projectActions = normalizeProjectActions(settings.projectActions);
         this._onExportRequested = typeof settings.onExportRequested === 'function'
             ? settings.onExportRequested
+            : null;
+        this._onConfigImported = typeof settings.onConfigImported === 'function'
+            ? settings.onConfigImported
             : null;
         this._isScene3DActive = typeof settings.isScene3DActive === 'function'
             ? settings.isScene3DActive
@@ -383,6 +387,15 @@ export class ProjectChromeShell {
             };
             projectMenuPanel.addEventListener('click', handleProjectMenuPanelClick);
             this._cleanup.push(() => projectMenuPanel.removeEventListener('click', handleProjectMenuPanelClick));
+        }
+
+        const configFileInput = getInputElement('configFileInput');
+        if (configFileInput) {
+            const handleConfigImportChange = (event) => {
+                void this._handleConfigImportChange(event);
+            };
+            configFileInput.addEventListener('change', handleConfigImportChange);
+            this._cleanup.push(() => configFileInput.removeEventListener('change', handleConfigImportChange));
         }
 
         const projectNameField = getHtmlElement('projectNameField');
@@ -1235,6 +1248,21 @@ export class ProjectChromeShell {
 
             this._closeProjectMenu();
             await this._runToolbarProjectAction('delete', () => this._projectActions.deleteProject(currentProjectId));
+        }
+    }
+
+    async _handleConfigImportChange(event) {
+        const target = /** @type {HTMLInputElement | null} */ (event.target);
+        const file = target?.files?.[0];
+        if (!file) return;
+
+        try {
+            const text = await file.text();
+            await this._onConfigImported?.({ file, text });
+        } finally {
+            if (target) {
+                target.value = '';
+            }
         }
     }
 
