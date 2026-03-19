@@ -4,6 +4,7 @@ import {
     buildGeometryPaths,
     buildPerpendicularAisleReferenceMap,
     buildTierAisleLayout,
+    buildTierAisleLayoutSummary,
     resolveAisleStationRatios,
     sampleAisleBand,
     samplePathPointByRatio
@@ -627,5 +628,102 @@ describe('aisle layout geometry seam', () => {
         expect(bottomRun.map((aisle) => aisle.u)).toEqual([0.1, 0.5, 0.9]);
         expect(layout.aisles.every((aisle) => aisle.anchorType === 'distributed_linear_even')).toBe(true);
         expect(layout.aisles.every((aisle) => aisle.alignmentMode === 'radial')).toBe(true);
+    });
+
+    it('enforces seat and egress caps on simple open-path layouts', () => {
+        const frontSegments = [
+            { cmd: 'moveTo', x: -15, y: 0 },
+            { cmd: 'lineTo', x: 15, y: 0 }
+        ];
+
+        const seatCappedLayout = buildTierAisleLayout({
+            frontSegments,
+            targetAisles: 2,
+            aisleWidthFt: 4,
+            bowlConfig: { type: 'Side1', corner: 'None' },
+            maxSeatsBetweenAisles: 6,
+            seatWidthIn: 20
+        });
+        const egressCappedLayout = buildTierAisleLayout({
+            frontSegments,
+            targetAisles: 2,
+            aisleWidthFt: 4,
+            bowlConfig: { type: 'Side1', corner: 'None' },
+            seatWidthIn: 20,
+            rowCount: 40,
+            maxAisleWidthIn: 48,
+            egressFactor: 0.2
+        });
+
+        expect(seatCappedLayout.aisles.length).toBeGreaterThan(2);
+        expect(egressCappedLayout.aisles.length).toBeGreaterThan(2);
+    });
+
+    it('builds authoritative realized section and aisle summaries from explicit row samples', () => {
+        const frontSegments = [
+            { cmd: 'moveTo', x: -10, y: 0 },
+            { cmd: 'lineTo', x: 10, y: 0 }
+        ];
+        const tierLayout = buildTierAisleLayout({
+            frontSegments,
+            targetAisles: 3,
+            aisleWidthFt: 4,
+            bowlConfig: { type: 'Side1', corner: 'None' }
+        });
+        const referencePaths = buildGeometryPaths(frontSegments);
+        const aisleRatiosByPath = new Map([[
+            0,
+            new Map(tierLayout.aisles.map((aisle, aisleIndex) => [aisleIndex, aisle.u]))
+        ]]);
+
+        const summary = buildTierAisleLayoutSummary({
+            rows: [{ row_number: 1 }, { row_number: 2 }],
+            tierLayout,
+            referencePaths,
+            resolveRowAisleSampling: () => ({
+                paths: referencePaths,
+                aisleRatiosByPath
+            }),
+            seatWidthIn: 20,
+            minAisleWidthIn: 48,
+            maxAisleWidthIn: 72,
+            egressFactor: 0.2,
+            maxSeatsBetweenAisles: 24
+        });
+
+        expect(summary).toMatchObject({
+            actualAisles: 3,
+            actualSections: 2,
+            allSectionPathsClosed: false,
+            sectionOccupancyTotals: [4, 4],
+            aisleOccupancyTotals: [2, 4, 2],
+            requiredWidthIn: 0.8,
+            governingWidthIn: 48,
+            compliance: {
+                seatCapCompliant: true,
+                egressCapCompliant: true,
+                renderedWidthCompliant: true,
+                isCompliant: true
+            }
+        });
+        expect(summary.sections).toEqual([
+            expect.objectContaining({
+                pathIndex: 0,
+                slotIndex: 0,
+                occupancy: 4,
+                rowSeatCounts: [2, 2]
+            }),
+            expect.objectContaining({
+                pathIndex: 0,
+                slotIndex: 1,
+                occupancy: 4,
+                rowSeatCounts: [2, 2]
+            })
+        ]);
+        expect(summary.aisles).toEqual([
+            expect.objectContaining({ aisleIndex: 0, tributaryOccupancy: 2, governingWidthIn: 48 }),
+            expect.objectContaining({ aisleIndex: 1, tributaryOccupancy: 4, governingWidthIn: 48 }),
+            expect.objectContaining({ aisleIndex: 2, tributaryOccupancy: 2, governingWidthIn: 48 })
+        ]);
     });
 });

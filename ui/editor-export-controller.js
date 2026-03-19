@@ -145,7 +145,7 @@ export class EditorExportController {
             if (!solver?.rows || solver.rows.length === 0) return null;
 
             const tierIndex = getSolverTierIndex(solver, index);
-            const tierMetrics = ProfileSolver.calculateTierMetrics(
+            const tierMetricsEstimate = ProfileSolver.calculateTierMetrics(
                 solver,
                 exportContext.bowlConfig,
                 fieldGeometryPort,
@@ -154,11 +154,11 @@ export class EditorExportController {
             );
 
             let tierLayout = tierLayoutMap.get(tierIndex) || null;
-            if (!tierLayout && tierMetrics) {
+            if (!tierLayout && tierMetricsEstimate) {
                 tierLayout = fieldGeometryPort.generateTierAisleLayout(
                     solver,
                     exportContext.bowlConfig,
-                    tierMetrics,
+                    tierMetricsEstimate,
                     exportContext.offsetCorrection,
                     exportContext.egressParams
                 );
@@ -190,7 +190,7 @@ export class EditorExportController {
 
             return {
                 tierIndex,
-                tierMetrics,
+                tierMetricsEstimate,
                 tierLayout,
                 overlayData,
                 aislePolygons,
@@ -199,14 +199,14 @@ export class EditorExportController {
         }).filter(Boolean);
 
         const reconciledTierMetricsByIndex = reconcileTierMetricsByIndexWithLayoutSummaries({
-            tierMetricsByIndex: new Map(tierArtifacts.map((artifact) => [artifact.tierIndex, artifact.tierMetrics])),
+            tierMetricsByIndex: new Map(tierArtifacts.map((artifact) => [artifact.tierIndex, artifact.tierMetricsEstimate])),
             tierAisleLayouts: tierArtifacts.map((artifact) => artifact.tierLayout).filter(Boolean),
             egressParams: exportContext.egressParams
         });
 
         return tierArtifacts.map((artifact) => ({
             ...artifact,
-            tierMetrics: reconciledTierMetricsByIndex.get(artifact.tierIndex) || artifact.tierMetrics
+            tierMetrics: reconciledTierMetricsByIndex.get(artifact.tierIndex) || artifact.tierMetricsEstimate
         }));
     }
 

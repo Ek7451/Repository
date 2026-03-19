@@ -507,7 +507,7 @@ body.jlg-shell {
     outline: none;
     cursor: pointer;
     opacity: 1;
-    padding: 0px 24px 0px 0px;
+    padding: 0;
     transform: scaleX(1);
     transform-origin: left center;
     transition:

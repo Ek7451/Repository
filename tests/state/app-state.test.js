@@ -59,7 +59,7 @@ describe('AppState', () => {
         expect(AppState.bowl.type).toBe('Side1');
         expect(AppState.setup.customRunoff).toBeNull();
         expect(AppState.bowl.structuralProfileMode).toBe('stepped');
-        expect(AppState.bowl.straightAisleMode).toBe('radial');
+        expect(AppState.bowl.straightAisleMode).toBe('perpendicular');
         expect(AppState.bowl.chamferAisleMode).toBe('radial');
         expect(AppState.bookmarks[0]).toEqual({
             name: 'Corner View',
@@ -69,7 +69,7 @@ describe('AppState', () => {
         });
         expect(exported._version).toBe(APP_STATE_VERSION);
         expect(exported.ui.activeViewTab).toBe(DEFAULT_STARTUP_PROFILE.ui.activeViewTab);
-        expect(exported.bowl.straightAisleMode).toBe('radial');
+        expect(exported.bowl.straightAisleMode).toBe('perpendicular');
         expect(exported.bowl.chamferAisleMode).toBe('radial');
         expect(AppState.bowl).not.toHaveProperty('clipEnabled');
         expect(AppState.bowl).not.toHaveProperty('clipAxis');
@@ -127,7 +127,7 @@ describe('AppState', () => {
         expect(first.setup.focalX).toBe(0);
         expect(first.bowl.structuralDepth).toBe(DEFAULT_STARTUP_PROFILE.bowl.structuralDepth);
         expect(first.bowl.structuralProfileMode).toBe('stepped');
-        expect(first.bowl.straightAisleMode).toBe('radial');
+        expect(first.bowl.straightAisleMode).toBe('perpendicular');
         expect(first.bowl.chamferAisleMode).toBe('radial');
 
         first.tiers[0].numRows = 99;

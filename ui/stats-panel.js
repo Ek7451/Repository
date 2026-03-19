@@ -243,37 +243,40 @@ function buildEgressMarkup(tiers = []) {
             </div>
         `;
 
-        const limitForcedHtml = egress.blocksAddedForEgress > 0
-            ? `<br /><span class="tier-metrics-limit-note">&#8627; <strong>Max Width Limit Forced:</strong> Clamped to Max Aisle Width (${egress.maximumWidth}"). Automatically added ${egress.blocksAddedForEgress} section(s) to maintain code compliance!</span>`
+        const estimate = egress.estimate;
+        if (!estimate) return;
+
+        const limitForcedHtml = estimate.blocksAddedForEgress > 0
+            ? `<br /><span class="tier-metrics-limit-note">&#8627; <strong>Max Width Limit Forced:</strong> Clamped to Max Aisle Width (${estimate.maximumWidth}"). Automatically added ${estimate.blocksAddedForEgress} section(s) to maintain code compliance!</span>`
             : '';
 
         originalEgressHtml += `
             <div class="collapsible collapsed results-details results-details--supporting">
                 <div class="section-header results-details-header--supporting">
-                    Original Egress Calc (${egress.tierLabel}${egress.originalHeaderSuffix})
+                    Estimated Egress Seed (${estimate.tierLabel}${estimate.originalHeaderSuffix})
                 </div>
                 <div class="section-body results-details-body--compact">
                     <div class="egress-tier-row compact">
                         <div class="egress-row-top">
                             <div class="tier-label-group">
-                                <span class="tier-label">${egress.tierLabel}</span>
-                                <span class="tier-pct tier-pct--seating">${egress.totalSeatingPercentage}% Seating</span>
+                                <span class="tier-label">${estimate.tierLabel}</span>
+                                <span class="tier-pct tier-pct--seating">${estimate.totalSeatingPercentage}% Seating</span>
                                 <span class="tier-pct-sep">/</span>
-                                <span class="tier-pct tier-pct--egress">${egress.totalAislePercentage}% Egress</span>
+                                <span class="tier-pct tier-pct--egress">${estimate.totalAislePercentage}% Egress</span>
                             </div>
                         </div>
                         <div class="egress-bar-compact">
-                            <div class="bar-segment-seat"${serializeStyleVars({ 'segment-width': `${egress.totalSeatingPercentage}%` })}></div>
-                            <div class="bar-segment-aisle"${serializeStyleVars({ 'segment-width': `${egress.totalAislePercentage}%` })}></div>
+                            <div class="bar-segment-seat"${serializeStyleVars({ 'segment-width': `${estimate.totalSeatingPercentage}%` })}></div>
+                            <div class="bar-segment-aisle"${serializeStyleVars({ 'segment-width': `${estimate.totalAislePercentage}%` })}></div>
                         </div>
                         <div class="egress-row-details">
-                            <strong>${egress.displayAisles} Aisles${egress.countsTag}</strong> (Width: ${egress.aisleWidth}") &bull; ${egress.displaySeatLen.toLocaleString()}' Linear Seating vs ${egress.displayAisleLen.toLocaleString()}' Linear Aisles${egress.linearQuantitiesTag}
+                            <strong>${estimate.displayAisles} Aisles${estimate.countsTag}</strong> (Width: ${estimate.aisleWidth}") &bull; ${estimate.displaySeatLen.toLocaleString()}' Linear Seating vs ${estimate.displayAisleLen.toLocaleString()}' Linear Aisles${estimate.linearQuantitiesTag}
                             <div class="egress-row-notes">
-                                &#8627; Total Linear Seating${egress.countsTag}: ${egress.displayTotalLen.toLocaleString()}' (averaging ${egress.displaySeatsPerRow} seats/row)<br/>
-                                &#8627; Sections${egress.countsTag}: ${egress.displaySections} (max ${egress.maxSeatsPerSectionRow} seats in a section row, largest section ${egress.occupantsPerSection} seats)<br/>
-                                &#8627; Max Load/Aisle (per aisle): ${egress.occupantsPerAisleLine} occ (50/50 section split)<br/>
-                                &#8627; Aisle Egress Capacity Check (per aisle): ${egress.occupantsPerAisleLine} occ &times; ${egress.egressFactor}"/occ = ${egress.capacityWidth}" required<br/>
-                                &#8627; Aisle Sizing: Max of Min Allowed (${egress.minimumWidth}") vs Required (${egress.capacityWidth}") &rarr; <strong class="egress-row-details-highlight">Governing Width = ${egress.governingWidth}"</strong>${limitForcedHtml}
+                                &#8627; Total Linear Seating${estimate.countsTag}: ${estimate.displayTotalLen.toLocaleString()}' (averaging ${estimate.displaySeatsPerRow} seats/row)<br/>
+                                &#8627; Sections${estimate.countsTag}: ${estimate.displaySections} (max ${estimate.maxSeatsPerSectionRow} seats in a section row, largest section ${estimate.occupantsPerSection} seats)<br/>
+                                &#8627; Max Load/Aisle (per aisle): ${estimate.occupantsPerAisleLine} occ (50/50 section split)<br/>
+                                &#8627; Aisle Egress Capacity Check (per aisle): ${estimate.occupantsPerAisleLine} occ &times; ${estimate.egressFactor}"/occ = ${estimate.capacityWidth}" required<br/>
+                                &#8627; Aisle Sizing: Max of Min Allowed (${estimate.minimumWidth}") vs Required (${estimate.capacityWidth}") &rarr; <strong class="egress-row-details-highlight">Governing Width = ${estimate.governingWidth}"</strong>${limitForcedHtml}
                             </div>
                         </div>
                     </div>

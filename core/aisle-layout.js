@@ -5,11 +5,21 @@
 
 import {
     buildDistributedAisleCountMatrix,
+    computeAisleTributaryOccupancies,
+    computeAssignedAisleWidthIn,
+    computeMaximumOccupantsPerAisle,
+    computeRequiredAisleWidthIn,
     estimateWorstSeatsInInterval as estimateWorstSeatsInIntervalByPolicy,
     findRequiredIntervalAisleCount,
     findRequiredIntervalAisleCountForAisleLoad,
-    validatePerimeterSeatCaps
+    validatePerimeterSeatCaps,
+    validateTributaryAisleCapacity
 } from './egress-policy.js';
+import {
+    countSeatsFromCenterlineGapFt,
+    normalizeAisleWidthFt,
+    normalizeSeatWidthIn
+} from './seat-math.js';
 
 const EPS = 1e-6;
 
@@ -1360,7 +1370,7 @@ function buildMeasureWorstSeatsForInterval(intervalSide, seatWidthIn, aisleWidth
 
 function computeRequiredSegmentCounts(perimeterModel, options) {
     const maxSeatsBetweenAisles = Number(options?.maxSeatsBetweenAisles);
-    const maxOccupantsPerAisle = Number(options?.maxOccupantsPerAisle);
+    const maxOccupantsPerAisle = resolveMaxOccupantsPerAisle(options);
 
     const seatWidthIn = Math.max(1, Number(options?.seatWidthIn) || 20);
     const aisleWidthFt = Math.max(0, Number(options?.aisleWidthFt) || 0);
@@ -1720,6 +1730,318 @@ function buildSectionBoundaries(paths, aisles) {
     return byPath.map(entries => entries.sort((a, b) => a.u - b.u));
 }
 
+function resolveMaxOccupantsPerAisle(options = null) {
+    const explicitLimit = Number(options?.maxOccupantsPerAisle);
+    if (Number.isFinite(explicitLimit) && explicitLimit > 0) return explicitLimit;
+
+    const derivedLimit = computeMaximumOccupantsPerAisle({
+        maxAisleWidthIn: options?.maxAisleWidthIn,
+        egressFactor: options?.egressFactor
+    });
+    return Number.isFinite(derivedLimit) && derivedLimit > 0 ? derivedLimit : NaN;
+}
+
+function sectionDistanceOnPath(path, startU, endU) {
+    if (!path || !(path.length > 0)) return 0;
+    if (path.closed) {
+        return computeWrappedSpan(startU, endU).span * path.length;
+    }
+    return Math.abs(clamp01(endU) - clamp01(startU)) * path.length;
+}
+
+function measureWorstSeatsForOpenAisleCount(path, aisleCount, aisleWidthFt, seatWidthIn) {
+    if (!path || path.closed || path.length <= EPS) return 0;
+    const resolvedAisleCount = Math.max(0, Math.floor(Number(aisleCount) || 0));
+    if (resolvedAisleCount < 2) return Number.POSITIVE_INFINITY;
+
+    const stations = computeEvenOpenPathAisleStations([path], resolvedAisleCount, aisleWidthFt);
+    if (stations.length < 2) return Number.POSITIVE_INFINITY;
+
+    let worstSeatCount = 0;
+    for (let i = 0; i < stations.length - 1; i += 1) {
+        const centerGapFt = sectionDistanceOnPath(path, stations[i].u, stations[i + 1].u);
+        const seatCount = countSeatsFromCenterlineGapFt({
+            centerGapFt,
+            aisleWidthFt,
+            seatWidthIn
+        });
+        if (seatCount > worstSeatCount) worstSeatCount = seatCount;
+    }
+
+    return worstSeatCount;
+}
+
+function resolveOpenPathTargetAisles(paths, options = {}) {
+    const maxSeatsBetweenAisles = Number(options?.maxSeatsBetweenAisles);
+    const maxOccupantsPerAisle = resolveMaxOccupantsPerAisle(options);
+    const rowCount = Math.max(1, Math.round(Number(options?.rowCount) || 1));
+    const seatWidthIn = Math.max(1, Number(options?.seatWidthIn) || 20);
+    const aisleWidthFt = Math.max(0, Number(options?.aisleWidthFt) || 0);
+    const hasSeatCap = Number.isFinite(maxSeatsBetweenAisles) && maxSeatsBetweenAisles > 0;
+    const hasEgressCap = Number.isFinite(maxOccupantsPerAisle) && maxOccupantsPerAisle > 0;
+    if (!hasSeatCap && !hasEgressCap) return 0;
+
+    return (paths || []).reduce((requiredTarget, path) => {
+        if (!path || path.closed || path.length <= EPS) return requiredTarget;
+
+        const measureWorstSeatsForCount = (count) => measureWorstSeatsForOpenAisleCount(
+            path,
+            Math.max(0, Math.floor(Number(count) || 0)) + 2,
+            aisleWidthFt,
+            seatWidthIn
+        );
+        const seatRequired = hasSeatCap
+            ? findRequiredIntervalAisleCount({
+                maxSeatsBetweenAisles,
+                maxCount: 500,
+                measureWorstSeatsForCount
+            }) + 2
+            : 0;
+        const egressRequired = hasEgressCap
+            ? findRequiredIntervalAisleCountForAisleLoad({
+                maxOccupantsPerAisle,
+                rowCount,
+                maxCount: 500,
+                measureWorstSeatsForCount
+            }) + 2
+            : 0;
+
+        return Math.max(requiredTarget, seatRequired, egressRequired);
+    }, 0);
+}
+
+function resolveClosedPathTargetAisles(path, options = {}) {
+    if (!path || !path.closed || path.length <= EPS) return 0;
+
+    const maxSeatsBetweenAisles = Number(options?.maxSeatsBetweenAisles);
+    const maxOccupantsPerAisle = resolveMaxOccupantsPerAisle(options);
+    const rowCount = Math.max(1, Math.round(Number(options?.rowCount) || 1));
+    const seatWidthIn = Math.max(1, Number(options?.seatWidthIn) || 20);
+    const aisleWidthFt = Math.max(0, Number(options?.aisleWidthFt) || 0);
+    const hasSeatCap = Number.isFinite(maxSeatsBetweenAisles) && maxSeatsBetweenAisles > 0;
+    const hasEgressCap = Number.isFinite(maxOccupantsPerAisle) && maxOccupantsPerAisle > 0;
+    if (!hasSeatCap && !hasEgressCap) return 0;
+
+    const measureWorstSeatsForCount = (count) => estimateWorstSeatsInIntervalByPolicy(path.length, count, {
+        aisleWidthFt,
+        seatWidthIn
+    });
+    const seatRequired = hasSeatCap
+        ? findRequiredIntervalAisleCount({
+            maxSeatsBetweenAisles,
+            maxCount: 500,
+            measureWorstSeatsForCount
+        }) + 1
+        : 0;
+    const egressRequired = hasEgressCap
+        ? findRequiredIntervalAisleCountForAisleLoad({
+            maxOccupantsPerAisle,
+            rowCount,
+            maxCount: 500,
+            measureWorstSeatsForCount
+        }) + 1
+        : 0;
+
+    return Math.max(seatRequired, egressRequired);
+}
+
+function buildTierLayoutSectionSlots(referencePaths, sectionBoundaries) {
+    const slots = [];
+    let allSectionPathsClosed = true;
+
+    for (let pathIndex = 0; pathIndex < sectionBoundaries.length; pathIndex += 1) {
+        const boundaries = Array.isArray(sectionBoundaries[pathIndex]) ? sectionBoundaries[pathIndex] : [];
+        const path = referencePaths[pathIndex] || null;
+        const pathIsClosed = !!path?.closed;
+        const slotCount = pathIsClosed ? boundaries.length : Math.max(0, boundaries.length - 1);
+
+        if (slotCount > 0 && !pathIsClosed) allSectionPathsClosed = false;
+        if (slotCount <= 0) continue;
+
+        for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
+            const aisleA = boundaries[slotIndex];
+            const aisleB = pathIsClosed
+                ? boundaries[(slotIndex + 1) % boundaries.length]
+                : boundaries[slotIndex + 1];
+            if (!aisleA || !aisleB) continue;
+
+            slots.push({
+                pathIndex,
+                slotIndex,
+                aisleIndexA: aisleA.aisleIndex,
+                aisleIndexB: aisleB.aisleIndex
+            });
+        }
+    }
+
+    return {
+        slots,
+        allSectionPathsClosed
+    };
+}
+
+export function buildTierAisleLayoutSummary({
+    rows = [],
+    tierLayout = null,
+    referencePaths = [],
+    resolveRowAisleSampling = null,
+    seatWidthIn = 20,
+    minAisleWidthIn = 0,
+    maxAisleWidthIn = 0,
+    egressFactor = 0,
+    maxSeatsBetweenAisles = NaN
+} = {}) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    const safeAisles = Array.isArray(tierLayout?.aisles) ? tierLayout.aisles : [];
+    const safeSectionBoundaries = Array.isArray(tierLayout?.sectionBoundaries) ? tierLayout.sectionBoundaries : [];
+    const resolvedSeatWidthIn = normalizeSeatWidthIn(seatWidthIn);
+    const resolvedAisleWidthFt = normalizeAisleWidthFt(tierLayout?.aisleWidthFt);
+    const resolvedRenderedAisleWidthIn = resolvedAisleWidthFt * 12.0;
+    const resolvedMinAisleWidthIn = Math.max(0, Number(minAisleWidthIn) || 0);
+    const resolvedMaxAisleWidthIn = Math.max(resolvedMinAisleWidthIn, Number(maxAisleWidthIn) || resolvedMinAisleWidthIn);
+    const legalMaxOccupantsPerAisle = computeMaximumOccupantsPerAisle({
+        maxAisleWidthIn: resolvedMaxAisleWidthIn,
+        egressFactor
+    });
+    const { slots, allSectionPathsClosed } = buildTierLayoutSectionSlots(
+        Array.isArray(referencePaths) ? referencePaths : [],
+        safeSectionBoundaries
+    );
+
+    const sectionRecords = slots.map((slot) => ({
+        ...slot,
+        rowSeatCounts: new Array(safeRows.length).fill(0)
+    }));
+
+    if (typeof resolveRowAisleSampling === 'function') {
+        for (let rowIndex = 0; rowIndex < safeRows.length; rowIndex += 1) {
+            const sampledRow = resolveRowAisleSampling(rowIndex, safeRows[rowIndex]) || {};
+            const paths = Array.isArray(sampledRow.paths) ? sampledRow.paths : [];
+            const aisleRatiosByPath = sampledRow.aisleRatiosByPath instanceof Map
+                ? sampledRow.aisleRatiosByPath
+                : new Map();
+
+            for (let sectionIndex = 0; sectionIndex < sectionRecords.length; sectionIndex += 1) {
+                const section = sectionRecords[sectionIndex];
+                const path = paths[section.pathIndex];
+                const aisleMap = aisleRatiosByPath.get(section.pathIndex);
+                if (!path || !(path.length > 0) || !(aisleMap instanceof Map)) continue;
+
+                const uA = aisleMap.get(section.aisleIndexA);
+                const uB = aisleMap.get(section.aisleIndexB);
+                if (!Number.isFinite(uA) || !Number.isFinite(uB)) continue;
+
+                section.rowSeatCounts[rowIndex] = countSeatsFromCenterlineGapFt({
+                    centerGapFt: sectionDistanceOnPath(path, uA, uB),
+                    aisleWidthFt: resolvedAisleWidthFt,
+                    seatWidthIn: resolvedSeatWidthIn
+                });
+            }
+        }
+    }
+
+    const sections = sectionRecords.map((section) => {
+        const rowSeatCounts = section.rowSeatCounts
+            .map((value) => Math.max(0, Math.round(Number(value) || 0)));
+        const occupancy = rowSeatCounts.reduce((sum, value) => sum + value, 0);
+        const backRowSeats = rowSeatCounts.length ? rowSeatCounts[rowSeatCounts.length - 1] : 0;
+        const frontRowSeats = rowSeatCounts.length ? rowSeatCounts[0] : 0;
+        const minSeatsPerRow = rowSeatCounts.length ? Math.min(...rowSeatCounts) : 0;
+        const maxSeatsPerRow = rowSeatCounts.length ? Math.max(...rowSeatCounts) : 0;
+        const avgSeatsPerRow = rowSeatCounts.length
+            ? rowSeatCounts.reduce((sum, value) => sum + value, 0) / rowSeatCounts.length
+            : 0;
+
+        return {
+            ...section,
+            occupancy,
+            rowSeatCounts,
+            frontRowSeats,
+            backRowSeats,
+            minSeatsPerRow,
+            maxSeatsPerRow,
+            avgSeatsPerRow
+        };
+    });
+
+    const aisleOccupancyTotals = computeAisleTributaryOccupancies({
+        aisleCount: safeAisles.length,
+        sections
+    });
+    const aisleSummaries = safeAisles.map((aisle, aisleIndex) => {
+        const tributaryOccupancy = Math.max(0, Number(aisleOccupancyTotals[aisleIndex]) || 0);
+        const requiredWidthIn = computeRequiredAisleWidthIn({
+            tributaryOccupancy,
+            egressFactor
+        });
+        const governingWidthIn = computeAssignedAisleWidthIn({
+            tributaryOccupancy,
+            egressFactor,
+            minAisleWidthIn: resolvedMinAisleWidthIn,
+            maxAisleWidthIn: resolvedMaxAisleWidthIn
+        });
+
+        return {
+            aisleIndex,
+            pathIndex: Math.max(0, Math.floor(Number(aisle?.pathIndex) || 0)),
+            tributaryOccupancy,
+            requiredWidthIn,
+            governingWidthIn,
+            renderedWidthIn: resolvedRenderedAisleWidthIn,
+            legalMaxOccupantsPerAisle,
+            withinMaxWidth: validateTributaryAisleCapacity({
+                tributaryOccupancy,
+                maxAisleWidthIn: resolvedMaxAisleWidthIn,
+                egressFactor
+            }),
+            renderedWidthCompliant: resolvedRenderedAisleWidthIn + 1e-9 >= governingWidthIn
+        };
+    });
+
+    const backRowSectionSeatCounts = sections.map((section) => section.backRowSeats);
+    const sectionOccupancyTotals = sections.map((section) => section.occupancy);
+    const avgBackRowSeatsPerSection = backRowSectionSeatCounts.length
+        ? backRowSectionSeatCounts.reduce((sum, value) => sum + value, 0) / backRowSectionSeatCounts.length
+        : 0;
+    const maxBackRowSeatsPerSection = backRowSectionSeatCounts.length ? Math.max(...backRowSectionSeatCounts) : 0;
+    const minBackRowSeatsPerSection = backRowSectionSeatCounts.length ? Math.min(...backRowSectionSeatCounts) : 0;
+    const requiredWidthIn = aisleSummaries.length
+        ? Math.max(...aisleSummaries.map((aisle) => aisle.requiredWidthIn))
+        : 0;
+    const governingWidthIn = aisleSummaries.length
+        ? Math.max(...aisleSummaries.map((aisle) => aisle.governingWidthIn))
+        : 0;
+    const seatLimit = Number(maxSeatsBetweenAisles);
+    const seatCapCompliant = !(Number.isFinite(seatLimit) && seatLimit > 0)
+        || sections.every((section) => section.maxSeatsPerRow <= seatLimit + 1e-9);
+    const egressCapCompliant = aisleSummaries.every((aisle) => aisle.withinMaxWidth);
+    const renderedWidthCompliant = aisleSummaries.every((aisle) => aisle.renderedWidthCompliant);
+
+    return {
+        actualAisles: safeAisles.length,
+        actualSections: sections.length,
+        allSectionPathsClosed,
+        backRowSectionSeatCounts,
+        sectionOccupancyTotals,
+        aisleOccupancyTotals,
+        avgBackRowSeatsPerSection,
+        maxBackRowSeatsPerSection,
+        minBackRowSeatsPerSection,
+        legalMaxOccupantsPerAisle,
+        requiredWidthIn,
+        governingWidthIn,
+        renderedAisleWidthIn: resolvedRenderedAisleWidthIn,
+        compliance: {
+            seatCapCompliant,
+            egressCapCompliant,
+            renderedWidthCompliant,
+            isCompliant: seatCapCompliant && egressCapCompliant
+        },
+        sections,
+        aisles: aisleSummaries
+    };
+}
+
 /**
  * Build a tier-level aisle layout from front-edge bowl geometry.
  * @param {Object} params
@@ -1736,6 +2058,8 @@ export function buildTierAisleLayout(params) {
         maxSeatsBetweenAisles = NaN,
         seatWidthIn = 20,
         maxOccupantsPerAisle = NaN,
+        maxAisleWidthIn = NaN,
+        egressFactor = NaN,
         rowCount = NaN
     } = params || {};
 
@@ -1761,6 +2085,11 @@ export function buildTierAisleLayout(params) {
     const axisExclusionFt = Math.max(0.5, Number(axisToleranceFt) || 2, widthFt * 0.5 + 0.25);
     const endpointBufferFt = Math.max(2.0, widthFt * 1.0, minSpacingFt * 0.5);
     const forcedAisles = buildForcedTransitionAisles(perimeterModel);
+    const legalMaxOccupantsPerAisle = resolveMaxOccupantsPerAisle({
+        maxOccupantsPerAisle,
+        maxAisleWidthIn,
+        egressFactor
+    });
 
     let aisles = [];
     const bowlType = String(bowlConfig && bowlConfig.type ? bowlConfig.type : '').toLowerCase();
@@ -1785,11 +2114,31 @@ export function buildTierAisleLayout(params) {
 
     if (useIndependentSidesOpenDistribution) {
         // "Sides" mode is two independent linear runs with mirrored egress.
-        aisles = computeEvenAislesForOpenPaths(paths, safeTarget, widthFt);
+        aisles = computeEvenAislesForOpenPaths(
+            paths,
+            Math.max(safeTarget, resolveOpenPathTargetAisles(paths, {
+                maxSeatsBetweenAisles,
+                seatWidthIn,
+                aisleWidthFt: widthFt,
+                maxOccupantsPerAisle: legalMaxOccupantsPerAisle,
+                rowCount
+            })),
+            widthFt
+        );
     } else if (useEvenOpenPathDistribution) {
         // Linear/sliced open runs treat aisle lines as edge-to-edge boundaries.
         // Rebuild the full set every time so added aisles re-space evenly.
-        aisles = computeEvenOpenPathAisleStations(paths, safeTarget, widthFt);
+        aisles = computeEvenOpenPathAisleStations(
+            paths,
+            Math.max(safeTarget, resolveOpenPathTargetAisles(paths, {
+                maxSeatsBetweenAisles,
+                seatWidthIn,
+                aisleWidthFt: widthFt,
+                maxOccupantsPerAisle: legalMaxOccupantsPerAisle,
+                rowCount
+            })),
+            widthFt
+        );
     } else if (useDeterministicPerimeterAllocation) {
         const requiredCounts = normalizeRequiredCountsForSymmetry(
             perimeterModel,
@@ -1799,7 +2148,9 @@ export function buildTierAisleLayout(params) {
                 endpointBufferFt,
                 maxSeatsBetweenAisles,
                 seatWidthIn,
-                maxOccupantsPerAisle,
+                maxOccupantsPerAisle: legalMaxOccupantsPerAisle,
+                maxAisleWidthIn,
+                egressFactor,
                 rowCount
             })
         );
@@ -1833,7 +2184,16 @@ export function buildTierAisleLayout(params) {
             throw new Error('Deterministic aisle allocation violated maxSeatsBetweenAisles.');
         }
     } else if (useClosedEvenPathDistribution) {
-        aisles = computeEvenClosedPathAisleStations(paths, safeTarget);
+        aisles = computeEvenClosedPathAisleStations(
+            paths,
+            Math.max(safeTarget, resolveClosedPathTargetAisles(paths[0], {
+                maxSeatsBetweenAisles,
+                seatWidthIn,
+                aisleWidthFt: widthFt,
+                maxOccupantsPerAisle: legalMaxOccupantsPerAisle,
+                rowCount
+            }))
+        );
     } else {
         aisles = [];
     }

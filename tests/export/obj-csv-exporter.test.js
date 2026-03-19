@@ -49,7 +49,7 @@ describe('buildStudyResultsJsonPayload', () => {
         const solver = createSolver();
         const tierArtifacts = [{
             tierIndex: 0,
-            tierMetrics: {
+            tierMetricsEstimate: {
                 capacity: 22,
                 requiredWidth: 48,
                 aisleWidth: 48,
@@ -57,6 +57,18 @@ describe('buildStudyResultsJsonPayload', () => {
                 numSections: 1,
                 seatsPerRow: 22,
                 occupantsPerSection: 22
+            },
+            tierMetrics: {
+                capacity: 22,
+                capacityWidth: '12.0',
+                governingWidth: '48.0',
+                aisleWidth: '48.0',
+                renderedAisleWidth: '48.0',
+                numAisles: 2,
+                numSections: 1,
+                seatsPerRow: 22,
+                occupantsPerSection: 22,
+                occupantsPerAisleLine: 11
             },
             tierLayout: {
                 tierIndex: 0,
@@ -69,7 +81,16 @@ describe('buildStudyResultsJsonPayload', () => {
                     actualAisles: 2,
                     actualSections: 1,
                     allSectionPathsClosed: true,
-                    avgBackRowSeatsPerSection: 12
+                    avgBackRowSeatsPerSection: 12,
+                    aisleOccupancyTotals: [11, 11],
+                    requiredWidthIn: 12,
+                    governingWidthIn: 48,
+                    renderedAisleWidthIn: 48,
+                    compliance: {
+                        seatCapCompliant: true,
+                        egressCapCompliant: true,
+                        renderedWidthCompliant: true
+                    }
                 }
             },
             overlayData: {
@@ -151,6 +172,13 @@ describe('buildStudyResultsJsonPayload', () => {
             rowsInSection: 2,
             frontRowSeats: 10,
             backRowSeats: 12
+        });
+        expect(payload.tiers[0].egressFinal).toMatchObject({
+            requiredWidthIn: 12,
+            governingWidthIn: 48,
+            renderedCommonWidthIn: 48,
+            finalNumAisles: 2,
+            finalNumSections: 1
         });
         expect(payload.tiers[0].egressEstimate).toMatchObject({
             requiredWidthIn: 48,

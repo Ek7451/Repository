@@ -3,9 +3,7 @@
  * Renders top-down field shapes, runoff perimeters, and focal point markers.
  */
 
-import { computeAisleTributaryOccupancies } from '../core/egress-policy.js';
 import { getSolverTierIndex } from '../core/profile-solver.js';
-import { countSeatsFromCenterlineGapFt } from '../core/seat-math.js';
 import { getCValueQuality } from '../core/sightline-calc.js';
 import { resolvePlanFocalYFt } from '../core/sports-templates.js';
 import {
@@ -13,6 +11,7 @@ import {
     sampleAisleBand,
     samplePathPointByRatio,
     buildTierAisleLayout,
+    buildTierAisleLayoutSummary,
     buildPerpendicularAisleReferenceMap,
     resolveAisleStationRatios,
     resolvePerpendicularAisleStationRatiosFromReference
@@ -981,7 +980,9 @@ export class FieldRenderer {
         const aisleWidthFt = Math.max(0, (Number(tierMetrics.aisleWidth) || 0) / 12.0);
         const maxSeatsBetweenAisles = egressParams ? Number(egressParams.seatsBetweenAisles) : NaN;
         const seatWidthIn = egressParams ? Number(egressParams.seatWidthIn) : NaN;
-        const maxOccupantsPerAisle = Number(tierMetrics.occupantsPerAisleLine);
+        const minAisleWidthIn = egressParams ? Number(egressParams.minAisleWidthIn) : NaN;
+        const maxAisleWidthIn = egressParams ? Number(egressParams.maxAisleWidthIn) : NaN;
+        const egressFactor = egressParams ? Number(egressParams.egressFactor) : NaN;
 
         const layout = buildTierAisleLayout({
             frontSegments,
@@ -991,7 +992,8 @@ export class FieldRenderer {
             bowlConfig,
             maxSeatsBetweenAisles,
             seatWidthIn,
-            maxOccupantsPerAisle,
+            maxAisleWidthIn,
+            egressFactor,
             rowCount: solver.rows.length
         });
 
@@ -1003,27 +1005,20 @@ export class FieldRenderer {
                 tierIndex: solver.tierIndex !== undefined ? solver.tierIndex : 0,
                 seatWidthIn: Number.isFinite(seatWidthIn) ? seatWidthIn : NaN
             },
-            offsetCorrection
+            offsetCorrection,
+            {
+                maxSeatsBetweenAisles,
+                minAisleWidthIn,
+                maxAisleWidthIn,
+                egressFactor
+            }
         );
-        const authoritativeAisleWidthIn = Number(tierMetrics.aisleWidth);
-        const aisleOccupancyTotals = Array.isArray(tierSummary?.aisleOccupancyTotals)
-            ? tierSummary.aisleOccupancyTotals
-            : [];
-        const aisles = (layout.aisles || []).map((aisle, aisleIndex) => ({
-            ...aisle,
-            occupantsServed: Number.isFinite(aisleOccupancyTotals[aisleIndex])
-                ? Math.round(Math.max(0, aisleOccupancyTotals[aisleIndex]))
-                : null,
-            aisleWidthIn: Number.isFinite(authoritativeAisleWidthIn)
-                ? authoritativeAisleWidthIn
-                : null
-        }));
 
         return {
             tierIndex: solver.tierIndex !== undefined ? solver.tierIndex : 0,
             aisleWidthFt: layout.aisleWidthFt,
             seatWidthIn: Number.isFinite(seatWidthIn) ? seatWidthIn : NaN,
-            aisles,
+            aisles: layout.aisles || [],
             targetAisles: layout.targetAisles || targetAisles,
             forcedCount: layout.forcedCount || 0,
             sectionBoundaries: layout.sectionBoundaries || [],
@@ -1032,19 +1027,26 @@ export class FieldRenderer {
         };
     }
 
-    _summarizeTierLayoutSections(solver, bowlConfig, tierLayout, offsetCorrection = 0) {
+    _summarizeTierLayoutSections(solver, bowlConfig, tierLayout, offsetCorrection = 0, egressOptions = {}) {
         if (!solver || !Array.isArray(solver.rows) || solver.rows.length === 0) return null;
         if (!tierLayout || !Array.isArray(tierLayout.aisles) || !Array.isArray(tierLayout.sectionBoundaries)) return null;
 
         const seatWidthIn = Math.max(1, Number(tierLayout.seatWidthIn) || 0);
-        const aisleWidthFt = Math.max(0, Number(tierLayout.aisleWidthFt) || 0);
-        if (!(seatWidthIn > 0) || !(aisleWidthFt >= 0)) return null;
+        if (!(seatWidthIn > 0)) return null;
+
+        const pathCache = new Map();
+        const getPathsForOffset = (offset) => {
+            const key = offset.toFixed(6);
+            if (!pathCache.has(key)) {
+                pathCache.set(key, buildGeometryPaths(this._getBowlGeometry(bowlConfig, offset)));
+            }
+            return pathCache.get(key);
+        };
 
         const backRow = solver.rows[solver.rows.length - 1];
         if (!backRow) return null;
-        const backCenterOffset = (backRow.x - (backRow.tread_depth * 0.5)) - offsetCorrection;
-        const backPaths = buildGeometryPaths(this._getBowlGeometry(bowlConfig, backCenterOffset));
-        if (!backPaths.length) return null;
+        const referencePaths = getPathsForOffset((backRow.x - (backRow.tread_depth * 0.5)) - offsetCorrection);
+        if (!referencePaths.length) return null;
 
         const chamferCache = new Map();
         const aisleReferenceMap = this._buildTierAisleReferenceMap(
@@ -1052,84 +1054,27 @@ export class FieldRenderer {
             bowlConfig,
             tierLayout,
             offsetCorrection,
-            (offset) => buildGeometryPaths(this._getBowlGeometry(bowlConfig, offset)),
+            getPathsForOffset,
             chamferCache
         );
-        const backAisleRatios = this._buildResolvedAisleRatioMap(
-            backPaths,
-            backPaths,
+
+        return buildTierAisleLayoutSummary({
+            rows: solver.rows,
             tierLayout,
-            chamferCache,
-            aisleReferenceMap
-        );
-
-        let actualAisles = 0;
-        let actualSections = 0;
-        const backRowSectionSeatCounts = [];
-        let allSectionPathsClosed = true;
-
-        for (let p = 0; p < tierLayout.sectionBoundaries.length; p++) {
-            const path = backPaths[p];
-            const boundaries = tierLayout.sectionBoundaries[p];
-            if (!Array.isArray(boundaries) || !boundaries.length) continue;
-
-            const pathIsClosed = !!(path && path.closed);
-            if (!pathIsClosed) allSectionPathsClosed = false;
-            actualAisles += boundaries.length;
-            actualSections += pathIsClosed ? boundaries.length : Math.max(0, boundaries.length - 1);
-
-            if (!path || boundaries.length < 2) continue;
-            const aisleMap = backAisleRatios.get(p);
-            if (!aisleMap) continue;
-
-            const slotCount = pathIsClosed ? boundaries.length : Math.max(0, boundaries.length - 1);
-            for (let i = 0; i < slotCount; i++) {
-                const a = boundaries[i];
-                const b = pathIsClosed ? boundaries[(i + 1) % boundaries.length] : boundaries[i + 1];
-                const uA = aisleMap.get(a.aisleIndex);
-                const uB = aisleMap.get(b.aisleIndex);
-                if (!Number.isFinite(uA) || !Number.isFinite(uB)) continue;
-
-                const centerGapFt = sectionDistanceOnPath(path, uA, uB);
-                const seatCount = countSeatsFromCenterlineGapFt({ centerGapFt, aisleWidthFt, seatWidthIn });
-                backRowSectionSeatCounts.push(seatCount);
-            }
-        }
-
-        const overlayData = this.getTierSectionMetricsOverlayData(solver, bowlConfig, tierLayout, offsetCorrection);
-        const sectionOccupancyTotals = Array.isArray(overlayData?.sectionOccupancyTotals)
-            ? overlayData.sectionOccupancyTotals
-                .map((value) => Math.max(0, Number(value) || 0))
-                .filter((value) => Number.isFinite(value) && value > 0)
-            : [];
-        const aisleOccupancyTotals = Array.isArray(overlayData?.aisleOccupancyTotals)
-            ? overlayData.aisleOccupancyTotals
-                .map((value) => {
-                    const numericValue = Number(value);
-                    return Number.isFinite(numericValue) ? Math.max(0, numericValue) : 0;
-                })
-            : [];
-        let avgBackRowSeatsPerSection = 0;
-        let maxBackRowSeatsPerSection = 0;
-        let minBackRowSeatsPerSection = 0;
-        if (backRowSectionSeatCounts.length) {
-            const sum = backRowSectionSeatCounts.reduce((a, b) => a + b, 0);
-            avgBackRowSeatsPerSection = sum / backRowSectionSeatCounts.length;
-            maxBackRowSeatsPerSection = Math.max(...backRowSectionSeatCounts);
-            minBackRowSeatsPerSection = Math.min(...backRowSectionSeatCounts);
-        }
-
-        return {
-            actualAisles,
-            actualSections,
-            allSectionPathsClosed,
-            backRowSectionSeatCounts,
-            sectionOccupancyTotals,
-            aisleOccupancyTotals,
-            avgBackRowSeatsPerSection,
-            maxBackRowSeatsPerSection,
-            minBackRowSeatsPerSection
-        };
+            referencePaths,
+            resolveRowAisleSampling: (_rowIndex, row) => this._pickBestRowLabelSampling(
+                (row.x - (row.tread_depth * 0.5)) - offsetCorrection,
+                getPathsForOffset,
+                tierLayout,
+                chamferCache,
+                aisleReferenceMap
+            ),
+            seatWidthIn,
+            minAisleWidthIn: egressOptions?.minAisleWidthIn,
+            maxAisleWidthIn: egressOptions?.maxAisleWidthIn,
+            egressFactor: egressOptions?.egressFactor,
+            maxSeatsBetweenAisles: egressOptions?.maxSeatsBetweenAisles
+        });
     }
 
     _drawWorldTextLabel(ctx, scale, x, y, text, options = {}) {
@@ -1371,9 +1316,8 @@ export class FieldRenderer {
         if (!tierLayout || !Array.isArray(tierLayout.aisles) || tierLayout.aisles.length < 2) return;
         if (!solver || !Array.isArray(solver.rows) || solver.rows.length === 0) return;
 
-        const aisleWidthFt = Math.max(0, Number(tierLayout.aisleWidthFt) || 0);
         const seatWidthIn = Math.max(1, Number(tierLayout.seatWidthIn) || 0);
-        if (!(seatWidthIn > 0) || !(aisleWidthFt > 0)) return;
+        if (!(seatWidthIn > 0)) return;
 
         const effectiveScale = Math.max(0, Number(scale) || 0);
         const showRowSeatCounts = effectiveScale >= ROW_SEATCOUNT_MIN_SCALE;
@@ -1381,199 +1325,65 @@ export class FieldRenderer {
         const showSectionLabels = effectiveScale >= SECTION_LABEL_MIN_SCALE;
         if (!showSectionLabels && !showRowSeatCounts) return;
 
-        const pathCache = new Map();
-        const getPathsForOffset = (offset) => {
-            const key = offset.toFixed(6);
-            if (!pathCache.has(key)) {
-                pathCache.set(key, buildGeometryPaths(this._getBowlGeometry(bowlConfig, offset)));
-            }
-            return pathCache.get(key);
-        };
-
-        const tierIdx = Math.max(0, Math.floor(Number(tierLayout.tierIndex) || 0));
-        const sectionBase = (tierIdx + 1) * 100;
-        // Build section templates on a mid-tier row for stable numbering/order
-        // independent of zoom level and local chamfer flare at the back row.
-        const templateRowIndex = Math.floor((Math.max(1, solver.rows.length) - 1) * 0.5);
-        const templateRow = solver.rows[templateRowIndex];
-        const templateOffset = (templateRow.x - (templateRow.tread_depth * 0.5)) - offsetCorrection;
-        const labelPaths = getPathsForOffset(templateOffset);
-        const chamferCache = new Map();
-        const aisleReferenceMap = this._buildTierAisleReferenceMap(
+        const overlayData = this.getTierSectionMetricsOverlayData(
             solver,
             bowlConfig,
             tierLayout,
-            offsetCorrection,
-            getPathsForOffset,
-            chamferCache
+            offsetCorrection
         );
+        const rowSeatLabels = Array.isArray(overlayData?.rowSeatLabels) ? overlayData.rowSeatLabels : [];
+        const sectionLabels = Array.isArray(overlayData?.sectionLabels) ? overlayData.sectionLabels : [];
 
-        const sectionTemplates = this._buildTierSectionTemplates(labelPaths, tierLayout, sectionBase);
-        if (!sectionTemplates.size) return;
+        ctx.save();
+        ctx.translate(fx, fy);
 
-        // Draw per-row seat counts for each section at the right-hand side of each row segment.
-        const sectionSeatTotals = new Map();
         if (showRowSeatCounts) {
-            for (let r = 0; r < solver.rows.length; r++) {
-                const row = solver.rows[r];
-                const centerOffset = (row.x - (row.tread_depth * 0.5)) - offsetCorrection;
-                const sampledRow = this._pickBestRowLabelSampling(
-                    centerOffset,
-                    getPathsForOffset,
-                    tierLayout,
-                    chamferCache,
-                    aisleReferenceMap
-                );
-                const centerPaths = sampledRow.paths;
-                if (!centerPaths.length) continue;
-
-                const aisleRatiosByPath = sampledRow.aisleRatiosByPath;
-                if (!aisleRatiosByPath.size) continue;
-
-                ctx.save();
-                ctx.translate(fx, fy);
-
-                sectionTemplates.forEach((slots, pathIndex) => {
-                    const path = centerPaths[pathIndex];
-                    const aisleMap = aisleRatiosByPath.get(pathIndex);
-                    if (!path || !aisleMap || slots.length < 1) return;
-                    if (!sectionSeatTotals.has(pathIndex)) {
-                        sectionSeatTotals.set(pathIndex, new Array(slots.length).fill(0));
-                    }
-                    const totals = sectionSeatTotals.get(pathIndex);
-
-                    for (let i = 0; i < slots.length; i++) {
-                        const slot = slots[i];
-                        const uA = aisleMap.get(slot.aisleIndexA);
-                        const uB = aisleMap.get(slot.aisleIndexB);
-                        if (!Number.isFinite(uA) || !Number.isFinite(uB)) continue;
-
-                        const centerGapFt = sectionDistanceOnPath(path, uA, uB);
-                        const seatCount = countSeatsFromCenterlineGapFt({ centerGapFt, aisleWidthFt, seatWidthIn });
-                        if (!(seatCount > 0)) continue;
-                        totals[i] += seatCount;
-
-                        const ptA = samplePathPointByRatio(path, uA);
-                        const ptB = samplePathPointByRatio(path, uB);
-                        const rightIsA = (ptA.x > ptB.x + 1e-6) || (Math.abs(ptA.x - ptB.x) <= 1e-6 && ptA.y >= ptB.y);
-                        const labelCenterOffsetFt = (aisleWidthFt * 0.5) + ROW_SEATCOUNT_LABEL_EDGE_OFFSET_FT;
-                        const edgeInsetT = centerGapFt > 1e-6
-                            ? Math.max(
-                                ROW_SEATCOUNT_LABEL_MIN_T,
-                                Math.min(ROW_SEATCOUNT_LABEL_MAX_T, labelCenterOffsetFt / centerGapFt)
-                            )
-                            : 0.2;
-                        const labelU = rightIsA
-                            ? interpolatePathSectionU(path, uA, uB, edgeInsetT)
-                            : interpolatePathSectionU(path, uA, uB, 1 - edgeInsetT);
-                        const labelPt = samplePathPointByRatio(path, labelU);
-
-                        this._drawWorldTextLabel(ctx, scale, labelPt.x, labelPt.y, String(seatCount), {
-                            fontPx: ROW_SEATCOUNT_LABEL_FONT_PX,
-                            fontWeight: 700,
-                            textColor: '#1f2937',
-                            bgColor: 'rgba(255,255,255,0.88)',
-                            borderColor: 'rgba(148, 163, 184, 0.35)',
-                            paddingX: 4,
-                            paddingY: 1.5
-                        });
-                    }
+            rowSeatLabels.forEach((label) => {
+                if (!Number.isFinite(label?.x) || !Number.isFinite(label?.y) || !label?.text) return;
+                this._drawWorldTextLabel(ctx, scale, label.x, label.y, label.text, {
+                    fontPx: ROW_SEATCOUNT_LABEL_FONT_PX,
+                    fontWeight: 700,
+                    textColor: '#1f2937',
+                    bgColor: 'rgba(255,255,255,0.88)',
+                    borderColor: 'rgba(148, 163, 184, 0.35)',
+                    paddingX: 4,
+                    paddingY: 1.5
                 });
-
-                ctx.restore();
-            }
+            });
         }
 
         if (showSectionLabels) {
-            // Place section labels in the approximate center of each section polygon
-            // using the first and last row centerlines so labels track aisle geometry.
-            const firstRow = solver.rows[0];
-            const lastRow = solver.rows[solver.rows.length - 1];
-            const firstOffset = (firstRow.x - (firstRow.tread_depth * 0.5)) - offsetCorrection;
-            const lastOffset = (lastRow.x - (lastRow.tread_depth * 0.5)) - offsetCorrection;
-            const firstPaths = getPathsForOffset(firstOffset);
-            const lastPaths = getPathsForOffset(lastOffset);
-            const firstAisleRatios = this._buildResolvedAisleRatioMap(
-                firstPaths,
-                firstPaths,
-                tierLayout,
-                chamferCache,
-                aisleReferenceMap
-            );
-            const lastAisleRatios = this._buildResolvedAisleRatioMap(
-                lastPaths,
-                lastPaths,
-                tierLayout,
-                chamferCache,
-                aisleReferenceMap
-            );
+            sectionLabels.forEach((label) => {
+                if (!Number.isFinite(label?.x) || !Number.isFinite(label?.y) || !label?.text) return;
 
-            ctx.save();
-            ctx.translate(fx, fy);
-            sectionTemplates.forEach((slots, pathIndex) => {
-                const path = labelPaths[pathIndex];
-                const frontPath = firstPaths[pathIndex];
-                const backPath = lastPaths[pathIndex];
-                const frontAisles = firstAisleRatios.get(pathIndex);
-                const backAisles = lastAisleRatios.get(pathIndex);
-                const totals = sectionSeatTotals.get(pathIndex);
-                if (!path) return;
-                for (let i = 0; i < slots.length; i++) {
-                    const slot = slots[i];
-                    if (!Number.isFinite(slot.sectionNumber)) continue;
-                    let labelX = NaN;
-                    let labelY = NaN;
+                const hasOccLine = showRowSeatCounts && !!label.occText;
+                const useCloseZoomSectionLabelSize = showRowSeatCounts;
+                this._drawWorldTextLabel(ctx, scale, label.x, label.y, label.text, {
+                    fontPx: hasOccLine
+                        ? SECTION_LABEL_STACKED_FONT_PX
+                        : (useCloseZoomSectionLabelSize ? SECTION_LABEL_FONT_PX_ZOOMED_IN : SECTION_LABEL_FONT_PX_ZOOMED_OUT),
+                    fontWeight: 800,
+                    textColor: '#111827',
+                    bgColor: 'rgba(255,255,255,0.94)',
+                    borderColor: 'rgba(17,24,39,0.16)',
+                    paddingX: hasOccLine ? 6 : (useCloseZoomSectionLabelSize ? 7 : 4),
+                    paddingY: hasOccLine ? 3 : (useCloseZoomSectionLabelSize ? 3 : 1.5),
+                    offsetYPx: hasOccLine ? -SECTION_LABEL_STACK_OFFSET_PX : 0
+                });
 
-                    if (frontPath && backPath && frontAisles && backAisles) {
-                        const uFA = frontAisles.get(slot.aisleIndexA);
-                        const uFB = frontAisles.get(slot.aisleIndexB);
-                        const uBA = backAisles.get(slot.aisleIndexA);
-                        const uBB = backAisles.get(slot.aisleIndexB);
-                        if ([uFA, uFB, uBA, uBB].every(Number.isFinite)) {
-                            const midFront = samplePathPointByRatio(frontPath, interpolatePathSectionU(frontPath, uFA, uFB, 0.5));
-                            const midBack = samplePathPointByRatio(backPath, interpolatePathSectionU(backPath, uBA, uBB, 0.5));
-                            labelX = (midFront.x + midBack.x) * 0.5;
-                            labelY = (midFront.y + midBack.y) * 0.5;
-                        }
-                    }
-
-                    if (!Number.isFinite(labelX) || !Number.isFinite(labelY)) {
-                        const fallbackPt = samplePathPointByRatio(path, slot.midU);
-                        labelX = fallbackPt.x;
-                        labelY = fallbackPt.y;
-                    }
-
-                    const hasOccLine = showRowSeatCounts && Array.isArray(totals) && Number.isFinite(totals[i]) && totals[i] > 0;
-                    const useCloseZoomSectionLabelSize = showRowSeatCounts;
-
-                    this._drawWorldTextLabel(ctx, scale, labelX, labelY, `#${slot.sectionNumber}`, {
-                        fontPx: hasOccLine
-                            ? SECTION_LABEL_STACKED_FONT_PX
-                            : (useCloseZoomSectionLabelSize ? SECTION_LABEL_FONT_PX_ZOOMED_IN : SECTION_LABEL_FONT_PX_ZOOMED_OUT),
-                        fontWeight: 800,
-                        textColor: '#111827',
-                        bgColor: 'rgba(255,255,255,0.94)',
-                        borderColor: 'rgba(17,24,39,0.16)',
-                        paddingX: hasOccLine ? 6 : (useCloseZoomSectionLabelSize ? 7 : 4),
-                        paddingY: hasOccLine ? 3 : (useCloseZoomSectionLabelSize ? 3 : 1.5),
-                        offsetYPx: hasOccLine ? -SECTION_LABEL_STACK_OFFSET_PX : 0
+                if (hasOccLine) {
+                    this._drawWorldTextLabel(ctx, scale, label.x, label.y, label.occText, {
+                        fontPx: SECTION_OCC_LABEL_FONT_PX,
+                        fontWeight: 700,
+                        textColor: '#374151',
+                        bgColor: 'rgba(255,255,255,0.92)',
+                        borderColor: 'rgba(148, 163, 184, 0.30)',
+                        paddingX: 4,
+                        paddingY: 1.5,
+                        offsetYPx: SECTION_LABEL_STACK_OFFSET_PX
                     });
-
-                    if (hasOccLine) {
-                        this._drawWorldTextLabel(ctx, scale, labelX, labelY, `${Math.round(totals[i])}occ`, {
-                            fontPx: SECTION_OCC_LABEL_FONT_PX,
-                            fontWeight: 700,
-                            textColor: '#374151',
-                            bgColor: 'rgba(255,255,255,0.92)',
-                            borderColor: 'rgba(148, 163, 184, 0.30)',
-                            paddingX: 4,
-                            paddingY: 1.5,
-                            offsetYPx: SECTION_LABEL_STACK_OFFSET_PX
-                        });
-                    }
                 }
             });
-            ctx.restore();
         }
 
         if (showSectionLabels) {
@@ -1611,6 +1421,8 @@ export class FieldRenderer {
             });
             ctx.restore();
         }
+
+        ctx.restore();
     }
 
     getTierAisleBandPolygons(solver, bowlConfig, tierLayout, offsetCorrection = 0) {
@@ -1694,6 +1506,11 @@ export class FieldRenderer {
         if (!solver || !Array.isArray(solver.rows) || solver.rows.length === 0) {
             return { sectionLabels: [], rowSeatLabels: [] };
         }
+        const sectionSummary = tierLayout?.sectionSummary;
+        const sections = Array.isArray(sectionSummary?.sections) ? sectionSummary.sections : [];
+        if (sections.length < 1) {
+            return { sectionLabels: [], rowSeatLabels: [] };
+        }
 
         const aisleWidthFt = Math.max(0, Number(tierLayout.aisleWidthFt) || 0);
         const seatWidthIn = Math.max(1, Number(tierLayout.seatWidthIn) || 0);
@@ -1727,9 +1544,11 @@ export class FieldRenderer {
         );
         const sectionTemplates = this._buildTierSectionTemplates(labelPaths, tierLayout, sectionBase);
         if (!sectionTemplates.size) return { sectionLabels: [], rowSeatLabels: [] };
+        const sectionByKey = new Map(
+            sections.map((section) => [`${section.pathIndex}:${section.slotIndex}`, section])
+        );
 
         const rowSeatLabels = [];
-        const sectionSeatTotals = new Map();
         for (let r = 0; r < solver.rows.length; r++) {
             const row = solver.rows[r];
             const centerOffset = (row.x - (row.tread_depth * 0.5)) - offsetCorrection;
@@ -1750,25 +1569,21 @@ export class FieldRenderer {
                 const path = centerPaths[pathIndex];
                 const aisleMap = aisleRatiosByPath.get(pathIndex);
                 if (!path || !aisleMap || slots.length < 1) return;
-                if (!sectionSeatTotals.has(pathIndex)) {
-                    sectionSeatTotals.set(pathIndex, new Array(slots.length).fill(0));
-                }
-                const totals = sectionSeatTotals.get(pathIndex);
 
                 for (let i = 0; i < slots.length; i++) {
                     const slot = slots[i];
+                    const sectionRecord = sectionByKey.get(`${pathIndex}:${i}`);
+                    const seatCount = Math.max(0, Math.round(Number(sectionRecord?.rowSeatCounts?.[r]) || 0));
+                    if (!(seatCount > 0)) continue;
+
                     const uA = aisleMap.get(slot.aisleIndexA);
                     const uB = aisleMap.get(slot.aisleIndexB);
                     if (!Number.isFinite(uA) || !Number.isFinite(uB)) continue;
 
-                    const centerGapFt = sectionDistanceOnPath(path, uA, uB);
-                    const seatCount = countSeatsFromCenterlineGapFt({ centerGapFt, aisleWidthFt, seatWidthIn });
-                    if (!(seatCount > 0)) continue;
-                    totals[i] += seatCount;
-
                     const ptA = samplePathPointByRatio(path, uA);
                     const ptB = samplePathPointByRatio(path, uB);
                     const rightIsA = (ptA.x > ptB.x + 1e-6) || (Math.abs(ptA.x - ptB.x) <= 1e-6 && ptA.y >= ptB.y);
+                    const centerGapFt = sectionDistanceOnPath(path, uA, uB);
                     const labelCenterOffsetFt = (aisleWidthFt * 0.5) + ROW_SEATCOUNT_LABEL_EDGE_OFFSET_FT;
                     const edgeInsetT = centerGapFt > 1e-6
                         ? Math.max(
@@ -1795,18 +1610,6 @@ export class FieldRenderer {
                 }
             });
         }
-
-        const aisleOccupancyTotals = computeAisleTributaryOccupancies({
-            aisleCount: tierLayout.aisles.length,
-            sections: Array.from(sectionTemplates.entries()).flatMap(([pathIndex, slots]) => {
-                const totals = sectionSeatTotals.get(pathIndex);
-                return (slots || []).map((slot, slotIndex) => ({
-                    occupancy: Array.isArray(totals) ? totals[slotIndex] : 0,
-                    aisleIndexA: slot?.aisleIndexA,
-                    aisleIndexB: slot?.aisleIndexB
-                }));
-            })
-        });
 
         const sectionLabels = [];
         const firstRow = solver.rows[0];
@@ -1836,7 +1639,6 @@ export class FieldRenderer {
             const backPath = lastPaths[pathIndex];
             const frontAisles = firstAisleRatios.get(pathIndex);
             const backAisles = lastAisleRatios.get(pathIndex);
-            const totals = sectionSeatTotals.get(pathIndex);
             if (!path) return;
 
             for (let i = 0; i < slots.length; i++) {
@@ -1864,7 +1666,10 @@ export class FieldRenderer {
                     labelY = fallbackPt.y;
                 }
 
-                const occupancy = Array.isArray(totals) && Number.isFinite(totals[i]) ? Math.round(totals[i]) : null;
+                const sectionRecord = sectionByKey.get(`${pathIndex}:${i}`);
+                const occupancy = Number.isFinite(sectionRecord?.occupancy)
+                    ? Math.round(sectionRecord.occupancy)
+                    : null;
                 sectionLabels.push({
                     tierIndex: tierIdx,
                     pathIndex,
@@ -1882,10 +1687,12 @@ export class FieldRenderer {
         return {
             sectionLabels,
             rowSeatLabels,
-            aisleOccupancyTotals,
-            sectionOccupancyTotals: Array.from(sectionSeatTotals.values()).flatMap((totals) =>
-                (Array.isArray(totals) ? totals : []).map((value) => Math.round(Math.max(0, Number(value) || 0)))
-            )
+            aisleOccupancyTotals: Array.isArray(sectionSummary?.aisleOccupancyTotals)
+                ? sectionSummary.aisleOccupancyTotals
+                : [],
+            sectionOccupancyTotals: Array.isArray(sectionSummary?.sectionOccupancyTotals)
+                ? sectionSummary.sectionOccupancyTotals
+                : []
         };
     }
 
@@ -1927,9 +1734,13 @@ export class FieldRenderer {
 
         const occupancyLabels = [];
         const widthLabels = [];
+        const aisleSummaries = Array.isArray(tierLayout?.sectionSummary?.aisles)
+            ? tierLayout.sectionSummary.aisles
+            : [];
 
         for (let aisleIndex = 0; aisleIndex < tierLayout.aisles.length; aisleIndex++) {
             const aisle = tierLayout.aisles[aisleIndex];
+            const aisleSummary = aisleSummaries[aisleIndex] || null;
             if (!aisle) continue;
 
             const pathIndex = Math.max(0, Math.floor(Number(aisle.pathIndex) || 0));
@@ -1938,7 +1749,7 @@ export class FieldRenderer {
             const widthFrontPath = widthFrontPaths[pathIndex];
             const widthBackPath = widthBackPaths[pathIndex];
 
-            if (Number.isFinite(aisle.occupantsServed) && occupancyFrontPath && occupancyBackPath) {
+            if (Number.isFinite(aisleSummary?.tributaryOccupancy) && occupancyFrontPath && occupancyBackPath) {
                 const occupancyRatios = this._resolveTierAisleStationRatios(
                     occupancyFrontPath,
                     occupancyBackPath,
@@ -1955,13 +1766,13 @@ export class FieldRenderer {
                         pathIndex,
                         x: (frontPoint.x + backPoint.x) * 0.5,
                         y: (frontPoint.y + backPoint.y) * 0.5,
-                        text: `${Math.round(Math.max(0, Number(aisle.occupantsServed) || 0))}occ`,
+                        text: `${Math.round(Math.max(0, Number(aisleSummary.tributaryOccupancy) || 0))}occ`,
                         rotationRad: -Math.atan2(backPoint.y - frontPoint.y, backPoint.x - frontPoint.x)
                     });
                 }
             }
 
-            if (Number.isFinite(aisle.aisleWidthIn) && aisle.aisleWidthIn > 0 && widthFrontPath && widthBackPath) {
+            if (Number.isFinite(aisleSummary?.governingWidthIn) && aisleSummary.governingWidthIn > 0 && widthFrontPath && widthBackPath) {
                 const widthRatios = this._resolveTierAisleStationRatios(
                     widthFrontPath,
                     widthBackPath,
@@ -1978,7 +1789,7 @@ export class FieldRenderer {
                         pathIndex,
                         x: (frontPoint.x + backPoint.x) * 0.5,
                         y: (frontPoint.y + backPoint.y) * 0.5,
-                        text: formatAisleWidthLabel(aisle.aisleWidthIn)
+                        text: formatAisleWidthLabel(aisleSummary.governingWidthIn)
                     });
                 }
             }

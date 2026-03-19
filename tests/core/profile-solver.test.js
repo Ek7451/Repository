@@ -177,10 +177,20 @@ describe('profile solver helper exports', () => {
                     actualSections: 2,
                     actualAisles: 2,
                     allSectionPathsClosed: true,
+                    backRowSectionSeatCounts: [11, 17],
                     avgBackRowSeatsPerSection: 14,
                     maxBackRowSeatsPerSection: 17,
                     sectionOccupancyTotals: [32, 48],
-                    aisleOccupancyTotals: [40, 40]
+                    aisleOccupancyTotals: [40, 40],
+                    requiredWidthIn: 8,
+                    governingWidthIn: 48,
+                    renderedAisleWidthIn: 48,
+                    legalMaxOccupantsPerAisle: 360,
+                    compliance: {
+                        seatCapCompliant: true,
+                        egressCapCompliant: true,
+                        renderedWidthCompliant: true
+                    }
                 }
             }],
             egressParams: { egressFactor: 0.2 }
@@ -191,11 +201,21 @@ describe('profile solver helper exports', () => {
         expect(reconciled.get(2)).toMatchObject({
             numAisles: 2,
             numSections: 2,
+            backRowSeatsPerRow: 28,
             seatsPerBlock: '14.0',
             maxSeatsPerSectionRow: 17,
             occupantsPerSection: 48,
             occupantsPerAisleLine: 40,
-            capacityWidth: '8.0'
+            capacityWidth: '8.0',
+            aisleWidth: '48.0',
+            governingWidth: '48.0',
+            renderedAisleWidth: '48.0',
+            legalMaxOccupantsPerAisle: 360,
+            egressEstimate: expect.objectContaining({
+                numAisles: 4,
+                numSections: 4,
+                capacityWidth: '4.0'
+            })
         });
     });
 
@@ -231,6 +251,7 @@ describe('profile solver helper exports', () => {
         expect(metrics).toMatchObject({
             numAisles: 5,
             aisleWidth: '48.0',
+            renderedAisleWidth: '48.0',
             seatsPerRow: 72,
             backRowSeatsPerRow: 72,
             numSections: 4,
@@ -241,6 +262,7 @@ describe('profile solver helper exports', () => {
             capacityWidth: '14.4',
             minimumWidth: '48.0',
             maximumWidth: '72.0',
+            legalMaxOccupantsPerAisle: 360,
             governingWidth: '48.0',
             blocksAddedForEgress: 0,
             converged: true,

@@ -19,22 +19,55 @@ export function computeTributaryOccupancyPerAisle({ occupantsPerBlock, blockCoun
     return resolvedBlockCount === 1 ? (0.5 * resolvedOccupantsPerBlock) : resolvedOccupantsPerBlock;
 }
 
-export function computeAssignedAisleWidthIn({ tributaryOccupancy, egressFactor, minAisleWidthIn, maxAisleWidthIn }) {
+export function computeMaximumOccupantsPerAisle({ maxAisleWidthIn, egressFactor }) {
     const factor = Math.max(0, Number(egressFactor) || 0);
+    if (!(factor > 0)) return Number.POSITIVE_INFINITY;
+
+    const maxWidth = Math.max(0, Number(maxAisleWidthIn) || 0);
+    return maxWidth / factor;
+}
+
+export function computeRequiredAisleWidthIn({ tributaryOccupancy, egressFactor }) {
+    const factor = Math.max(0, Number(egressFactor) || 0);
+    return Math.max(0, Number(tributaryOccupancy) || 0) * factor;
+}
+
+export function clampAisleWidthIn({ aisleWidthIn, minAisleWidthIn, maxAisleWidthIn }) {
     const minWidth = Math.max(0, Number(minAisleWidthIn) || 0);
     const maxWidth = Math.max(minWidth, Number(maxAisleWidthIn) || minWidth);
-    const capacityWidth = Math.max(0, Number(tributaryOccupancy) || 0) * factor;
-    return Math.min(Math.max(capacityWidth, minWidth), maxWidth);
+    return Math.min(Math.max(Math.max(0, Number(aisleWidthIn) || 0), minWidth), maxWidth);
+}
+
+export function computeAssignedAisleWidthIn({ tributaryOccupancy, egressFactor, minAisleWidthIn, maxAisleWidthIn }) {
+    return clampAisleWidthIn({
+        aisleWidthIn: computeRequiredAisleWidthIn({
+            tributaryOccupancy,
+            egressFactor
+        }),
+        minAisleWidthIn,
+        maxAisleWidthIn
+    });
+}
+
+export function validateTributaryAisleCapacity({ tributaryOccupancy, maxAisleWidthIn, egressFactor }) {
+    const load = Math.max(0, Number(tributaryOccupancy) || 0);
+    const maxOccupants = computeMaximumOccupantsPerAisle({
+        maxAisleWidthIn,
+        egressFactor
+    });
+    return load <= maxOccupants + 1e-9;
 }
 
 export function computeRequiredBlockCountForWidthCap({ seatsPerRow, rowCount, assignedAisleWidthIn, egressFactor }) {
     const resolvedSeatsPerRow = Math.max(0, Number(seatsPerRow) || 0);
     const resolvedRowCount = Math.max(1, Math.round(Number(rowCount) || 1));
     const resolvedWidth = Math.max(0, Number(assignedAisleWidthIn) || 0);
-    const factor = Math.max(0, Number(egressFactor) || 0);
-    if (!(factor > 0) || !(resolvedWidth > 0)) return 1;
+    const maxOccAllowed = computeMaximumOccupantsPerAisle({
+        maxAisleWidthIn: resolvedWidth,
+        egressFactor
+    });
+    if (!(resolvedWidth > 0) || !Number.isFinite(maxOccAllowed) || !(maxOccAllowed > 0)) return 1;
 
-    const maxOccAllowed = resolvedWidth / factor;
     return Math.max(1, Math.ceil((resolvedSeatsPerRow * resolvedRowCount) / Math.max(1e-9, maxOccAllowed)));
 }
 
@@ -324,7 +357,10 @@ export function computeTierEgressMetrics({
     );
     const occupantsPerSection = seatsPerBlock * resolvedNumRows;
     const occupantsPerAisleLine = computeTributaryOccupancyPerAisle({ occupantsPerBlock: occupantsPerSection, blockCount: solvedPolicy.numSections });
-    const capacityWidth = occupantsPerAisleLine * resolvedEgressFactor;
+    const capacityWidth = computeRequiredAisleWidthIn({
+        tributaryOccupancy: occupantsPerAisleLine,
+        egressFactor: resolvedEgressFactor
+    });
     let baselineBlocksPerRow = computeMinimumBlockCountForSeatLimit({ backRowSeatsPerRun: solvedPolicy.backRowSeatsPerRow, seatsBetweenAisles: resolvedSeatsBetweenAisles });
     if (baselineBlocksPerRow < 1) baselineBlocksPerRow = 1;
 
@@ -342,6 +378,10 @@ export function computeTierEgressMetrics({
         totalEgressWidthRequired: solvedPolicy.numAisles * solvedPolicy.aisleWidthIn,
         minimumWidth: resolvedMinAisleWidthIn,
         maximumWidth: resolvedMaxAisleWidthIn,
+        legalMaxOccupantsPerAisle: computeMaximumOccupantsPerAisle({
+            maxAisleWidthIn: resolvedMaxAisleWidthIn,
+            egressFactor: resolvedEgressFactor
+        }),
         governingWidth: solvedPolicy.aisleWidthIn,
         blocksAddedForEgress: solvedPolicy.numSections - baselineBlocksPerRow,
         converged: solvedPolicy.converged

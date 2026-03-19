@@ -52,7 +52,8 @@ function buildTierExportRecord({
     const tierNumber = tierIndex + 1;
     const rows = Array.isArray(solver?.rows) ? solver.rows : [];
     const tierArtifact = tierArtifactMap instanceof Map ? tierArtifactMap.get(tierIndex) : null;
-    const estMetrics = tierArtifact?.tierMetrics ?? null;
+    const finalMetrics = tierArtifact?.tierMetrics ?? null;
+    const estimateMetrics = tierArtifact?.tierMetricsEstimate ?? finalMetrics?.egressEstimate ?? finalMetrics ?? null;
     const tierLayout = tierArtifact?.tierLayout ?? null;
     const overlay = tierArtifact?.overlayData ?? createEmptyOverlay();
 
@@ -167,7 +168,12 @@ function buildTierExportRecord({
     });
 
     const seatWidthIn = Math.max(0, Number(tierLayout?.seatWidthIn) || Number(egressParams?.seatWidthIn) || 0);
-    const aisleWidthIn = Math.max(0, (Number(tierLayout?.aisleWidthFt) || 0) * 12.0);
+    const renderedAisleWidthIn = Math.max(
+        0,
+        Number(tierLayout?.sectionSummary?.renderedAisleWidthIn)
+            || Number(finalMetrics?.renderedAisleWidth)
+            || (Number(tierLayout?.aisleWidthFt) || 0) * 12.0
+    );
 
     const sectionRecords = Array.from(sectionsByKey.values())
         .sort((a, b) => (a.sectionNumber ?? 0) - (b.sectionNumber ?? 0))
@@ -199,7 +205,7 @@ function buildTierExportRecord({
 
     const totalOccupancy = Math.max(
         0,
-        Number(estMetrics?.capacity)
+        Number(finalMetrics?.capacity)
             || sectionRecords.reduce((acc, section) => acc + (Number(section.occupancy) || 0), 0)
     );
     const rowTotals = rowRecords.map((row) => row.seatsInRowActual);
@@ -218,7 +224,7 @@ function buildTierExportRecord({
         totalOccupancy,
         egressInputs: {
             seatWidthIn: seatWidthIn > 0 ? +seatWidthIn.toFixed(2) : null,
-            aisleWidthIn: aisleWidthIn > 0 ? +aisleWidthIn.toFixed(2) : null,
+            aisleWidthIn: renderedAisleWidthIn > 0 ? +renderedAisleWidthIn.toFixed(2) : null,
             maxSeatsPerRow: Number.isFinite(egressParams?.seatsBetweenAisles) ? +egressParams.seatsBetweenAisles : null,
             egressFactor: Number.isFinite(egressParams?.egressFactor) ? +egressParams.egressFactor : null
         },
@@ -231,7 +237,10 @@ function buildTierExportRecord({
                 ? sectionSummary.actualSections
                 : actualSectionCount,
             forcedAislesAdded: Number.isFinite(tierLayout?.forcedCount) ? tierLayout.forcedCount : 0,
-            targetAislesRequested: Number.isFinite(tierLayout?.targetAisles) ? tierLayout.targetAisles : null
+            targetAislesRequested: Number.isFinite(tierLayout?.targetAisles) ? tierLayout.targetAisles : null,
+            seatCapCompliant: sectionSummary?.compliance?.seatCapCompliant ?? null,
+            egressCapCompliant: sectionSummary?.compliance?.egressCapCompliant ?? null,
+            renderedWidthCompliant: sectionSummary?.compliance?.renderedWidthCompliant ?? null
         },
         distributions: {
             seatsPerRowActual: summarizeValues(rowTotals),
@@ -239,14 +248,33 @@ function buildTierExportRecord({
             sectionsPerRow: summarizeValues(sectionsPerRowCounts),
             rowsPerSection: summarizeValues(rowsPerSectionCounts)
         },
-        egressEstimate: estMetrics ? {
-            requiredWidthIn: Number.isFinite(estMetrics.requiredWidth) ? +estMetrics.requiredWidth.toFixed(2) : null,
-            aisleWidthIn: Number.isFinite(estMetrics.aisleWidth) ? +estMetrics.aisleWidth.toFixed(2) : null,
-            estimatedNumAisles: Number.isFinite(estMetrics.numAisles) ? estMetrics.numAisles : null,
-            estimatedNumSections: Number.isFinite(estMetrics.numSections) ? estMetrics.numSections : null,
-            estimatedSeatsPerRowAvg: Number.isFinite(estMetrics.seatsPerRow) ? +estMetrics.seatsPerRow.toFixed(2) : null,
-            estimatedSeatsPerSectionAvg: Number.isFinite(estMetrics.occupantsPerSection)
-                ? +estMetrics.occupantsPerSection.toFixed(2)
+        egressFinal: finalMetrics ? {
+            requiredWidthIn: Number.isFinite(Number(sectionSummary?.requiredWidthIn))
+                ? +Number(sectionSummary.requiredWidthIn).toFixed(2)
+                : (Number.isFinite(Number(finalMetrics.capacityWidth)) ? +Number(finalMetrics.capacityWidth).toFixed(2) : null),
+            governingWidthIn: Number.isFinite(Number(sectionSummary?.governingWidthIn))
+                ? +Number(sectionSummary.governingWidthIn).toFixed(2)
+                : (Number.isFinite(Number(finalMetrics.governingWidth)) ? +Number(finalMetrics.governingWidth).toFixed(2) : null),
+            renderedCommonWidthIn: renderedAisleWidthIn > 0 ? +renderedAisleWidthIn.toFixed(2) : null,
+            finalNumAisles: Number.isFinite(finalMetrics.numAisles) ? finalMetrics.numAisles : null,
+            finalNumSections: Number.isFinite(finalMetrics.numSections) ? finalMetrics.numSections : null,
+            largestSectionOccupancy: Number.isFinite(finalMetrics.occupantsPerSection)
+                ? +Number(finalMetrics.occupantsPerSection).toFixed(2)
+                : null,
+            maxTributaryOccupancyPerAisle: Number.isFinite(finalMetrics.occupantsPerAisleLine)
+                ? +Number(finalMetrics.occupantsPerAisleLine).toFixed(2)
+                : null
+        } : null,
+        egressEstimate: estimateMetrics ? {
+            requiredWidthIn: Number.isFinite(Number(estimateMetrics.requiredWidth))
+                ? +Number(estimateMetrics.requiredWidth).toFixed(2)
+                : (Number.isFinite(Number(estimateMetrics.governingWidth)) ? +Number(estimateMetrics.governingWidth).toFixed(2) : null),
+            aisleWidthIn: Number.isFinite(Number(estimateMetrics.aisleWidth)) ? +Number(estimateMetrics.aisleWidth).toFixed(2) : null,
+            estimatedNumAisles: Number.isFinite(estimateMetrics.numAisles) ? estimateMetrics.numAisles : null,
+            estimatedNumSections: Number.isFinite(estimateMetrics.numSections) ? estimateMetrics.numSections : null,
+            estimatedSeatsPerRowAvg: Number.isFinite(estimateMetrics.seatsPerRow) ? +Number(estimateMetrics.seatsPerRow).toFixed(2) : null,
+            estimatedSeatsPerSectionAvg: Number.isFinite(estimateMetrics.occupantsPerSection)
+                ? +Number(estimateMetrics.occupantsPerSection).toFixed(2)
                 : null
         } : null,
         rows: rowRecords,

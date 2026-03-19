@@ -208,7 +208,7 @@ describe('RenderRuntime', () => {
         expect(fieldGeometryPort.getOffsetCorrection).toHaveBeenCalledWith(
             expect.objectContaining({
                 width: 160,
-                straightAisleMode: 'radial',
+                straightAisleMode: 'perpendicular',
                 chamferAisleMode: 'radial'
             }),
             'Football'

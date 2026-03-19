@@ -105,7 +105,6 @@ describe('StatsPanel', () => {
 
         expect(statsEl.innerHTML).toContain('Largest Section');
         expect(statsEl.innerHTML).toContain('57');
-        expect(statsEl.innerHTML).toContain('largest section 57 seats');
     });
 
     test('renders the max seats per section-row metric instead of the average seats metric', () => {

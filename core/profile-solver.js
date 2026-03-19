@@ -323,6 +323,33 @@ export function buildTierMetricsByIndex({
     return tierMetricsByIndex;
 }
 
+function buildEstimateEgressSnapshot(metrics) {
+    if (!metrics || typeof metrics !== 'object') return null;
+
+    return {
+        numAisles: metrics.numAisles,
+        numSections: metrics.numSections,
+        seatsPerRow: metrics.seatsPerRow,
+        backRowSeatsPerRow: metrics.backRowSeatsPerRow,
+        seatsPerBlock: metrics.seatsPerBlock,
+        maxSeatsPerSectionRow: metrics.maxSeatsPerSectionRow,
+        occupantsPerSection: metrics.occupantsPerSection,
+        occupantsPerAisleLine: metrics.occupantsPerAisleLine,
+        capacityWidth: metrics.capacityWidth,
+        aisleWidth: metrics.aisleWidth,
+        minimumWidth: metrics.minimumWidth,
+        maximumWidth: metrics.maximumWidth,
+        governingWidth: metrics.governingWidth,
+        totalRowLength: metrics.totalRowLength,
+        totalSeatingLength: metrics.totalSeatingLength,
+        totalAisleLength: metrics.totalAisleLength,
+        blocksAddedForEgress: metrics.blocksAddedForEgress,
+        converged: metrics.converged,
+        legalMaxOccupantsPerAisle: metrics.legalMaxOccupantsPerAisle,
+        mirroredSideRuns: metrics.mirroredSideRuns
+    };
+}
+
 export function reconcileTierMetricsByIndexWithLayoutSummaries({
     tierMetricsByIndex,
     tierAisleLayouts,
@@ -352,6 +379,9 @@ export function reconcileTierMetricsByIndexWithLayoutSummaries({
         const actualAisles = Math.max(0, Math.floor(Number(summary.actualAisles) || 0));
         const avgBackRowSeats = Number(summary.avgBackRowSeatsPerSection);
         const maxBackRowSeats = Number(summary.maxBackRowSeatsPerSection);
+        const backRowSectionSeatCounts = Array.isArray(summary.backRowSectionSeatCounts)
+            ? summary.backRowSectionSeatCounts.map((value) => Math.max(0, Number(value) || 0))
+            : [];
         const aisleOccupancyTotals = Array.isArray(summary.aisleOccupancyTotals)
             ? summary.aisleOccupancyTotals
                 .map((value) => Math.max(0, Number(value) || 0))
@@ -381,13 +411,41 @@ export function reconcileTierMetricsByIndexWithLayoutSummaries({
         const aisleLoad = aisleOccupancyTotals.length > 0
             ? Math.max(...aisleOccupancyTotals)
             : (actualSections <= 1 ? (governingSectionOccupancy * 0.5) : governingSectionOccupancy);
+        const estimateEgress = metrics.egressEstimate || buildEstimateEgressSnapshot(metrics);
+        const baselineBlocksPerRow = Math.max(
+            1,
+            Math.round(
+                Math.max(
+                    1,
+                    Number(estimateEgress?.numSections) || 1
+                ) - Math.max(0, Number(estimateEgress?.blocksAddedForEgress) || 0)
+            )
+        );
+        const requiredWidth = Number.isFinite(Number(summary?.requiredWidthIn))
+            ? Number(summary.requiredWidthIn)
+            : (Number.isFinite(egressFactorVal) ? (aisleLoad * egressFactorVal) : Number(metrics.capacityWidth));
+        const governingWidth = Number.isFinite(Number(summary?.governingWidthIn))
+            ? Number(summary.governingWidthIn)
+            : Number(metrics.governingWidth);
+        const renderedAisleWidth = Number.isFinite(Number(summary?.renderedAisleWidthIn))
+            ? Number(summary.renderedAisleWidthIn)
+            : Number(metrics.aisleWidth);
         const nextMetrics = {
             ...metrics,
+            egressEstimate: estimateEgress,
             capacity: Math.round(totalCapacity),
             numSections: actualSections,
             numAisles: actualAisles > 0 ? actualAisles : actualSections,
+            backRowSeatsPerRow: Math.round(backRowSectionSeatCounts.reduce((sum, value) => sum + (Number(value) || 0), 0)),
             occupantsPerSection: Math.round(governingSectionOccupancy),
-            occupantsPerAisleLine: Math.round(aisleLoad)
+            occupantsPerAisleLine: Math.round(aisleLoad),
+            renderedAisleWidth: Number.isFinite(renderedAisleWidth) ? renderedAisleWidth.toFixed(1) : metrics.aisleWidth,
+            legalMaxOccupantsPerAisle: Number.isFinite(Number(summary?.legalMaxOccupantsPerAisle))
+                ? Number(summary.legalMaxOccupantsPerAisle)
+                : metrics.legalMaxOccupantsPerAisle,
+            seatCapCompliant: summary?.compliance?.seatCapCompliant,
+            egressCapCompliant: summary?.compliance?.egressCapCompliant,
+            renderedWidthCompliant: summary?.compliance?.renderedWidthCompliant
         };
 
         if (Number.isFinite(avgBackRowSeats)) {
@@ -397,9 +455,12 @@ export function reconcileTierMetricsByIndexWithLayoutSummaries({
             nextMetrics.maxSeatsPerSectionRow = Math.round(maxBackRowSeats);
         }
 
-        if (Number.isFinite(egressFactorVal)) {
-            nextMetrics.capacityWidth = (aisleLoad * egressFactorVal).toFixed(1);
+        if (Number.isFinite(requiredWidth)) nextMetrics.capacityWidth = requiredWidth.toFixed(1);
+        if (Number.isFinite(governingWidth)) {
+            nextMetrics.governingWidth = governingWidth.toFixed(1);
+            nextMetrics.aisleWidth = governingWidth.toFixed(1);
         }
+        nextMetrics.blocksAddedForEgress = Math.max(0, actualSections - baselineBlocksPerRow);
 
         reconciledTierMetrics.set(tierIndex, nextMetrics);
     });
@@ -662,6 +723,7 @@ export class ProfileSolver {
             capacity: finalCapacity,
             numAisles: egressMetrics.numAisles,
             aisleWidth: egressMetrics.aisleWidthIn.toFixed(1),
+            renderedAisleWidth: egressMetrics.aisleWidthIn.toFixed(1),
             totalEgressWidthRequired: egressMetrics.totalEgressWidthRequired.toFixed(1),
             totalRowLength: (finalSeatingLengthFt + finalAisleLengthFt).toFixed(0),
             totalSeatingLength: finalSeatingLengthFt.toFixed(0),
@@ -676,6 +738,7 @@ export class ProfileSolver {
             capacityWidth: egressMetrics.capacityWidth.toFixed(1),
             minimumWidth: egressMetrics.minimumWidth.toFixed(1),
             maximumWidth: egressMetrics.maximumWidth.toFixed(1),
+            legalMaxOccupantsPerAisle: egressMetrics.legalMaxOccupantsPerAisle,
             governingWidth: egressMetrics.governingWidth.toFixed(1),
             blocksAddedForEgress: egressMetrics.blocksAddedForEgress,
             converged: egressMetrics.converged,

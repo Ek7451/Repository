@@ -104,11 +104,11 @@ describe('SeatingBowlApp runtime seams', () => {
 
         expect(app.state.sport).toBe('Soccer');
         expect(app.state.setup.focalZ).toBe(7);
-        expect(app.state.bowl.straightAisleMode).toBe('radial');
+        expect(app.state.bowl.straightAisleMode).toBe('perpendicular');
         expect(app.state.bowl.chamferAisleMode).toBe('radial');
         expect(app.renderRuntime.getExportContext(app.state).template).toBe(getTemplate('Soccer'));
         expect(app.renderRuntime.getExportContext(app.state).bowlConfig).toEqual(expect.objectContaining({
-            straightAisleMode: 'radial',
+            straightAisleMode: 'perpendicular',
             chamferAisleMode: 'radial'
         }));
         expect(applyImportedConfig).toHaveBeenCalledWith(expect.objectContaining({

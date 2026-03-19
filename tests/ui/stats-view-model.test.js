@@ -192,6 +192,45 @@ describe('buildStatsViewModel', () => {
         expect(nonConvergedViewModel.tiers[0].egress.warningText).toContain('did not converge');
     });
 
+    test('keeps estimated egress values separate from final realized metrics', () => {
+        const viewModel = buildStatsDto({
+            solvers: [createSolver()],
+            focalPointFt: { x: 0, z: 0 },
+            bowlConfig: { type: 'Full' },
+            egressParams: { egressFactor: 0.2 },
+            tierMetricsByIndex: new Map([[0, createMetrics({
+                numAisles: 2,
+                numSections: 2,
+                occupantsPerSection: 60,
+                occupantsPerAisleLine: 30,
+                capacityWidth: '6.0',
+                aisleWidth: '48.0',
+                renderedAisleWidth: '42.0',
+                egressEstimate: createMetrics({
+                    numAisles: 4,
+                    numSections: 4,
+                    occupantsPerSection: 30,
+                    occupantsPerAisleLine: 15,
+                    capacityWidth: '3.0'
+                })
+            })]])
+        });
+
+        expect(viewModel.tiers[0].egress).toMatchObject({
+            displayAisles: 2,
+            displaySections: 2,
+            occupantsPerSection: 60,
+            occupantsPerAisleLine: 30,
+            renderedAisleWidth: '42.0',
+            estimate: expect.objectContaining({
+                displayAisles: 4,
+                displaySections: 4,
+                occupantsPerSection: 30,
+                occupantsPerAisleLine: 15
+            })
+        });
+    });
+
     test('uses reconciled tier capacity for total occupancy when provided', () => {
         const viewModel = buildStatsDto({
             solvers: [createSolver({ tierIndex: 0 }), createSolver({ tierIndex: 1 })],

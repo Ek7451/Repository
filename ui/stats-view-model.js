@@ -5,6 +5,63 @@ function getStatsTierIndex(solver, fallbackIndex = 0) {
     return Number.isInteger(tierIndex) ? tierIndex : fallbackIndex;
 }
 
+function buildEgressDisplayData({
+    metrics,
+    tierNumber,
+    egressFactor,
+    isMirroredSidesMode
+}) {
+    if (!metrics) return null;
+
+    const totalLen = parseFloat(metrics.totalRowLength) || 0;
+    const seatLen = parseFloat(metrics.totalSeatingLength) || 0;
+    const aisleLen = parseFloat(metrics.totalAisleLength) || 0;
+    const mirrorRuns = Math.max(1, Math.floor(Number(metrics.mirroredSideRuns) || 1));
+    const isMirroredSides = isMirroredSidesMode || mirrorRuns > 1;
+    const displayAisles = isMirroredSides
+        ? (Math.max(0, Number(metrics.numAisles) || 0) * mirrorRuns)
+        : Math.max(0, Number(metrics.numAisles) || 0);
+    const displaySections = isMirroredSides
+        ? (Math.max(0, Number(metrics.numSections) || 0) * mirrorRuns)
+        : Math.max(0, Number(metrics.numSections) || 0);
+    const displayTotalLen = isMirroredSides ? (totalLen * mirrorRuns) : totalLen;
+    const displaySeatLen = isMirroredSides ? (seatLen * mirrorRuns) : seatLen;
+    const displayAisleLen = isMirroredSides ? (aisleLen * mirrorRuns) : aisleLen;
+    const displaySeatsPerRow = isMirroredSides
+        ? Math.round((Number(metrics.seatsPerRow) || 0) * mirrorRuns)
+        : Math.round(Number(metrics.seatsPerRow) || 0);
+
+    return {
+        tierLabel: `TIER ${tierNumber}`,
+        headerSuffix: isMirroredSides ? ' &bull; Both Sides' : '',
+        originalHeaderSuffix: isMirroredSides ? ' &bull; Both Sides (Combined Counts)' : '',
+        countsTag: isMirroredSides ? ' (both sides)' : '',
+        linearQuantitiesTag: isMirroredSides ? ' (combined both sides)' : '',
+        perSideMirrorNote: isMirroredSides
+            ? ' Counts and linear quantities shown combined for both sides. Width/load checks remain per aisle.'
+            : '',
+        displayAisles,
+        displaySections,
+        displayTotalLen,
+        displaySeatLen,
+        displayAisleLen,
+        displaySeatsPerRow,
+        totalSeatingPercentage: totalLen > 0 ? ((seatLen / totalLen) * 100).toFixed(0) : '0',
+        totalAislePercentage: totalLen > 0 ? ((aisleLen / totalLen) * 100).toFixed(0) : '0',
+        capacityWidth: metrics.capacityWidth,
+        occupantsPerSection: metrics.occupantsPerSection,
+        seatsPerBlock: metrics.seatsPerBlock,
+        maxSeatsPerSectionRow: Math.max(0, Math.round(Number(metrics.maxSeatsPerSectionRow) || 0)),
+        occupantsPerAisleLine: metrics.occupantsPerAisleLine,
+        aisleWidth: metrics.aisleWidth,
+        minimumWidth: metrics.minimumWidth,
+        maximumWidth: metrics.maximumWidth,
+        governingWidth: metrics.governingWidth,
+        blocksAddedForEgress: Math.max(0, Number(metrics.blocksAddedForEgress) || 0),
+        egressFactor
+    };
+}
+
 function buildTierStatsViewModel({
     solver,
     loopIndex,
@@ -15,10 +72,13 @@ function buildTierStatsViewModel({
 }) {
     const tierIndex = getStatsTierIndex(solver, loopIndex);
     const tierNumber = tierIndex + 1;
-    const baseMetrics = tierMetricsByIndex instanceof Map
+    const finalMetrics = tierMetricsByIndex instanceof Map
         ? (tierMetricsByIndex.get(tierIndex) || null)
         : null;
-    const metrics = baseMetrics;
+    const metrics = finalMetrics;
+    const estimateMetrics = finalMetrics?.egressEstimate && finalMetrics.egressEstimate !== finalMetrics
+        ? finalMetrics.egressEstimate
+        : null;
     const accentColor = tierIndex === 0
         ? 'var(--accent-blue)'
         : (tierIndex === 1 ? 'var(--accent-cyan)' : 'var(--accent-purple)');
@@ -64,56 +124,39 @@ function buildTierStatsViewModel({
 
     let egress = null;
     if (metrics) {
-        const totalLen = parseFloat(metrics.totalRowLength) || 0;
-        const seatLen = parseFloat(metrics.totalSeatingLength) || 0;
-        const aisleLen = parseFloat(metrics.totalAisleLength) || 0;
-        const mirrorRuns = Math.max(1, Math.floor(Number(metrics.mirroredSideRuns) || 1));
-        const isMirroredSides = mirrorRuns > 1;
-        const displayAisles = isMirroredSides
-            ? (Math.max(0, Number(metrics.numAisles) || 0) * mirrorRuns)
-            : Math.max(0, Number(metrics.numAisles) || 0);
-        const displaySections = isMirroredSides
-            ? (Math.max(0, Number(metrics.numSections) || 0) * mirrorRuns)
-            : Math.max(0, Number(metrics.numSections) || 0);
-        const displayTotalLen = isMirroredSides ? (totalLen * mirrorRuns) : totalLen;
-        const displaySeatLen = isMirroredSides ? (seatLen * mirrorRuns) : seatLen;
-        const displayAisleLen = isMirroredSides ? (aisleLen * mirrorRuns) : aisleLen;
-        const displaySeatsPerRow = isMirroredSides
-            ? Math.round((Number(metrics.seatsPerRow) || 0) * mirrorRuns)
-            : Math.round(Number(metrics.seatsPerRow) || 0);
-        const blocksAddedForEgress = Math.max(0, Number(metrics.blocksAddedForEgress) || 0);
+        const finalEgress = buildEgressDisplayData({
+            metrics,
+            tierNumber,
+            egressFactor: egressParams.egressFactor,
+            isMirroredSidesMode
+        });
+        const estimateEgress = estimateMetrics
+            ? buildEgressDisplayData({
+                metrics: estimateMetrics,
+                tierNumber,
+                egressFactor: egressParams.egressFactor,
+                isMirroredSidesMode
+            })
+            : null;
+        const warningMessages = [];
+        if (finalEgress.blocksAddedForEgress > 0) {
+            warningMessages.push(`Limit Forced: Clamped to Max Aisle (${metrics.maximumWidth}")`);
+        }
+        if (metrics.converged === false) {
+            warningMessages.push('Warning: Layout did not converge.');
+        }
+        if (metrics.renderedWidthCompliant === false) {
+            warningMessages.push('Rendered aisle width differs from the final realized requirement.');
+        }
 
         egress = {
-            tierLabel: `TIER ${tierNumber}`,
-            headerSuffix: isMirroredSides ? ' &bull; Both Sides' : '',
-            originalHeaderSuffix: isMirroredSides ? ' &bull; Both Sides (Combined Counts)' : '',
-            countsTag: isMirroredSides ? ' (both sides)' : '',
-            linearQuantitiesTag: isMirroredSides ? ' (combined both sides)' : '',
-            perSideMirrorNote: isMirroredSides
-                ? ' Counts and linear quantities shown combined for both sides. Width/load checks remain per aisle.'
-                : '',
-            displayAisles,
-            displaySections,
-            displayTotalLen,
-            displaySeatLen,
-            displayAisleLen,
-            displaySeatsPerRow,
-            totalSeatingPercentage: totalLen > 0 ? ((seatLen / totalLen) * 100).toFixed(0) : '0',
-            totalAislePercentage: totalLen > 0 ? ((aisleLen / totalLen) * 100).toFixed(0) : '0',
-            capacityWidth: metrics.capacityWidth,
-            occupantsPerSection: metrics.occupantsPerSection,
-            seatsPerBlock: metrics.seatsPerBlock,
-            maxSeatsPerSectionRow: Math.max(0, Math.round(Number(metrics.maxSeatsPerSectionRow) || 0)),
-            occupantsPerAisleLine: metrics.occupantsPerAisleLine,
-            aisleWidth: metrics.aisleWidth,
-            minimumWidth: metrics.minimumWidth,
-            maximumWidth: metrics.maximumWidth,
-            governingWidth: metrics.governingWidth,
-            blocksAddedForEgress,
-            egressFactor: egressParams.egressFactor,
-            warningText: blocksAddedForEgress > 0
-                ? `Limit Forced: Clamped to Max Aisle (${metrics.maximumWidth}")`
-                : (metrics.converged === false ? 'Warning: Layout did not converge.' : '')
+            ...finalEgress,
+            estimate: estimateEgress,
+            renderedAisleWidth: metrics.renderedAisleWidth ?? metrics.aisleWidth,
+            seatCapCompliant: metrics.seatCapCompliant,
+            egressCapCompliant: metrics.egressCapCompliant,
+            renderedWidthCompliant: metrics.renderedWidthCompliant,
+            warningText: warningMessages.join(' ')
         };
     }
 

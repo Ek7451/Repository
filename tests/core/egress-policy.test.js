@@ -3,9 +3,12 @@ import { describe, expect, it } from 'vitest';
 import {
     computeAisleTributaryOccupancies,
     buildDistributedAisleCountMatrix,
+    clampAisleWidthIn,
     computeRequiredPerimeterSegmentCounts,
     computeAssignedAisleWidthIn,
+    computeMaximumOccupantsPerAisle,
     computeMinimumBlockCountForSeatLimit,
+    computeRequiredAisleWidthIn,
     computeRequiredBlockCountForWidthCap,
     computeTierEgressMetrics,
     computeTributaryOccupancyPerAisle,
@@ -14,7 +17,8 @@ import {
     findRequiredIntervalAisleCountForAisleLoad,
     solveUniformTierEgressPolicy,
     validatePerimeterSeatCaps,
-    validateDistributedSeatCaps
+    validateDistributedSeatCaps,
+    validateTributaryAisleCapacity
 } from '../../core/egress-policy.js';
 
 describe('egress policy helpers', () => {
@@ -42,8 +46,13 @@ describe('egress policy helpers', () => {
         expect(computeMinimumBlockCountForSeatLimit({ backRowSeatsPerRun: 60, seatsBetweenAisles: 20 })).toBe(3);
         expect(computeTributaryOccupancyPerAisle({ occupantsPerBlock: 60, blockCount: 1 })).toBe(30);
         expect(computeTributaryOccupancyPerAisle({ occupantsPerBlock: 60, blockCount: 4 })).toBe(60);
+        expect(computeMaximumOccupantsPerAisle({ maxAisleWidthIn: 72, egressFactor: 0.2 })).toBe(360);
+        expect(computeRequiredAisleWidthIn({ tributaryOccupancy: 60, egressFactor: 0.2 })).toBe(12);
+        expect(clampAisleWidthIn({ aisleWidthIn: 12, minAisleWidthIn: 48, maxAisleWidthIn: 72 })).toBe(48);
         expect(computeAssignedAisleWidthIn({ tributaryOccupancy: 60, egressFactor: 0.2, minAisleWidthIn: 48, maxAisleWidthIn: 72 })).toBe(48);
         expect(computeRequiredBlockCountForWidthCap({ seatsPerRow: 100, rowCount: 10, assignedAisleWidthIn: 48, egressFactor: 0.2 })).toBe(5);
+        expect(validateTributaryAisleCapacity({ tributaryOccupancy: 300, maxAisleWidthIn: 72, egressFactor: 0.2 })).toBe(true);
+        expect(validateTributaryAisleCapacity({ tributaryOccupancy: 400, maxAisleWidthIn: 72, egressFactor: 0.2 })).toBe(false);
     });
 
     it('finds interval aisle counts and worst seat spans using shared policy math', () => {
@@ -99,6 +108,7 @@ describe('egress policy helpers', () => {
             totalEgressWidthRequired: 240,
             minimumWidth: 48,
             maximumWidth: 72,
+            legalMaxOccupantsPerAisle: 360,
             governingWidth: 48,
             blocksAddedForEgress: 0,
             converged: true

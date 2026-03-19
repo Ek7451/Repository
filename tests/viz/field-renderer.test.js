@@ -158,7 +158,18 @@ describe('FieldRenderer helper delegation surface', () => {
                 sectionOccupancyTotals: expect.any(Array),
                 avgBackRowSeatsPerSection: expect.any(Number),
                 maxBackRowSeatsPerSection: expect.any(Number),
-                minBackRowSeatsPerSection: expect.any(Number)
+                minBackRowSeatsPerSection: expect.any(Number),
+                requiredWidthIn: expect.any(Number),
+                governingWidthIn: expect.any(Number),
+                renderedAisleWidthIn: expect.any(Number),
+                compliance: expect.objectContaining({
+                    seatCapCompliant: expect.any(Boolean),
+                    egressCapCompliant: expect.any(Boolean),
+                    renderedWidthCompliant: expect.any(Boolean),
+                    isCompliant: expect.any(Boolean)
+                }),
+                aisles: expect.any(Array),
+                sections: expect.any(Array)
             })
         }));
 
@@ -168,6 +179,7 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(layout.forcedCount).toBe(layout.aisles.filter((aisle) => aisle.forced).length);
         expect(layout.sectionSummary.backRowSectionSeatCounts).toHaveLength(layout.sectionSummary.actualSections);
         expect(layout.sectionSummary.sectionOccupancyTotals).toHaveLength(layout.sectionSummary.actualSections);
+        expect(layout.sectionSummary.aisles).toHaveLength(layout.aisles.length);
 
         expect(layout.aisles.find((aisle) => aisle.forced)).toEqual(expect.objectContaining({
             anchorType: 'forced_chamfer',
@@ -177,9 +189,12 @@ describe('FieldRenderer helper delegation surface', () => {
             anchorType: 'segment_fraction',
             segmentIndex: expect.any(Number),
             segmentT: expect.any(Number),
-            alignmentMode: expect.stringMatching(/^(radial|perpendicular)$/),
-            occupantsServed: expect.any(Number),
-            aisleWidthIn: 48
+            alignmentMode: expect.stringMatching(/^(radial|perpendicular)$/)
+        }));
+        expect(layout.sectionSummary.aisles.find((aisle) => Number.isFinite(aisle.tributaryOccupancy))).toEqual(expect.objectContaining({
+            tributaryOccupancy: expect.any(Number),
+            requiredWidthIn: expect.any(Number),
+            governingWidthIn: expect.any(Number)
         }));
         expect(
             layout.aisles
@@ -211,6 +226,39 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(overlay.widthLabels[0]).toEqual(expect.objectContaining({
             text: expect.stringMatching(/"$/)
         }));
+    });
+
+    it('restores the canvas context after drawing section metrics overlays', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        renderer._drawWorldTextLabel = vi.fn();
+        renderer.getTierSectionMetricsOverlayData = vi.fn(() => ({
+            sectionLabels: [{ x: 12, y: 18, text: '#101', occText: null }],
+            rowSeatLabels: []
+        }));
+        renderer._getTierAisleMetricLabelData = vi.fn(() => ({
+            occupancyLabels: [],
+            widthLabels: []
+        }));
+
+        const ctx = {
+            save: vi.fn(),
+            restore: vi.fn(),
+            translate: vi.fn()
+        };
+
+        renderer._drawTierSectionMetrics(
+            ctx,
+            createTierSolver(),
+            createFullChamferBowlConfig(),
+            { aisles: [{}, {}], seatWidthIn: 20 },
+            0,
+            1,
+            0,
+            0
+        );
+
+        expect(ctx.save).toHaveBeenCalledTimes(2);
+        expect(ctx.restore).toHaveBeenCalledTimes(2);
     });
 
     it('keeps straight perpendicular aisle polygons on one tier-stable axis in plan view', () => {

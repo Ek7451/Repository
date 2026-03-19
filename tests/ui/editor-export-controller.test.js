@@ -56,7 +56,17 @@ function createFieldRenderer() {
                 actualAisles: 1,
                 actualSections: 1,
                 allSectionPathsClosed: true,
-                sectionOccupancyTotals: [60]
+                backRowSectionSeatCounts: [60],
+                sectionOccupancyTotals: [60],
+                aisleOccupancyTotals: [30],
+                requiredWidthIn: 6,
+                governingWidthIn: 48,
+                renderedAisleWidthIn: 48,
+                compliance: {
+                    seatCapCompliant: true,
+                    egressCapCompliant: true,
+                    renderedWidthCompliant: true
+                }
             }
         })),
         getBowlGeometrySegments: vi.fn(() => [
@@ -235,10 +245,14 @@ describe('EditorExportController', () => {
             totalOccupancy: 60,
             actualLayout: {
                 sectionCount: 1
+            },
+            egressFinal: {
+                requiredWidthIn: 6,
+                governingWidthIn: 48
             }
         });
         expect(payload.tiers[0].egressEstimate).toMatchObject({
-            estimatedSeatsPerSectionAvg: 60
+            estimatedSeatsPerSectionAvg: 120
         });
 
         calculateTierMetrics.mockRestore();
