@@ -1170,6 +1170,209 @@ function distributeCoordsEvenly(intervals, count) {
     return out;
 }
 
+function evaluateBoundaryGaps(minCoord, maxCoord, coords) {
+    const a = Math.min(minCoord, maxCoord);
+    const b = Math.max(minCoord, maxCoord);
+    const sorted = Array.isArray(coords)
+        ? coords
+            .filter(coord => Number.isFinite(coord))
+            .slice()
+            .sort((left, right) => left - right)
+        : [];
+    const out = [];
+    let prev = a;
+    for (let i = 0; i < sorted.length; i++) {
+        out.push(Math.max(0, sorted[i] - prev));
+        prev = sorted[i];
+    }
+    out.push(Math.max(0, b - prev));
+    return out;
+}
+
+function coordsRespectAxisExclusion(coords, axisExclusionFt) {
+    const exclusion = Math.max(0, Number(axisExclusionFt) || 0);
+    if (!Array.isArray(coords)) return false;
+    return coords.every((coord) => (
+        Number.isFinite(coord) &&
+        (!(exclusion > EPS) || Math.abs(coord) >= exclusion - 1e-6)
+    ));
+}
+
+function computeGapVariance(gaps) {
+    if (!Array.isArray(gaps) || !gaps.length) return 0;
+    const mean = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
+    return gaps.reduce((sum, gap) => {
+        const delta = gap - mean;
+        return sum + (delta * delta);
+    }, 0);
+}
+
+function computeAxisSymmetryScore(coords) {
+    if (!Array.isArray(coords) || !coords.length) return 0;
+    let score = 0;
+    for (let i = 0; i < Math.ceil(coords.length * 0.5); i++) {
+        const mirror = coords[coords.length - 1 - i];
+        score += Math.abs(coords[i] + mirror);
+    }
+    return score;
+}
+
+function compareNumericVectorsLexicographically(left, right) {
+    const leftList = Array.isArray(left) ? left : [];
+    const rightList = Array.isArray(right) ? right : [];
+    const length = Math.max(leftList.length, rightList.length);
+    for (let i = 0; i < length; i++) {
+        const delta = (Number(leftList[i]) || 0) - (Number(rightList[i]) || 0);
+        if (Math.abs(delta) > 1e-9) return delta < 0 ? -1 : 1;
+    }
+    return 0;
+}
+
+function compareAxisSplitCandidates(left, right, preferSymmetry = false) {
+    if (!left) return 1;
+    if (!right) return -1;
+
+    const metrics = [
+        { key: 'maxGap', tolerance: 1e-9 },
+        { key: 'secondLargestGap', tolerance: 1e-9 },
+        { key: 'variance', tolerance: 1e-9 }
+    ];
+    for (let i = 0; i < metrics.length; i++) {
+        const { key, tolerance } = metrics[i];
+        const delta = (Number(left[key]) || 0) - (Number(right[key]) || 0);
+        if (Math.abs(delta) > tolerance) return delta < 0 ? -1 : 1;
+    }
+
+    if (preferSymmetry) {
+        const symmetryDelta = (Number(left.symmetryScore) || 0) - (Number(right.symmetryScore) || 0);
+        if (Math.abs(symmetryDelta) > 1e-9) return symmetryDelta < 0 ? -1 : 1;
+    }
+
+    return compareNumericVectorsLexicographically(left.coords, right.coords);
+}
+
+function buildAxisSplitCandidate(minCoord, maxCoord, leftInterval, rightInterval, count, leftCount, axisExclusionFt) {
+    const totalCount = Math.max(0, Math.floor(Number(count) || 0));
+    const k = Math.max(0, Math.min(totalCount, Math.floor(Number(leftCount) || 0)));
+    const m = totalCount - k;
+    const a = Math.min(minCoord, maxCoord);
+    const b = Math.max(minCoord, maxCoord);
+    const leftLength = Math.max(0, Number(leftInterval?.length) || 0);
+    const rightLength = Math.max(0, Number(rightInterval?.length) || 0);
+    const forbiddenGap = Math.max(0, (Number(rightInterval?.min) || 0) - (Number(leftInterval?.max) || 0));
+    const totalSpan = Math.max(0, b - a);
+    const coords = [];
+
+    if (totalCount <= 0 || totalSpan <= EPS) return null;
+
+    if (k <= 0) {
+        const maxGap = Math.max(
+            totalSpan / (totalCount + 1),
+            leftLength + forbiddenGap
+        );
+        const trailingGap = (totalSpan - maxGap) / totalCount;
+        for (let i = 1; i <= totalCount; i++) {
+            coords.push(a + maxGap + (trailingGap * (i - 1)));
+        }
+    } else if (m <= 0) {
+        const maxGap = Math.max(
+            totalSpan / (totalCount + 1),
+            rightLength + forbiddenGap
+        );
+        const leadingGap = (totalSpan - maxGap) / totalCount;
+        for (let i = 1; i <= totalCount; i++) {
+            coords.push(a + (leadingGap * i));
+        }
+    } else {
+        const targetMaxGap = Math.max(
+            totalSpan / (totalCount + 1),
+            (leftLength + forbiddenGap) / (k + 1),
+            (rightLength + forbiddenGap) / (m + 1)
+        );
+        const splitSlack = Math.max(0, targetMaxGap - forbiddenGap);
+        const minAlpha = Math.max(
+            0,
+            leftLength - (k * targetMaxGap),
+            splitSlack - rightLength
+        );
+        const maxAlpha = Math.min(
+            leftLength,
+            splitSlack,
+            ((m + 1) * targetMaxGap) - rightLength - forbiddenGap
+        );
+        const equalizedAlpha = (
+            (m * leftLength) -
+            (k * rightLength) +
+            (k * splitSlack)
+        ) / totalCount;
+        const alpha = Math.max(minAlpha, Math.min(maxAlpha, equalizedAlpha));
+        const beta = splitSlack - alpha;
+        const leftGap = (leftLength - alpha) / k;
+        const rightGap = (rightLength - beta) / m;
+
+        for (let i = 1; i <= k; i++) coords.push(a + (leftGap * i));
+        for (let i = m; i >= 1; i--) coords.push(b - (rightGap * i));
+    }
+
+    const normalizedCoords = coords
+        .map(coord => Math.max(a, Math.min(b, coord)))
+        .sort((left, right) => left - right);
+    if (normalizedCoords.length !== totalCount) return null;
+    if (!coordsRespectAxisExclusion(normalizedCoords, axisExclusionFt)) return null;
+
+    const gaps = evaluateBoundaryGaps(a, b, normalizedCoords);
+    const gapRanking = gaps.slice().sort((left, right) => right - left);
+    return {
+        coords: normalizedCoords,
+        gaps,
+        maxGap: gapRanking[0] || 0,
+        secondLargestGap: gapRanking[1] || 0,
+        variance: computeGapVariance(gaps),
+        symmetryScore: computeAxisSymmetryScore(normalizedCoords)
+    };
+}
+
+function solveMinimaxAxisSplitCoords(minCoord, maxCoord, count, axisExclusionFt) {
+    const allowed = buildAllowedIntervals(minCoord, maxCoord, axisExclusionFt);
+    if (allowed.length !== 2 || count <= 0) return [];
+
+    const [leftInterval, rightInterval] = allowed;
+    const preferSymmetry =
+        Math.abs((Math.min(minCoord, maxCoord) + Math.max(minCoord, maxCoord))) <= 1e-6 &&
+        Math.abs((Number(leftInterval?.length) || 0) - (Number(rightInterval?.length) || 0)) <= 1e-6;
+    let best = null;
+
+    for (let leftCount = 0; leftCount <= count; leftCount++) {
+        const candidate = buildAxisSplitCandidate(
+            minCoord,
+            maxCoord,
+            leftInterval,
+            rightInterval,
+            count,
+            leftCount,
+            axisExclusionFt
+        );
+        if (!candidate) continue;
+        if (!best || compareAxisSplitCandidates(candidate, best, preferSymmetry) < 0) {
+            best = candidate;
+        }
+    }
+
+    return best ? best.coords.slice() : [];
+}
+
+function solveStraightIntervalCoords(minCoord, maxCoord, count, axisExclusionFt) {
+    let allowed = buildAllowedIntervals(minCoord, maxCoord, axisExclusionFt);
+    let coords = allowed.length === 2
+        ? solveMinimaxAxisSplitCoords(minCoord, maxCoord, count, axisExclusionFt)
+        : distributeCoordsEvenly(allowed, count);
+    if (coords.length < count) {
+        allowed = buildAllowedIntervals(minCoord, maxCoord, 0);
+        coords = distributeCoordsEvenly(allowed, count);
+    }
+    return coords;
+}
+
 function distributeIntervalTs(interval, count, axisExclusionFt, endpointBufferFt = 0) {
     if (!interval || count <= 0) return [];
     const out = [];
@@ -1183,12 +1386,7 @@ function distributeIntervalTs(interval, count, axisExclusionFt, endpointBufferFt
         const xB = startX + (endX - startX) * (1 - edgeBufferT);
         const minCoord = Math.min(xA, xB);
         const maxCoord = Math.max(xA, xB);
-        let allowed = buildAllowedIntervals(minCoord, maxCoord, axisExclusionFt);
-        let coords = distributeCoordsEvenly(allowed, count);
-        if (coords.length < count) {
-            allowed = buildAllowedIntervals(minCoord, maxCoord, 0);
-            coords = distributeCoordsEvenly(allowed, count);
-        }
+        const coords = solveStraightIntervalCoords(minCoord, maxCoord, count, axisExclusionFt);
 
         const denom = endX - startX;
         const tMin = edgeBufferT + 1e-5;
@@ -1209,12 +1407,7 @@ function distributeIntervalTs(interval, count, axisExclusionFt, endpointBufferFt
         const yB = startY + (endY - startY) * (1 - edgeBufferT);
         const minCoord = Math.min(yA, yB);
         const maxCoord = Math.max(yA, yB);
-        let allowed = buildAllowedIntervals(minCoord, maxCoord, axisExclusionFt);
-        let coords = distributeCoordsEvenly(allowed, count);
-        if (coords.length < count) {
-            allowed = buildAllowedIntervals(minCoord, maxCoord, 0);
-            coords = distributeCoordsEvenly(allowed, count);
-        }
+        const coords = solveStraightIntervalCoords(minCoord, maxCoord, count, axisExclusionFt);
 
         const denom = endY - startY;
         const tMin = edgeBufferT + 1e-5;
@@ -1451,6 +1644,8 @@ function buildMeasureWorstSeatsForInterval(intervalSide, seatWidthIn, aisleWidth
 }
 
 function computeRequiredSegmentCounts(perimeterModel, options) {
+    const includeSeatCap = options?.includeSeatCap !== false;
+    const includeEgressCap = options?.includeEgressCap !== false;
     const maxSeatsBetweenAisles = Number(options?.maxSeatsBetweenAisles);
     const maxOccupantsPerAisle = resolveMaxOccupantsPerAisle(options);
 
@@ -1459,8 +1654,8 @@ function computeRequiredSegmentCounts(perimeterModel, options) {
     const axisExclusionFt = Math.max(0, Number(options?.axisExclusionFt) || 0);
     const endpointBufferFt = Math.max(0, Number(options?.endpointBufferFt) || 0);
     const resolvedRowCount = Math.max(1, Math.round(Number(options?.rowCount) || 1));
-    const hasSeatCap = Number.isFinite(maxSeatsBetweenAisles) && maxSeatsBetweenAisles > 0;
-    const hasEgressCap = Number.isFinite(maxOccupantsPerAisle) && maxOccupantsPerAisle > 0;
+    const hasSeatCap = includeSeatCap && Number.isFinite(maxSeatsBetweenAisles) && maxSeatsBetweenAisles > 0;
+    const hasEgressCap = includeEgressCap && Number.isFinite(maxOccupantsPerAisle) && maxOccupantsPerAisle > 0;
     if (!hasSeatCap && !hasEgressCap) {
         return createPerimeterCountMatrix(perimeterModel);
     }
@@ -2559,7 +2754,8 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
         maxOccupantsPerAisle = NaN,
         maxAisleWidthIn = NaN,
         egressFactor = NaN,
-        rowCount = NaN
+        rowCount = NaN,
+        _useAuthoritativeDeterministicEgressSolve = false
     } = params;
 
     if (!Array.isArray(paths) || !paths.length) {
@@ -2651,7 +2847,8 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
                 maxOccupantsPerAisle: legalMaxOccupantsPerAisle,
                 maxAisleWidthIn,
                 egressFactor,
-                rowCount
+                rowCount,
+                includeEgressCap: !_useAuthoritativeDeterministicEgressSolve
             })
         );
         const intervalCounts = allocateDeterministicCounts(
@@ -2711,6 +2908,84 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
     };
 }
 
+function buildTierAisleAnalysisCandidate({
+    tierIndex = 0,
+    rows = [],
+    frontPaths = [],
+    backPaths = [],
+    referencePaths = [],
+    bowlConfig = null,
+    offsetCorrection = 0,
+    seatWidthIn = 20,
+    minAisleWidthIn = 0,
+    maxAisleWidthIn = 0,
+    egressFactor = 0,
+    maxSeatsBetweenAisles = NaN,
+    placementWidthFt = 0,
+    targetAisles = 0,
+    getPathsForOffset = null,
+    getRowLengthFt = null
+} = {}) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    const layout = buildTierAisleLayoutFromPaths(frontPaths, backPaths, {
+        targetAisles,
+        aisleWidthFt: placementWidthFt,
+        bowlConfig,
+        maxSeatsBetweenAisles,
+        seatWidthIn,
+        maxAisleWidthIn,
+        egressFactor,
+        rowCount: safeRows.length,
+        _useAuthoritativeDeterministicEgressSolve: true
+    });
+    const layoutForSummary = {
+        ...layout,
+        tierIndex,
+        seatWidthIn
+    };
+    const chamferCache = new Map();
+    const aisleReferenceMap = buildTierAisleReferenceMap({
+        rows: safeRows,
+        tierLayout: layoutForSummary,
+        offsetCorrection,
+        getPathsForOffset,
+        chamferCache
+    });
+    const summary = buildTierAisleLayoutSummary({
+        rows: safeRows,
+        tierLayout: layoutForSummary,
+        referencePaths,
+        resolveRowAisleSampling: (_rowIndex, row) => pickBestRowAisleSampling(
+            (row.x - (row.tread_depth * 0.5)) - offsetCorrection,
+            getPathsForOffset,
+            layoutForSummary,
+            chamferCache,
+            aisleReferenceMap
+        ),
+        seatWidthIn,
+        minAisleWidthIn,
+        maxAisleWidthIn,
+        egressFactor,
+        maxSeatsBetweenAisles,
+        getRowLengthFt,
+        bowlConfig,
+        offsetCorrection,
+        layoutSolveConverged: true
+    });
+
+    return {
+        tierIndex,
+        aisleWidthFt: Math.max(placementWidthFt, Math.max(0, Number(summary?.maxRenderedAisleWidthIn) || 0) / 12.0),
+        seatWidthIn,
+        aisles: layout.aisles || [],
+        targetAisles: layout.targetAisles || targetAisles,
+        forcedCount: layout.forcedCount || 0,
+        sectionBoundaries: layout.sectionBoundaries || [],
+        axisExclusionFt: layout.axisExclusionFt || 0,
+        sectionSummary: summary || null
+    };
+}
+
 export function buildTierAisleAnalysis({
     tierIndex = 0,
     rows = [],
@@ -2743,72 +3018,34 @@ export function buildTierAisleAnalysis({
     let lastAnalysis = null;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-        const layout = buildTierAisleLayoutFromPaths(frontPaths, backPaths, {
-            targetAisles: requestedTargetAisles,
-            aisleWidthFt: placementWidthFt,
-            bowlConfig,
-            maxSeatsBetweenAisles,
-            seatWidthIn,
-            maxAisleWidthIn,
-            egressFactor,
-            rowCount: safeRows.length
-        });
-        const layoutForSummary = {
-            ...layout,
+        const analysis = buildTierAisleAnalysisCandidate({
             tierIndex,
-            seatWidthIn
-        };
-        const chamferCache = new Map();
-        const aisleReferenceMap = buildTierAisleReferenceMap({
             rows: safeRows,
-            tierLayout: layoutForSummary,
-            offsetCorrection,
-            getPathsForOffset,
-            chamferCache
-        });
-        const summary = buildTierAisleLayoutSummary({
-            rows: safeRows,
-            tierLayout: layoutForSummary,
+            frontPaths,
+            backPaths,
             referencePaths,
-            resolveRowAisleSampling: (_rowIndex, row) => pickBestRowAisleSampling(
-                (row.x - (row.tread_depth * 0.5)) - offsetCorrection,
-                getPathsForOffset,
-                layoutForSummary,
-                chamferCache,
-                aisleReferenceMap
-            ),
+            bowlConfig,
+            offsetCorrection,
             seatWidthIn,
             minAisleWidthIn,
             maxAisleWidthIn,
             egressFactor,
             maxSeatsBetweenAisles,
-            getRowLengthFt,
-            bowlConfig,
-            offsetCorrection,
-            layoutSolveConverged: true
+            placementWidthFt,
+            targetAisles: requestedTargetAisles,
+            getPathsForOffset,
+            getRowLengthFt
         });
-
-        const analysis = {
-            tierIndex,
-            aisleWidthFt: Math.max(placementWidthFt, Math.max(0, Number(summary?.maxRenderedAisleWidthIn) || 0) / 12.0),
-            seatWidthIn,
-            aisles: layout.aisles || [],
-            targetAisles: layout.targetAisles || requestedTargetAisles,
-            forcedCount: layout.forcedCount || 0,
-            sectionBoundaries: layout.sectionBoundaries || [],
-            axisExclusionFt: layout.axisExclusionFt || 0,
-            sectionSummary: summary || null
-        };
         lastAnalysis = analysis;
 
-        if (summary?.compliance?.isCompliant) {
+        if (analysis.sectionSummary?.compliance?.isCompliant) {
             return analysis;
         }
 
         requestedTargetAisles = Math.max(
             requestedTargetAisles + 1,
-            Math.max(0, Number(layout.targetAisles) || 0) + 1,
-            (layout.aisles?.length || 0) + 1
+            Math.max(0, Number(analysis.targetAisles) || 0) + 1,
+            (analysis.aisles?.length || 0) + 1
         );
     }
 

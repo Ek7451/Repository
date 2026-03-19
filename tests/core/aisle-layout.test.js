@@ -6,7 +6,9 @@ import {
     buildConfigurationAisleSummary,
     buildTierAisleAnalysis,
     buildTierAisleLayout,
+    buildTierAisleReferenceMap,
     buildTierAisleLayoutSummary,
+    pickBestRowAisleSampling,
     resolveAisleStationRatios,
     sampleAisleBand,
     samplePathPointByRatio
@@ -81,6 +83,74 @@ function buildRendererBowlFixture(type, {
         frontPaths: buildGeometryPaths(frontSegments),
         backPaths: buildGeometryPaths(backSegments)
     };
+}
+
+function buildTierRows({
+    count = 4,
+    startX = 24,
+    treadDepth = 3
+} = {}) {
+    return Array.from({ length: count }, (_, index) => ({
+        row_number: index + 1,
+        x: startX + (index * treadDepth),
+        tread_depth: treadDepth
+    }));
+}
+
+function summarizeTierLayoutForRows(options = {}) {
+    const {
+        rows,
+        tierLayout,
+        bowlConfig,
+        seatWidthIn = 20,
+        minAisleWidthIn = 48,
+        maxAisleWidthIn = 72,
+        egressFactor = 0.2,
+        maxSeatsBetweenAisles = NaN,
+        offsetCorrection = 0
+    } = options;
+    const renderer = Object.create(FieldRenderer.prototype);
+    const safeRows = Array.isArray(rows) ? rows : [];
+    const lastRow = safeRows[safeRows.length - 1];
+    const getPathsForOffset = (offset) => buildGeometryPaths(renderer._getBowlGeometry(bowlConfig, offset));
+    const layoutForSummary = {
+        ...tierLayout,
+        tierIndex: tierLayout?.tierIndex ?? 0,
+        seatWidthIn
+    };
+    const referencePaths = lastRow
+        ? getPathsForOffset((lastRow.x - (lastRow.tread_depth * 0.5)) - offsetCorrection)
+        : [];
+    const chamferCache = new Map();
+    const aisleReferenceMap = buildTierAisleReferenceMap({
+        rows: safeRows,
+        tierLayout: layoutForSummary,
+        offsetCorrection,
+        getPathsForOffset,
+        chamferCache
+    });
+
+    return buildTierAisleLayoutSummary({
+        rows: safeRows,
+        tierLayout: layoutForSummary,
+        referencePaths,
+        resolveRowAisleSampling: (_rowIndex, row) => pickBestRowAisleSampling(
+            (row.x - (row.tread_depth * 0.5)) - offsetCorrection,
+            getPathsForOffset,
+            layoutForSummary,
+            chamferCache,
+            aisleReferenceMap
+        ),
+        seatWidthIn,
+        minAisleWidthIn,
+        maxAisleWidthIn,
+        egressFactor,
+        maxSeatsBetweenAisles,
+        getRowLengthFt: (offset) => renderer.calculateRowLength(bowlConfig, offset),
+        bowlConfig,
+        offsetCorrection,
+        layoutSolveConverged: true
+    });
 }
 
 function expectPointClose(actual, expected) {
@@ -429,6 +499,47 @@ describe('aisle layout geometry seam', () => {
         expect(distributedSegments).toEqual([3, 7]);
     });
 
+    it('places four discretionary long-straight aisles on the protected-axis minimax contract', () => {
+        const fixture = buildRendererBowlFixture('Full', {
+            width: 85,
+            length: 200,
+            radius: 28,
+            straightAisleMode: 'perpendicular',
+            chamferAisleMode: 'radial'
+        });
+        const aisleWidthFt = 6;
+        const layout = buildTierAisleLayout({
+            frontSegments: fixture.frontSegments,
+            backSegments: fixture.backSegments,
+            targetAisles: 18,
+            aisleWidthFt,
+            bowlConfig: fixture.bowlConfig
+        });
+        const segmentTs = layout.aisles
+            .filter((aisle) => !aisle.forced && aisle.segmentIndex === 7)
+            .map((aisle) => aisle.segmentT)
+            .sort((a, b) => a - b);
+        const longestStraightLength = Math.max(
+            ...fixture.backPaths[0].parts
+                .filter((part) => part.type === 'line' && Math.abs((part.y2 - part.y1) || 0) <= 1e-9)
+                .map((part) => part.length)
+        );
+        const minSpacingFt = Math.max(aisleWidthFt * 1.05, 1.25);
+        const endpointBufferFt = Math.max(2.0, aisleWidthFt * 1.0, minSpacingFt * 0.5);
+        const edgeBufferT = endpointBufferFt / longestStraightLength;
+        const minimaxGapT = ((longestStraightLength - (endpointBufferFt * 2)) / 5) / longestStraightLength;
+        const expectedTs = Array.from({ length: 4 }, (_value, index) => edgeBufferT + (minimaxGapT * (index + 1)));
+
+        expect(segmentTs).toHaveLength(4);
+        expectedTs.forEach((expectedT, index) => {
+            expect(segmentTs[index]).toBeCloseTo(expectedT, 6);
+        });
+        expect((segmentTs[2] - segmentTs[1]) * longestStraightLength).toBeCloseTo(
+            minimaxGapT * longestStraightLength,
+            6
+        );
+    });
+
     it('adds seat-cap aisles beyond the requested target when hard limits require them', () => {
         const fixture = buildRendererBowlFixture('Full', {
             straightAisleMode: 'perpendicular',
@@ -661,6 +772,139 @@ describe('aisle layout geometry seam', () => {
 
         expect(seatCappedLayout.aisles.length).toBeGreaterThan(2);
         expect(egressCappedLayout.aisles.length).toBeGreaterThan(2);
+    });
+
+    it('keeps the full hockey chamfer regression on the 20-section minimax solve', () => {
+        const fixture = buildRendererBowlFixture('Full', {
+            width: 85,
+            length: 200,
+            radius: 28,
+            straightAisleMode: 'perpendicular',
+            chamferAisleMode: 'radial'
+        });
+        const renderer = Object.create(FieldRenderer.prototype);
+        const rows = buildTierRows({
+            count: 12,
+            startX: 10,
+            treadDepth: 1.5
+        });
+        const tierLayout = buildTierAisleAnalysis({
+            tierIndex: 0,
+            rows,
+            bowlConfig: fixture.bowlConfig,
+            offsetCorrection: 0,
+            egressParams: {
+                seatWidthIn: 20,
+                minAisleWidthIn: 48,
+                maxAisleWidthIn: 72,
+                egressFactor: 0.2,
+                seatsBetweenAisles: 24
+            },
+            getPathsForOffset: (offset) => buildGeometryPaths(renderer._getBowlGeometry(fixture.bowlConfig, offset)),
+            getRowLengthFt: (offset) => renderer.calculateRowLength(fixture.bowlConfig, offset)
+        });
+        const distributedCounts = tierLayout.aisles
+            .filter((aisle) => !aisle.forced)
+            .reduce((counts, aisle) => {
+                counts[aisle.segmentIndex] = (counts[aisle.segmentIndex] || 0) + 1;
+                return counts;
+            }, {});
+
+        expect(distributedCounts[3]).toBe(3);
+        expect(distributedCounts[7]).toBe(3);
+        expect(tierLayout.sectionSummary.actualAisles).toBe(20);
+        expect(tierLayout.sectionSummary.actualSections).toBe(20);
+        expect(tierLayout.sectionSummary.compliance.isCompliant).toBe(true);
+        expect(tierLayout.sectionSummary.maxRenderedAisleWidthIn).toBeGreaterThan(48);
+    });
+
+    it('stops at the first authoritative full-bowl solve before adding extra short-straight aisles', () => {
+        const fixture = buildRendererBowlFixture('Full', {
+            width: 85,
+            length: 200,
+            radius: 16,
+            straightAisleMode: 'perpendicular',
+            chamferAisleMode: 'radial'
+        });
+        const renderer = Object.create(FieldRenderer.prototype);
+        const rows = buildTierRows({
+            count: 15,
+            startX: 2.75,
+            treadDepth: 2.75
+        });
+        const almostCompliantLayout = buildTierAisleLayout({
+            frontSegments: fixture.frontSegments,
+            backSegments: fixture.backSegments,
+            targetAisles: 17,
+            aisleWidthFt: 66 / 12,
+            bowlConfig: fixture.bowlConfig,
+            maxSeatsBetweenAisles: 40,
+            seatWidthIn: 19
+        });
+        const firstCompliantLayout = buildTierAisleLayout({
+            frontSegments: fixture.frontSegments,
+            backSegments: fixture.backSegments,
+            targetAisles: 18,
+            aisleWidthFt: 66 / 12,
+            bowlConfig: fixture.bowlConfig,
+            maxSeatsBetweenAisles: 40,
+            seatWidthIn: 19
+        });
+        const almostCompliantSummary = summarizeTierLayoutForRows({
+            rows,
+            tierLayout: almostCompliantLayout,
+            bowlConfig: fixture.bowlConfig,
+            seatWidthIn: 19,
+            minAisleWidthIn: 48,
+            maxAisleWidthIn: 66,
+            egressFactor: 0.2,
+            maxSeatsBetweenAisles: 40
+        });
+        const firstCompliantSummary = summarizeTierLayoutForRows({
+            rows,
+            tierLayout: firstCompliantLayout,
+            bowlConfig: fixture.bowlConfig,
+            seatWidthIn: 19,
+            minAisleWidthIn: 48,
+            maxAisleWidthIn: 66,
+            egressFactor: 0.2,
+            maxSeatsBetweenAisles: 40
+        });
+        const tierLayout = buildTierAisleAnalysis({
+            tierIndex: 0,
+            rows,
+            bowlConfig: fixture.bowlConfig,
+            offsetCorrection: 0,
+            egressParams: {
+                seatWidthIn: 19,
+                minAisleWidthIn: 48,
+                maxAisleWidthIn: 66,
+                egressFactor: 0.2,
+                seatsBetweenAisles: 40
+            },
+            getPathsForOffset: (offset) => buildGeometryPaths(renderer._getBowlGeometry(fixture.bowlConfig, offset)),
+            getRowLengthFt: (offset) => renderer.calculateRowLength(fixture.bowlConfig, offset)
+        });
+        const distributedCounts = tierLayout.aisles
+            .filter((aisle) => !aisle.forced)
+            .reduce((counts, aisle) => {
+                counts[aisle.segmentIndex] = (counts[aisle.segmentIndex] || 0) + 1;
+                return counts;
+            }, {});
+
+        expect(almostCompliantSummary.compliance.isCompliant).toBe(false);
+        expect(firstCompliantSummary.compliance.isCompliant).toBe(true);
+        expect(firstCompliantSummary.actualAisles).toBe(18);
+        expect(tierLayout.targetAisles).toBe(18);
+        expect(tierLayout.sectionSummary.actualAisles).toBe(firstCompliantSummary.actualAisles);
+        expect(distributedCounts[1]).toBe(1);
+        expect(distributedCounts[3]).toBe(4);
+        expect(distributedCounts[5]).toBe(1);
+        expect(distributedCounts[7]).toBe(4);
+        expect([0, 2, 4, 6].every((segmentIndex) => !distributedCounts[segmentIndex])).toBe(true);
+        expect(tierLayout.sectionSummary.compliance.isCompliant).toBe(true);
+        expect(tierLayout.sectionSummary.maxRenderedAisleWidthIn).toBeGreaterThan(48);
+        expect(tierLayout.sectionSummary.maxRenderedAisleWidthIn).toBeLessThanOrEqual(66);
     });
 
     it('builds authoritative realized section and aisle summaries from explicit row samples', () => {
