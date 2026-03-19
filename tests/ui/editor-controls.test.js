@@ -80,6 +80,7 @@ function createElement({
         dispatch(eventName, overrides = {}) {
             const event = {
                 target: element,
+                preventDefault: vi.fn(),
                 ...overrides
             };
             (listeners.get(eventName) || []).forEach((handler) => handler(event));
@@ -277,6 +278,8 @@ describe('EditorControls', () => {
         elements.customRunoffInput.dispatch('input');
         expect(state.setup.customRunoff).toBeNull();
         expect(elements.customRunoffSlider.value).toBe(String(getTemplate('Soccer')?.runoff || 0));
+        expect(onChange).not.toHaveBeenCalled();
+        elements.customRunoffInput.dispatch('blur');
         expect(onChange).toHaveBeenCalledWith({
             reason: 'state',
             controlId: 'customRunoffInput'
@@ -288,6 +291,13 @@ describe('EditorControls', () => {
         expect(state.setup.focalX).toBe(-111.5);
         expect(elements.focalXInput.value).toBe('-111.5');
         expect(elements.focalXSlider.value).toBe('-111.5');
+        expect(onChange).not.toHaveBeenCalled();
+        const focalXEnterEvent = {
+            key: 'Enter',
+            preventDefault: vi.fn()
+        };
+        elements.focalXInput.dispatch('keydown', focalXEnterEvent);
+        expect(focalXEnterEvent.preventDefault).toHaveBeenCalledTimes(1);
         expect(onChange).toHaveBeenCalledWith({
             reason: 'state',
             controlId: 'focalXInput'
@@ -379,10 +389,7 @@ describe('EditorControls', () => {
         expect(state.setup.focalZ).toBe(0);
         expect(elements.focalZInput.value).toBe('0.');
         expect(elements.focalZSlider.value).toBe('0');
-        expect(onChange).toHaveBeenCalledWith({
-            reason: 'state',
-            controlId: 'focalZInput'
-        });
+        expect(onChange).not.toHaveBeenCalled();
 
         onChange.mockClear();
         elements.focalZInput.value = '0.05';
@@ -390,6 +397,8 @@ describe('EditorControls', () => {
         expect(state.setup.focalZ).toBe(0.05);
         expect(elements.focalZInput.value).toBe('0.05');
         expect(elements.focalZSlider.value).toBe('0.05');
+        expect(onChange).not.toHaveBeenCalled();
+        elements.focalZInput.dispatch('blur');
         expect(onChange).toHaveBeenCalledWith({
             reason: 'state',
             controlId: 'focalZInput'
@@ -404,10 +413,14 @@ describe('EditorControls', () => {
             numRowsSlider: createElement({ value: '30', step: '1' })
         };
         const state = createState();
+        const onChange = vi.fn();
 
         vi.stubGlobal('document', createDocumentStub(elements));
 
-        const controls = new EditorControls({ state });
+        const controls = new EditorControls({
+            state,
+            onChange
+        });
 
         controls.init();
 
@@ -422,9 +435,51 @@ describe('EditorControls', () => {
         elements.focalZInput.value = '.';
         elements.focalZInput.dispatch('input');
         expect(state.setup.focalZ).toBe(0);
+        expect(onChange).not.toHaveBeenCalled();
         elements.focalZInput.dispatch('blur');
         expect(elements.focalZInput.value).toBe('0');
         expect(elements.focalZSlider.value).toBe('0');
+        expect(onChange).toHaveBeenCalledWith({
+            reason: 'state',
+            controlId: 'focalZInput'
+        });
+    });
+
+    test('commits manual number entry only once when Enter is followed by blur', () => {
+        const elements = {
+            seatWidthInput: createElement({ value: '20', step: '0.5' }),
+            seatWidthSlider: createElement({ value: '20', step: '0.5' })
+        };
+        const state = createState();
+        state.occupancy.seatWidth = 20;
+        const onChange = vi.fn();
+
+        vi.stubGlobal('document', createDocumentStub(elements));
+
+        const controls = new EditorControls({
+            state,
+            onChange
+        });
+
+        controls.init();
+
+        elements.seatWidthInput.value = '21.5';
+        elements.seatWidthInput.dispatch('input');
+        expect(state.occupancy.seatWidth).toBe(21.5);
+        expect(onChange).not.toHaveBeenCalled();
+
+        elements.seatWidthInput.dispatch('keydown', {
+            key: 'Enter',
+            preventDefault: vi.fn()
+        });
+        expect(onChange).toHaveBeenCalledTimes(1);
+        expect(onChange).toHaveBeenLastCalledWith({
+            reason: 'state',
+            controlId: 'seatWidthInput'
+        });
+
+        elements.seatWidthInput.dispatch('blur');
+        expect(onChange).toHaveBeenCalledTimes(1);
     });
 
     test('applies tier defaults only on first enable and preserves later user positions', () => {

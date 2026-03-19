@@ -193,6 +193,7 @@ export class EditorControls {
         this._initialized = false;
         this._tier2Initialized = false;
         this._tier3Initialized = false;
+        this._pendingManualCommitIds = new Set();
     }
 
     init() {
@@ -223,6 +224,7 @@ export class EditorControls {
         const runoffValue = this._resolveRunoffDistance();
         if (runoffInput) {
             runoffInput.value = String(this.state.setup?.customRunoff ?? '');
+            this._clearPendingManualCommit('customRunoffInput');
         }
         if (runoffSlider) {
             runoffSlider.value = String(runoffValue);
@@ -378,11 +380,35 @@ export class EditorControls {
         const runoffInput = getInputElement('customRunoffInput');
         const runoffSlider = getInputElement('customRunoffSlider');
         if (runoffInput && runoffSlider) {
+            const commitRunoffInput = () => {
+                this._commitManualInput('customRunoffInput', () => {
+                    if (runoffInput.value === '') {
+                        this.state.setup.customRunoff = null;
+                        runoffInput.value = '';
+                        runoffSlider.value = String(this._resolveRunoffDistance());
+                        return;
+                    }
+
+                    const nextValue = Number(runoffInput.value);
+                    if (!Number.isFinite(nextValue)) {
+                        const currentValue = this.state.setup?.customRunoff;
+                        runoffInput.value = currentValue === undefined || currentValue === null
+                            ? ''
+                            : String(currentValue);
+                        runoffSlider.value = String(this._resolveRunoffDistance());
+                        return;
+                    }
+
+                    this.state.setup.customRunoff = nextValue;
+                    runoffInput.value = String(nextValue);
+                    runoffSlider.value = String(nextValue);
+                });
+            };
             this._addListener(runoffInput, 'input', () => {
+                this._markManualInputPending('customRunoffInput');
                 if (runoffInput.value === '') {
                     this.state.setup.customRunoff = null;
                     runoffSlider.value = String(this._resolveRunoffDistance());
-                    this._emitChange('state', 'customRunoffInput');
                     return;
                 }
 
@@ -390,12 +416,20 @@ export class EditorControls {
                 if (!Number.isFinite(nextValue)) return;
                 this.state.setup.customRunoff = nextValue;
                 runoffSlider.value = runoffInput.value;
-                this._emitChange('state', 'customRunoffInput');
+            });
+            this._addListener(runoffInput, 'blur', () => {
+                commitRunoffInput();
+            });
+            this._addListener(runoffInput, 'keydown', (event) => {
+                if (event?.key !== 'Enter') return;
+                event.preventDefault?.();
+                commitRunoffInput();
             });
             this._addListener(runoffSlider, 'input', () => {
                 const nextValue = Number(runoffSlider.value);
                 if (!Number.isFinite(nextValue)) return;
                 this.state.setup.customRunoff = nextValue;
+                this._clearPendingManualCommit('customRunoffInput');
                 runoffInput.value = runoffSlider.value;
                 this._emitChange('state', 'customRunoffSlider');
             });
@@ -487,6 +521,7 @@ export class EditorControls {
                 const nextValue = getClampedValue(slider.value);
                 if (nextValue === null) return;
                 setValueAtPath(this.state, path, nextValue);
+                this._clearPendingManualCommit(`${baseId}Input`);
                 slider.value = String(nextValue);
                 if (input) input.value = String(nextValue);
                 this._emitChange('state', `${baseId}Slider`);
@@ -494,7 +529,28 @@ export class EditorControls {
         }
 
         if (input) {
+            const commitManualInput = () => {
+                this._commitManualInput(`${baseId}Input`, () => {
+                    const nextValue = getClampedValue(input.value);
+                    if (nextValue === null) {
+                        const currentValue = baseId === 'focalX'
+                            ? buildFocalXControlConfig(this.state).value
+                            : getValueAtPath(this.state, path);
+                        input.value = currentValue === undefined || currentValue === null
+                            ? ''
+                            : String(currentValue);
+                        if (slider && currentValue !== undefined && currentValue !== null) {
+                            slider.value = String(currentValue);
+                        }
+                        return;
+                    }
+
+                    input.value = String(nextValue);
+                    if (slider) slider.value = String(nextValue);
+                });
+            };
             this._addListener(input, 'input', () => {
+                this._markManualInputPending(`${baseId}Input`);
                 const nextValue = getClampedValue(input.value);
                 if (nextValue === null) return;
                 setValueAtPath(this.state, path, nextValue);
@@ -502,23 +558,15 @@ export class EditorControls {
                     input.value = String(nextValue);
                 }
                 if (slider) slider.value = String(nextValue);
-                this._emitChange('state', `${baseId}Input`);
             });
 
             this._addListener(input, 'blur', () => {
-                const nextValue = getClampedValue(input.value);
-                if (nextValue === null) {
-                    const currentValue = baseId === 'focalX'
-                        ? buildFocalXControlConfig(this.state).value
-                        : getValueAtPath(this.state, path);
-                    input.value = currentValue === undefined || currentValue === null
-                        ? ''
-                        : String(currentValue);
-                    return;
-                }
-
-                input.value = String(nextValue);
-                if (slider) slider.value = String(nextValue);
+                commitManualInput();
+            });
+            this._addListener(input, 'keydown', (event) => {
+                if (event?.key !== 'Enter') return;
+                event.preventDefault?.();
+                commitManualInput();
             });
         }
     }
@@ -574,7 +622,10 @@ export class EditorControls {
     _setInputValue(id, value) {
         const input = getInputElement(`${id}Input`);
         const slider = getInputElement(`${id}Slider`);
-        if (input) input.value = String(value);
+        if (input) {
+            input.value = String(value);
+            this._clearPendingManualCommit(`${id}Input`);
+        }
         if (slider) slider.value = String(value);
     }
 
@@ -637,6 +688,31 @@ export class EditorControls {
     _markTierInitialized(tierNum) {
         if (tierNum === 2) this._tier2Initialized = true;
         if (tierNum === 3) this._tier3Initialized = true;
+    }
+
+    _markManualInputPending(controlId) {
+        if (typeof controlId !== 'string' || !controlId.trim()) return;
+        this._pendingManualCommitIds.add(controlId.trim());
+    }
+
+    _clearPendingManualCommit(controlId) {
+        if (typeof controlId !== 'string' || !controlId.trim()) return;
+        this._pendingManualCommitIds.delete(controlId.trim());
+    }
+
+    _commitManualInput(controlId, applyCommit) {
+        const normalizedControlId = typeof controlId === 'string' ? controlId.trim() : '';
+        if (!normalizedControlId || !this._pendingManualCommitIds.has(normalizedControlId)) {
+            return false;
+        }
+
+        if (typeof applyCommit === 'function') {
+            applyCommit();
+        }
+
+        this._pendingManualCommitIds.delete(normalizedControlId);
+        this._emitChange('state', normalizedControlId);
+        return true;
     }
 
     _addListener(target, eventName, handler) {
