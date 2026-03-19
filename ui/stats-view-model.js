@@ -103,6 +103,7 @@ function buildTierStatsViewModel({
             capacityWidth: metrics.capacityWidth,
             occupantsPerSection: metrics.occupantsPerSection,
             seatsPerBlock: metrics.seatsPerBlock,
+            maxSeatsPerSectionRow: Math.max(0, Math.round(Number(metrics.maxSeatsPerSectionRow) || 0)),
             occupantsPerAisleLine: metrics.occupantsPerAisleLine,
             aisleWidth: metrics.aisleWidth,
             minimumWidth: metrics.minimumWidth,

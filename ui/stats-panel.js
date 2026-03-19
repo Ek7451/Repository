@@ -221,10 +221,10 @@ function buildEgressMarkup(tiers = []) {
                         </div>
                     </div>
                     <div class="tier-metric-item">
-                        <div class="tier-metric-label">Avg. Seats/Row</div>
+                        <div class="tier-metric-label">Max Seats/Row/Section</div>
                         <div class="tier-metric-content">
                             ${TIER_METRIC_ICONS.avg}
-                            <div class="tier-metric-value">${egress.seatsPerBlock}</div>
+                            <div class="tier-metric-value">${egress.maxSeatsPerSectionRow}</div>
                         </div>
                     </div>
                     <div class="tier-metric-item">
@@ -270,7 +270,7 @@ function buildEgressMarkup(tiers = []) {
                             <strong>${egress.displayAisles} Aisles${egress.countsTag}</strong> (Width: ${egress.aisleWidth}") &bull; ${egress.displaySeatLen.toLocaleString()}' Linear Seating vs ${egress.displayAisleLen.toLocaleString()}' Linear Aisles${egress.linearQuantitiesTag}
                             <div class="egress-row-notes">
                                 &#8627; Total Linear Seating${egress.countsTag}: ${egress.displayTotalLen.toLocaleString()}' (averaging ${egress.displaySeatsPerRow} seats/row)<br/>
-                                &#8627; Sections${egress.countsTag}: ${egress.displaySections} (avg ${egress.seatsPerBlock} seats/row, largest section ${egress.occupantsPerSection} seats)<br/>
+                                &#8627; Sections${egress.countsTag}: ${egress.displaySections} (max ${egress.maxSeatsPerSectionRow} seats in a section row, largest section ${egress.occupantsPerSection} seats)<br/>
                                 &#8627; Max Load/Aisle (per aisle): ${egress.occupantsPerAisleLine} occ (50/50 section split)<br/>
                                 &#8627; Aisle Egress Capacity Check (per aisle): ${egress.occupantsPerAisleLine} occ &times; ${egress.egressFactor}"/occ = ${egress.capacityWidth}" required<br/>
                                 &#8627; Aisle Sizing: Max of Min Allowed (${egress.minimumWidth}") vs Required (${egress.capacityWidth}") &rarr; <strong class="egress-row-details-highlight">Governing Width = ${egress.governingWidth}"</strong>${limitForcedHtml}

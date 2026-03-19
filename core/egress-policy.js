@@ -319,6 +319,9 @@ export function computeTierEgressMetrics({
     });
 
     const seatsPerBlock = computeAverageSeatsPerBlock({ seatsPerRow: solvedPolicy.seatsPerRow, blockCount: solvedPolicy.numSections });
+    const maxSeatsPerSectionRow = Math.ceil(
+        Math.max(0, Number(solvedPolicy.backRowSeatsPerRow) || 0) / Math.max(1, Number(solvedPolicy.numSections) || 1)
+    );
     const occupantsPerSection = seatsPerBlock * resolvedNumRows;
     const occupantsPerAisleLine = computeTributaryOccupancyPerAisle({ occupantsPerBlock: occupantsPerSection, blockCount: solvedPolicy.numSections });
     const capacityWidth = occupantsPerAisleLine * resolvedEgressFactor;
@@ -332,6 +335,7 @@ export function computeTierEgressMetrics({
         backRowSeatsPerRow: solvedPolicy.backRowSeatsPerRow,
         numSections: solvedPolicy.numSections,
         seatsPerBlock,
+        maxSeatsPerSectionRow,
         occupantsPerSection,
         occupantsPerAisleLine,
         capacityWidth,

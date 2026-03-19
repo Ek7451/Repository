@@ -36,6 +36,7 @@ function createMetrics(overrides = {}) {
         numSections: 3,
         seatsPerRow: 40,
         seatsPerBlock: '12.0',
+        maxSeatsPerSectionRow: 14,
         occupantsPerSection: 40,
         occupantsPerAisleLine: 20,
         capacityWidth: '4.0',
@@ -85,7 +86,8 @@ describe('buildStatsViewModel', () => {
         expect(viewModel.tiers[0].egress).toMatchObject({
             displaySections: 3,
             displayAisles: 3,
-            seatsPerBlock: '12.0'
+            seatsPerBlock: '12.0',
+            maxSeatsPerSectionRow: 14
         });
     });
 

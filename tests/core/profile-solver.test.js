@@ -152,6 +152,7 @@ describe('profile solver helper exports', () => {
                 numAisles: 5,
                 numSections: 4,
                 seatsPerBlock: '18.0',
+                maxSeatsPerSectionRow: 18,
                 occupantsPerSection: 30,
                 occupantsPerAisleLine: 30,
                 capacityWidth: '6.0'
@@ -161,6 +162,7 @@ describe('profile solver helper exports', () => {
                 numAisles: 4,
                 numSections: 4,
                 seatsPerBlock: '10.0',
+                maxSeatsPerSectionRow: 10,
                 occupantsPerSection: 20,
                 occupantsPerAisleLine: 20,
                 capacityWidth: '4.0'
@@ -176,6 +178,7 @@ describe('profile solver helper exports', () => {
                     actualAisles: 2,
                     allSectionPathsClosed: true,
                     avgBackRowSeatsPerSection: 14,
+                    maxBackRowSeatsPerSection: 17,
                     sectionOccupancyTotals: [32, 48],
                     aisleOccupancyTotals: [40, 40]
                 }
@@ -189,6 +192,7 @@ describe('profile solver helper exports', () => {
             numAisles: 2,
             numSections: 2,
             seatsPerBlock: '14.0',
+            maxSeatsPerSectionRow: 17,
             occupantsPerSection: 48,
             occupantsPerAisleLine: 40,
             capacityWidth: '8.0'
@@ -231,6 +235,7 @@ describe('profile solver helper exports', () => {
             backRowSeatsPerRow: 72,
             numSections: 4,
             seatsPerBlock: '18.0',
+            maxSeatsPerSectionRow: 18,
             occupantsPerSection: 72,
             occupantsPerAisleLine: 72,
             capacityWidth: '14.4',

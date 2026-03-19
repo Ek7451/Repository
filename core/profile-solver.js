@@ -351,6 +351,7 @@ export function reconcileTierMetricsByIndexWithLayoutSummaries({
         const actualSections = Math.max(0, Math.floor(Number(summary.actualSections) || 0));
         const actualAisles = Math.max(0, Math.floor(Number(summary.actualAisles) || 0));
         const avgBackRowSeats = Number(summary.avgBackRowSeatsPerSection);
+        const maxBackRowSeats = Number(summary.maxBackRowSeatsPerSection);
         const aisleOccupancyTotals = Array.isArray(summary.aisleOccupancyTotals)
             ? summary.aisleOccupancyTotals
                 .map((value) => Math.max(0, Number(value) || 0))
@@ -391,6 +392,9 @@ export function reconcileTierMetricsByIndexWithLayoutSummaries({
 
         if (Number.isFinite(avgBackRowSeats)) {
             nextMetrics.seatsPerBlock = avgBackRowSeats.toFixed(1);
+        }
+        if (Number.isFinite(maxBackRowSeats)) {
+            nextMetrics.maxSeatsPerSectionRow = Math.round(maxBackRowSeats);
         }
 
         if (Number.isFinite(egressFactorVal)) {
@@ -666,6 +670,7 @@ export class ProfileSolver {
             backRowSeatsPerRow: exactBackRowSeatsPerRow,
             numSections: egressMetrics.numSections,
             seatsPerBlock: egressMetrics.seatsPerBlock.toFixed(1),
+            maxSeatsPerSectionRow: egressMetrics.maxSeatsPerSectionRow,
             occupantsPerSection: Math.round(egressMetrics.occupantsPerSection),
             occupantsPerAisleLine: Math.round(egressMetrics.occupantsPerAisleLine),
             capacityWidth: egressMetrics.capacityWidth.toFixed(1),

@@ -92,6 +92,7 @@ describe('egress policy helpers', () => {
             backRowSeatsPerRow: 72,
             numSections: 4,
             seatsPerBlock: 18,
+            maxSeatsPerSectionRow: 18,
             occupantsPerSection: 72,
             occupantsPerAisleLine: 72,
             capacityWidth: 14.4,

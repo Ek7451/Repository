@@ -37,6 +37,7 @@ function createMetrics(overrides = {}) {
         numSections: 3,
         seatsPerRow: 40,
         seatsPerBlock: '12.0',
+        maxSeatsPerSectionRow: 14,
         occupantsPerSection: 40,
         occupantsPerAisleLine: 20,
         capacityWidth: '4.0',
@@ -105,6 +106,31 @@ describe('StatsPanel', () => {
         expect(statsEl.innerHTML).toContain('Largest Section');
         expect(statsEl.innerHTML).toContain('57');
         expect(statsEl.innerHTML).toContain('largest section 57 seats');
+    });
+
+    test('renders the max seats per section-row metric instead of the average seats metric', () => {
+        const viewModel = buildStatsDto({
+            solvers: [createSolver()],
+            focalPointFt: { x: 0, z: 0 },
+            bowlConfig: { type: 'Full' },
+            egressParams: { egressFactor: 0.2 },
+            tierMetricsByIndex: new Map([[0, createMetrics({ maxSeatsPerSectionRow: 19 })]])
+        });
+        const statsEl = { innerHTML: '' };
+        const detailsEl = {
+            innerHTML: '',
+            querySelectorAll: vi.fn(() => [])
+        };
+        const panel = new StatsPanel({
+            statsEl: /** @type {any} */ (statsEl),
+            detailsEl: /** @type {any} */ (detailsEl)
+        });
+
+        panel.update(viewModel);
+
+        expect(statsEl.innerHTML).toContain('Max Seats/Row/Section');
+        expect(statsEl.innerHTML).toContain('19');
+        expect(statsEl.innerHTML).not.toContain('Avg. Seats/Row');
     });
 
     test('preserves expanded detail sections across rerenders', () => {
