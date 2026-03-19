@@ -168,6 +168,7 @@ describe('profile solver helper exports', () => {
                     actualAisles: 2,
                     actualSections: 1,
                     tierSeatCount: 22,
+                    legalMaxOccupantsPerAisle: 360,
                     backRowSectionSeatCounts: [12],
                     avgBackRowSeatsPerSection: 12,
                     maxBackRowSeatsPerSection: 12,

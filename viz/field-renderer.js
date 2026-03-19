@@ -128,7 +128,7 @@ const FIELD_QUALITY_COLORS_DARK = {
     Poor: 'rgba(181, 74, 71, 0.86)'
 };
 
-const EDGE_SPORTS = ['Ice Hockey', 'Football', 'Concert', 'Soccer', 'Basketball'];
+const EDGE_SPORTS = ['Ice Hockey', 'Football', 'Soccer', 'Basketball'];
 
 /**
  * @typedef {Object} BowlCornerPoints

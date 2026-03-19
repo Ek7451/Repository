@@ -194,6 +194,19 @@ describe('AppState', () => {
         expect(AppState.setup.focalX).toBe(-25);
     });
 
+    test('normalizes removed legacy sport payloads to football during hydration', () => {
+        AppState.fromJSON({
+            sport: 'Legacy Sport',
+            setup: {
+                focalX: -200
+            }
+        });
+
+        expect(AppState.sport).toBe('Football');
+        expect(AppState.setup.focalX).toBe(-80);
+        expect(AppState.toJSON().sport).toBe('Football');
+    });
+
     test('builds state-derived DTO selectors with the existing bowl and scene shapes', () => {
         const state = createDefaultAppStateData();
         const template = {

@@ -14,7 +14,7 @@ import {
     getRhinoTierLayerIndex
 } from './rhino-layers.js';
 
-const EDGE_SPORTS = ['Ice Hockey', 'Football', 'Concert', 'Soccer', 'Basketball'];
+const EDGE_SPORTS = ['Ice Hockey', 'Football', 'Soccer', 'Basketball'];
 
 function slugifySportName(sportName) {
     const normalized = String(sportName ?? '').trim().toLowerCase().replace(/\s+/g, '-');

@@ -242,46 +242,6 @@ const SPORTS_TEMPLATES = {
                 eyeSetback: 6
             }
         }
-    },
-    "Concert": {
-        field_length: 60.0,
-        field_width: 40.0,
-        corner_radius: 0.0,
-        runoff: 30.0,
-        focal_x: 0.0,
-        focal_y: -20.0,
-        focal_z: 5.0,
-        shape: "rectangle",
-        defaults: {
-            setup: { customRunoff: 15.0, focalZ: 5.0, focalX: 0.0 }, // Stage Height
-            bowl: {
-                type: "Full",
-                cornerRad: 0,
-                sideLength: 60,
-                structuralDepth: 12,
-                structuralProfileMode: "stepped",
-                straightAisleMode: "perpendicular",
-                chamferAisleMode: "radial",
-                radius: 0
-            },
-            occupancy: {
-                seatWidth: 20,
-                minAisle: 48,
-                maxAisle: 72,
-                seatsBetweenAisles: 20,
-                egressFactor: 0.2
-            },
-            tier1: {
-                targetCValue: 2.5,
-                numRows: 40,
-                firstRowDist: 15.0,
-                firstRowElev: 0.0, // Floor seating
-                treadDepth: 33,
-                riserHeight: 2, // Very flat
-                eyeHeight: 3.75,
-                eyeSetback: 6
-            }
-        }
     }
 };
 

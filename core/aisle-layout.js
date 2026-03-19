@@ -1373,24 +1373,85 @@ function solveStraightIntervalCoords(minCoord, maxCoord, count, axisExclusionFt)
     return coords;
 }
 
+function isIntervalTouchingOpenStart(interval, side) {
+    if (!interval || interval.closed || !side) return false;
+    return Math.abs(clamp01(side.startU) - 0) <= 1e-5;
+}
+
+function isIntervalTouchingOpenEnd(interval, side) {
+    if (!interval || interval.closed || !side) return false;
+    return Math.abs(clamp01(side.endU) - 1) <= 1e-5;
+}
+
+function isSymmetricStraightInterval(interval) {
+    const side = getIntervalSide(interval);
+    if (!interval || interval.family !== 'straight' || !side?.axis) return false;
+
+    if (side.axis === 'horizontal') {
+        return Math.abs((Number(side.startPt?.x) || 0) + (Number(side.endPt?.x) || 0)) <= 1e-6;
+    }
+
+    if (side.axis === 'vertical') {
+        return Math.abs((Number(side.startPt?.y) || 0) + (Number(side.endPt?.y) || 0)) <= 1e-6;
+    }
+
+    return false;
+}
+
+function resolveStraightIntervalPlacementPolicy(interval, context = {}) {
+    const side = getIntervalSide(interval);
+    const requestedOpenEdgeInsetFt = Math.max(0, Number(context?.endpointBufferFt) || 0);
+    const requestedCenterExclusionFt = Math.max(0, Number(context?.axisExclusionFt) || 0);
+    const touchesOpenStart = isIntervalTouchingOpenStart(interval, side);
+    const touchesOpenEnd = isIntervalTouchingOpenEnd(interval, side);
+    const hasExplicitCenterExclusion = !!context?.enforceCenterlineExclusion && requestedCenterExclusionFt > 0;
+
+    return {
+        startInsetFt: touchesOpenStart ? requestedOpenEdgeInsetFt : 0,
+        endInsetFt: touchesOpenEnd ? requestedOpenEdgeInsetFt : 0,
+        centerExclusionFt: hasExplicitCenterExclusion ? requestedCenterExclusionFt : 0,
+        allowCenterlinePlacement: !hasExplicitCenterExclusion
+    };
+}
+
 function distributeIntervalTs(interval, count, axisExclusionFt, endpointBufferFt = 0) {
     if (!interval || count <= 0) return [];
+    const intervalRecord = interval?.front || interval?.back
+        ? interval
+        : {
+            closed: false,
+            family: interval?.axis ? 'straight' : 'chamfer',
+            front: interval,
+            back: interval
+        };
+    const intervalSide = getIntervalSide(intervalRecord);
+    if (!intervalSide) return [];
+
     const out = [];
-    const safeLen = Math.max(EPS, Number(interval.length) || 0);
+    const safeLen = Math.max(EPS, Number(intervalSide.length) || 0);
     const edgeBufferT = Math.max(0, Math.min(0.45, (Math.max(0, Number(endpointBufferFt) || 0) / safeLen)));
 
-    if (interval.axis === 'horizontal') {
-        const startX = Number(interval.startPt.x) || 0;
-        const endX = Number(interval.endPt.x) || 0;
-        const xA = startX + (endX - startX) * edgeBufferT;
-        const xB = startX + (endX - startX) * (1 - edgeBufferT);
+    if (intervalRecord.family === 'straight' && intervalSide.axis === 'horizontal') {
+        const policy = resolveStraightIntervalPlacementPolicy(intervalRecord, {
+            axisExclusionFt,
+            endpointBufferFt
+        });
+        const startInsetT = Math.max(0, Math.min(0.45, policy.startInsetFt / safeLen));
+        const endInsetT = Math.max(0, Math.min(0.45, policy.endInsetFt / safeLen));
+        const startX = Number(intervalSide.startPt.x) || 0;
+        const endX = Number(intervalSide.endPt.x) || 0;
+        const xA = startX + (endX - startX) * startInsetT;
+        const xB = startX + (endX - startX) * (1 - endInsetT);
         const minCoord = Math.min(xA, xB);
         const maxCoord = Math.max(xA, xB);
-        const coords = solveStraightIntervalCoords(minCoord, maxCoord, count, axisExclusionFt);
+        if (count === 1 && policy.allowCenterlinePlacement && isSymmetricStraightInterval(intervalRecord)) {
+            return [0.5];
+        }
+        const coords = solveStraightIntervalCoords(minCoord, maxCoord, count, policy.centerExclusionFt);
 
         const denom = endX - startX;
-        const tMin = edgeBufferT + 1e-5;
-        const tMax = 1 - edgeBufferT - 1e-5;
+        const tMin = startInsetT + 1e-5;
+        const tMax = 1 - endInsetT - 1e-5;
         for (let i = 0; i < coords.length; i++) {
             let t = 0.5;
             if (Math.abs(denom) > EPS) t = (coords[i] - startX) / denom;
@@ -1400,18 +1461,27 @@ function distributeIntervalTs(interval, count, axisExclusionFt, endpointBufferFt
         return dedupeSorted(out.sort((a, b) => a - b), 1e-6);
     }
 
-    if (interval.axis === 'vertical') {
-        const startY = Number(interval.startPt.y) || 0;
-        const endY = Number(interval.endPt.y) || 0;
-        const yA = startY + (endY - startY) * edgeBufferT;
-        const yB = startY + (endY - startY) * (1 - edgeBufferT);
+    if (intervalRecord.family === 'straight' && intervalSide.axis === 'vertical') {
+        const policy = resolveStraightIntervalPlacementPolicy(intervalRecord, {
+            axisExclusionFt,
+            endpointBufferFt
+        });
+        const startInsetT = Math.max(0, Math.min(0.45, policy.startInsetFt / safeLen));
+        const endInsetT = Math.max(0, Math.min(0.45, policy.endInsetFt / safeLen));
+        const startY = Number(intervalSide.startPt.y) || 0;
+        const endY = Number(intervalSide.endPt.y) || 0;
+        const yA = startY + (endY - startY) * startInsetT;
+        const yB = startY + (endY - startY) * (1 - endInsetT);
         const minCoord = Math.min(yA, yB);
         const maxCoord = Math.max(yA, yB);
-        const coords = solveStraightIntervalCoords(minCoord, maxCoord, count, axisExclusionFt);
+        if (count === 1 && policy.allowCenterlinePlacement && isSymmetricStraightInterval(intervalRecord)) {
+            return [0.5];
+        }
+        const coords = solveStraightIntervalCoords(minCoord, maxCoord, count, policy.centerExclusionFt);
 
         const denom = endY - startY;
-        const tMin = edgeBufferT + 1e-5;
-        const tMax = 1 - edgeBufferT - 1e-5;
+        const tMin = startInsetT + 1e-5;
+        const tMax = 1 - endInsetT - 1e-5;
         for (let i = 0; i < coords.length; i++) {
             let t = 0.5;
             if (Math.abs(denom) > EPS) t = (coords[i] - startY) / denom;
@@ -1430,10 +1500,11 @@ function distributeIntervalTs(interval, count, axisExclusionFt, endpointBufferFt
 }
 
 function estimateWorstSeatsInInterval(interval, count, seatWidthIn, aisleWidthFt, axisExclusionFt, endpointBufferFt = 0) {
-    if (!interval || interval.length <= EPS) return 0;
+    const intervalSide = getIntervalSide(interval);
+    if (!intervalSide || intervalSide.length <= EPS) return 0;
     const ts = distributeIntervalTs(interval, count, axisExclusionFt, endpointBufferFt);
     const bounds = [0, ...ts, 1].sort((a, b) => a - b);
-    return estimateWorstSeatsInIntervalByPolicy(interval.length, count, {
+    return estimateWorstSeatsInIntervalByPolicy(intervalSide.length, count, {
         aisleWidthFt,
         seatWidthIn,
         measureSegments: () => bounds
@@ -1632,9 +1703,9 @@ function buildOpenTerminalEdgeAisles(perimeterModel, bowlConfig, aisleWidthFt = 
     return out.sort(compareAislesByPathAndStation);
 }
 
-function buildMeasureWorstSeatsForInterval(intervalSide, seatWidthIn, aisleWidthFt, axisExclusionFt, endpointBufferFt) {
+function buildMeasureWorstSeatsForInterval(interval, seatWidthIn, aisleWidthFt, axisExclusionFt, endpointBufferFt) {
     return (count) => estimateWorstSeatsInInterval(
-        intervalSide,
+        interval,
         count,
         seatWidthIn,
         aisleWidthFt,
@@ -1665,11 +1736,11 @@ function computeRequiredSegmentCounts(perimeterModel, options) {
         createPerimeterCountMatrix,
         getPerimeterIntervalEntries,
         ({ interval, measureWorstSeatsForCount }) => {
-            const intervalSide = interval?.back || interval?.front;
+            const intervalSide = getIntervalSide(interval);
             if (!intervalSide || intervalSide.length <= EPS) return 0;
 
             const measureWorstSeats = measureWorstSeatsForCount || buildMeasureWorstSeatsForInterval(
-                intervalSide,
+                interval,
                 seatWidthIn,
                 aisleWidthFt,
                 axisExclusionFt,
@@ -1856,7 +1927,7 @@ function materializeDistributedAisles(perimeterModel, intervalCounts, bowlConfig
         const backSide = interval.back || interval.front;
         if (!path || !frontSide || !backSide) return;
 
-        const ts = distributeIntervalTs(backSide, count, axisExclusionFt, endpointBufferFt);
+        const ts = distributeIntervalTs(interval, count, axisExclusionFt, endpointBufferFt);
         for (let i = 0; i < ts.length; i++) {
             const t = clamp01(ts[i]);
             const u = interpolatePathIntervalU(path, frontSide.startU, frontSide.endU, t);
@@ -1918,12 +1989,12 @@ function validateSeatCap(perimeterModel, aisles, options) {
             counts[pathIndex][intervalIndex] += 1;
         },
         measureWorstSeats: (entry, counts) => {
-            const intervalSide = entry?.interval?.back || entry?.interval?.front;
+            const intervalSide = getIntervalSide(entry?.interval);
             if (!intervalSide || intervalSide.length <= EPS) return 0;
 
             const count = Math.max(0, Math.floor(Number(counts?.[entry.pathIndex]?.[entry.interval.index]) || 0));
             return estimateWorstSeatsInInterval(
-                intervalSide,
+                entry.interval,
                 count,
                 seatWidthIn,
                 aisleWidthFt,
@@ -2754,8 +2825,7 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
         maxOccupantsPerAisle = NaN,
         maxAisleWidthIn = NaN,
         egressFactor = NaN,
-        rowCount = NaN,
-        _useAuthoritativeDeterministicEgressSolve = false
+        rowCount = NaN
     } = params;
 
     if (!Array.isArray(paths) || !paths.length) {
@@ -2847,8 +2917,7 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
                 maxOccupantsPerAisle: legalMaxOccupantsPerAisle,
                 maxAisleWidthIn,
                 egressFactor,
-                rowCount,
-                includeEgressCap: !_useAuthoritativeDeterministicEgressSolve
+                rowCount
             })
         );
         const intervalCounts = allocateDeterministicCounts(
@@ -2935,8 +3004,7 @@ function buildTierAisleAnalysisCandidate({
         seatWidthIn,
         maxAisleWidthIn,
         egressFactor,
-        rowCount: safeRows.length,
-        _useAuthoritativeDeterministicEgressSolve: true
+        rowCount: safeRows.length
     });
     const layoutForSummary = {
         ...layout,
@@ -3082,6 +3150,13 @@ export function buildConfigurationAisleSummary({ tierLayouts = [] } = {}) {
         ), 0)
     };
 }
+
+export const __testHooks = {
+    buildPerimeterModel,
+    distributeIntervalTs,
+    estimateWorstSeatsInInterval,
+    resolveStraightIntervalPlacementPolicy
+};
 
 /**
  * Build a tier-level aisle layout from front-edge bowl geometry.

@@ -308,6 +308,8 @@ export function buildTierMetricsByIndex({
         if (!solver?.rows?.length) return;
 
         const tierIndex = getSolverTierIndex(solver, index);
+        // Fallback-only estimate path for callers that do not have a realized
+        // sectionSummary. UI runtime should prefer buildTierMetricsByIndexFromLayouts.
         const metrics = ProfileSolver.calculateTierMetrics(
             solver,
             bowlConfig,
@@ -409,9 +411,14 @@ function buildLegacyMetricsFromLayout({ solver, layout, egressParams }) {
     const maxAisleLoad = Array.isArray(summary.aisleOccupancyTotals) && summary.aisleOccupancyTotals.length
         ? Math.max(...summary.aisleOccupancyTotals.map((occupancy) => Math.max(0, Number(occupancy) || 0)))
         : 0;
-    const legalMaxOccupantsPerAisle = Array.isArray(summary.aisles) && summary.aisles.length
-        ? Math.max(...summary.aisles.map((aisle) => Math.max(0, Number(aisle?.legalMaxOccupantsPerAisle) || 0)))
-        : 0;
+    const legalMaxOccupantsPerAisle = Math.max(
+        0,
+        Number(summary.legalMaxOccupantsPerAisle) || (
+            Array.isArray(summary.aisles) && summary.aisles.length
+                ? Math.max(...summary.aisles.map((aisle) => Math.max(0, Number(aisle?.legalMaxOccupantsPerAisle) || 0)))
+                : 0
+        )
+    );
 
     return {
         capacity: Math.max(0, Number(summary.tierSeatCount) || 0),

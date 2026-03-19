@@ -253,6 +253,14 @@ describe('EditorControls', () => {
         expect(
             elements.sportSelect.children.find((option) => option.value === 'Football')?.textContent
         ).toContain('Football');
+        expect(elements.sportSelect.children.map((option) => option.value)).toEqual([
+            'Ice Hockey',
+            'Football',
+            'Soccer',
+            'Basketball',
+            'Baseball',
+            'Track'
+        ]);
         expect(elements.sideLengthRow.style.display).not.toBe('none');
         expect(elements.tier1Section.classList.contains('tier-disabled')).toBe(false);
         expect(elements.tier2Section.classList.contains('tier-disabled')).toBe(true);
