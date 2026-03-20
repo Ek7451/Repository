@@ -293,10 +293,12 @@ export function buildTierMetricsByIndex({
     bowlConfig,
     egressParams,
     offsetCorrection = 0,
-    calculateRowLength
+    calculateRowLength,
+    accessibilitySummary = null
 }) {
     const tierMetricsByIndex = new Map();
     if (typeof calculateRowLength !== 'function') return tierMetricsByIndex;
+    const accessibilityByTierIndex = buildAccessibilityByTierIndex(accessibilitySummary);
 
     const rowLengthAdapter = {
         calculateRowLength(nextBowlConfig, offset) {
@@ -319,7 +321,10 @@ export function buildTierMetricsByIndex({
         );
         if (!metrics) return;
 
-        tierMetricsByIndex.set(tierIndex, metrics);
+        tierMetricsByIndex.set(
+            tierIndex,
+            attachAccessibilityMetrics(metrics, accessibilityByTierIndex, tierIndex)
+        );
     });
 
     return tierMetricsByIndex;
@@ -328,6 +333,33 @@ export function buildTierMetricsByIndex({
 function getTierLayoutIndex(layout, fallbackIndex = 0) {
     const tierIndex = Number(layout?.tierIndex);
     return Number.isInteger(tierIndex) ? tierIndex : fallbackIndex;
+}
+
+function buildAccessibilityByTierIndex(accessibilitySummary = null) {
+    return new Map((Array.isArray(accessibilitySummary?.tierRequirements)
+        ? accessibilitySummary.tierRequirements
+        : []
+    ).map((tier) => [
+        Math.max(0, Math.floor(Number(tier?.tierIndex) || 0)),
+        tier
+    ]));
+}
+
+function attachAccessibilityMetrics(metrics, accessibilityByTierIndex, tierIndex) {
+    if (!metrics) return metrics;
+    if (!(accessibilityByTierIndex instanceof Map) || accessibilityByTierIndex.size === 0) {
+        return metrics;
+    }
+
+    const accessibility = accessibilityByTierIndex.get(tierIndex);
+    if (!accessibility) return metrics;
+
+    return {
+        ...metrics,
+        accessibility: {
+            ...accessibility
+        }
+    };
 }
 
 function toFixedString(value, digits = 1, fallback = '0.0') {
@@ -452,13 +484,15 @@ function buildLegacyMetricsFromLayout({ solver, layout, egressParams }) {
 export function buildTierMetricsByIndexFromLayouts({
     tierLayouts,
     egressParams,
-    solvers
+    solvers,
+    accessibilitySummary = null
 }) {
     const tierLayoutByIndex = new Map((tierLayouts || []).map((layout, index) => [
         getTierLayoutIndex(layout, index),
         layout
     ]));
     const tierMetricsByIndex = new Map();
+    const accessibilityByTierIndex = buildAccessibilityByTierIndex(accessibilitySummary);
 
     (solvers || []).forEach((solver, index) => {
         if (!solver?.rows?.length) return;
@@ -472,7 +506,10 @@ export function buildTierMetricsByIndexFromLayouts({
         });
         if (!metrics) return;
 
-        tierMetricsByIndex.set(tierIndex, metrics);
+        tierMetricsByIndex.set(
+            tierIndex,
+            attachAccessibilityMetrics(metrics, accessibilityByTierIndex, tierIndex)
+        );
     });
 
     return tierMetricsByIndex;

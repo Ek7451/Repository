@@ -257,4 +257,55 @@ describe('buildStatsViewModel', () => {
 
         expect(viewModel.summary.totalOccupancy).toBe(400);
     });
+
+    test('maps precomputed accessibility totals and per-tier metrics without recalculating them in ui', () => {
+        const viewModel = buildStatsDto({
+            solvers: [createSolver({ tierIndex: 0 })],
+            focalPointFt: { x: 0, z: 0 },
+            bowlConfig: { type: 'Full' },
+            egressParams: { egressFactor: 0.2 },
+            tierMetricsByIndex: new Map([[0, createMetrics({
+                accessibility: {
+                    wheelchairSpacesRequired: 4,
+                    companionSeatsRequired: 4,
+                    wheelchairZonesRequired: 2,
+                    wheelchairAreaRequiredSqFt: 36,
+                    companionAreaRequiredSqFt: 24,
+                    totalAccessibilityAreaRequiredSqFt: 60,
+                    adjustedOccupancy: 128
+                }
+            })]]),
+            configurationSummary: {
+                totalOccupancyAllTiers: 120,
+                accessibility: {
+                    totalWheelchairSpacesRequired: 4,
+                    totalCompanionSeatsRequired: 4,
+                    totalWheelchairZonesRequired: 2,
+                    totalWheelchairAreaRequiredSqFt: 36,
+                    totalCompanionAreaRequiredSqFt: 24,
+                    totalAccessibilityAreaRequiredSqFt: 60,
+                    totalAdjustedOccupancy: 128
+                }
+            }
+        });
+
+        expect(viewModel.summary.accessibility).toEqual({
+            totalWheelchairSpacesRequired: 4,
+            totalCompanionSeatsRequired: 4,
+            totalWheelchairZonesRequired: 2,
+            totalWheelchairAreaRequiredSqFt: 36,
+            totalCompanionAreaRequiredSqFt: 24,
+            totalAccessibilityAreaRequiredSqFt: 60,
+            totalAdjustedOccupancy: 128
+        });
+        expect(viewModel.tiers[0].accessibility).toEqual({
+            wheelchairSpacesRequired: 4,
+            companionSeatsRequired: 4,
+            wheelchairZonesRequired: 2,
+            wheelchairAreaRequiredSqFt: 36,
+            companionAreaRequiredSqFt: 24,
+            totalAccessibilityAreaRequiredSqFt: 60,
+            adjustedOccupancy: 128
+        });
+    });
 });

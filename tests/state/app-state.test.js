@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import {
     APP_STATE_VERSION,
     AppState,
+    buildAccessibilityParams,
     buildBowlConfig,
     buildEgressParams,
     buildFieldVisibility,
@@ -191,6 +192,33 @@ describe('AppState', () => {
         expect(first.bowl.structuralProfileMode).toBe('stepped');
         expect(first.bowl.straightAisleMode).toBe('perpendicular');
         expect(first.bowl.chamferAisleMode).toBe('radial');
+        expect(first.accessibility).toEqual({
+            companionSeatsPerWheelchair: 1,
+            wheelchairAreaSqFt: 9,
+            companionAreaSqFt: 6,
+            wheelchairSpaceRequirements: {
+                upto25: 1,
+                upto50: 2,
+                upto150: 4,
+                upto300: 5,
+                upto500: 6,
+                over500Base: 6,
+                over500StepOccupants: 150,
+                over500StepSpaces: 1,
+                over5000Base: 36,
+                over5000StepOccupants: 200,
+                over5000StepSpaces: 1
+            },
+            wheelchairZoneRequirements: {
+                upto1Space: 1,
+                upto4Spaces: 2,
+                upto8Spaces: 3,
+                upto16Spaces: 4,
+                over16Base: 4,
+                over16StepSpaces: 8,
+                over16StepZones: 1
+            }
+        });
 
         first.tiers[0].numRows = 99;
         expect(second.tiers[0].cValue).toBe(3.5);
@@ -270,6 +298,11 @@ describe('AppState', () => {
         state.occupancy.seatsBetweenAisles = 18;
         state.occupancy.egressFactor = 0.3;
         state.occupancy.showSeatCubes3D = true;
+        state.accessibility.companionSeatsPerWheelchair = 1.5;
+        state.accessibility.wheelchairAreaSqFt = 10;
+        state.accessibility.companionAreaSqFt = 7;
+        state.accessibility.wheelchairSpaceRequirements.upto500 = 7;
+        state.accessibility.wheelchairZoneRequirements.upto8Spaces = 4;
         state.tiers[1].enabled = true;
         state.tiers[2].enabled = false;
 
@@ -289,6 +322,17 @@ describe('AppState', () => {
             egressFactor: 0.3,
             seatsBetweenAisles: 18
         });
+        expect(buildAccessibilityParams(state)).toEqual(expect.objectContaining({
+            companionSeatsPerWheelchair: 1.5,
+            wheelchairAreaSqFt: 10,
+            companionAreaSqFt: 7,
+            wheelchairSpaceRequirements: expect.objectContaining({
+                upto500: 7
+            }),
+            wheelchairZoneRequirements: expect.objectContaining({
+                upto8Spaces: 4
+            })
+        }));
         expect(buildPrimaryTierParameters(state)).toEqual({
             targetCValue: 3.5,
             firstRowDistance: 0,
@@ -363,6 +407,7 @@ describe('AppState', () => {
             setup: {},
             bowl: {},
             occupancy: {},
+            accessibility: {},
             tiers: []
         };
 
@@ -381,6 +426,33 @@ describe('AppState', () => {
             minAisleWidthIn: 0,
             egressFactor: 0,
             seatsBetweenAisles: 0
+        });
+        expect(buildAccessibilityParams(partialState)).toEqual({
+            companionSeatsPerWheelchair: 1,
+            wheelchairAreaSqFt: 9,
+            companionAreaSqFt: 6,
+            wheelchairSpaceRequirements: {
+                upto25: 1,
+                upto50: 2,
+                upto150: 4,
+                upto300: 5,
+                upto500: 6,
+                over500Base: 6,
+                over500StepOccupants: 150,
+                over500StepSpaces: 1,
+                over5000Base: 36,
+                over5000StepOccupants: 200,
+                over5000StepSpaces: 1
+            },
+            wheelchairZoneRequirements: {
+                upto1Space: 1,
+                upto4Spaces: 2,
+                upto8Spaces: 3,
+                upto16Spaces: 4,
+                over16Base: 4,
+                over16StepSpaces: 8,
+                over16StepZones: 1
+            }
         });
         expect(buildPrimaryTierParameters(partialState)).toEqual({
             targetCValue: 0,

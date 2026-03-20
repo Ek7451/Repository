@@ -4,8 +4,9 @@ import {
     getTemplate,
     resolveTemplateFocalXBoundsFt
 } from '../core/sports-templates.js';
+import { createDefaultAccessibilitySettings } from '../core/egress-policy.js';
 
-const APP_STATE_VERSION = 'phase6-app-state';
+const APP_STATE_VERSION = 'phase6-app-state-a11y';
 const VALID_VIEW_TABS = new Set(['profile', 'field', 'scene3d']);
 const VALID_RESULTS_TABS = new Set(['statsTab', 'detailsTab']);
 
@@ -57,6 +58,33 @@ const VALID_RESULTS_TABS = new Set(['statsTab', 'detailsTab']);
  *     egressFactor: number,
  *     showSeatCubes3D: boolean
  *   },
+ *   accessibility: {
+ *     companionSeatsPerWheelchair: number,
+ *     wheelchairAreaSqFt: number,
+ *     companionAreaSqFt: number,
+ *     wheelchairSpaceRequirements: {
+ *       upto25: number,
+ *       upto50: number,
+ *       upto150: number,
+ *       upto300: number,
+ *       upto500: number,
+ *       over500Base: number,
+ *       over500StepOccupants: number,
+ *       over500StepSpaces: number,
+ *       over5000Base: number,
+ *       over5000StepOccupants: number,
+ *       over5000StepSpaces: number
+ *     },
+ *     wheelchairZoneRequirements: {
+ *       upto1Space: number,
+ *       upto4Spaces: number,
+ *       upto8Spaces: number,
+ *       upto16Spaces: number,
+ *       over16Base: number,
+ *       over16StepSpaces: number,
+ *       over16StepZones: number
+ *     }
+ *   },
  *   ui: {
  *     activeViewTab: string,
  *     activeResultsTab: string
@@ -100,6 +128,13 @@ const VALID_RESULTS_TABS = new Set(['statsTab', 'detailsTab']);
  *         maxAisle?: number,
  *         seatsBetweenAisles?: number,
  *         egressFactor?: number
+ *       },
+ *       accessibility?: {
+ *         companionSeatsPerWheelchair?: number,
+ *         wheelchairAreaSqFt?: number,
+ *         companionAreaSqFt?: number,
+ *         wheelchairSpaceRequirements?: object,
+ *         wheelchairZoneRequirements?: object
  *       },
  *       tier1?: {
  *         targetCValue?: number,
@@ -176,6 +211,7 @@ function createBaseDefaultStateData() {
             egressFactor: 0.2,
             showSeatCubes3D: false
         },
+        accessibility: createDefaultAccessibilitySettings(),
         ui: {
             activeViewTab: 'profile',
             activeResultsTab: 'statsTab'
@@ -231,6 +267,23 @@ function createDefaultStateData() {
     state.occupancy.seatsBetweenAisles = templateDefaults.occupancy?.seatsBetweenAisles
         ?? state.occupancy.seatsBetweenAisles;
     state.occupancy.egressFactor = templateDefaults.occupancy?.egressFactor ?? state.occupancy.egressFactor;
+    if (templateDefaults.accessibility && typeof templateDefaults.accessibility === 'object') {
+        const accessibilityDefaults = state.accessibility;
+        /** @type {Partial<AccessibilityState>} */
+        const templateAccessibilityDefaults = templateDefaults.accessibility;
+        state.accessibility = {
+            ...accessibilityDefaults,
+            ...templateAccessibilityDefaults,
+            wheelchairSpaceRequirements: {
+                ...accessibilityDefaults.wheelchairSpaceRequirements,
+                ...(templateAccessibilityDefaults.wheelchairSpaceRequirements || {})
+            },
+            wheelchairZoneRequirements: {
+                ...accessibilityDefaults.wheelchairZoneRequirements,
+                ...(templateAccessibilityDefaults.wheelchairZoneRequirements || {})
+            }
+        };
+    }
     state.tiers[0] = createDefaultTier({
         ...defaultTier,
         enabled: true,
@@ -299,6 +352,124 @@ function parseBoolean(value, fallback) {
 
 function parseString(value, fallback) {
     return typeof value === 'string' && value.trim() ? value : fallback;
+}
+
+/**
+ * @typedef {{
+ *   companionSeatsPerWheelchair: number,
+ *   wheelchairAreaSqFt: number,
+ *   companionAreaSqFt: number,
+ *   wheelchairSpaceRequirements: {
+ *     upto25: number,
+ *     upto50: number,
+ *     upto150: number,
+ *     upto300: number,
+ *     upto500: number,
+ *     over500Base: number,
+ *     over500StepOccupants: number,
+ *     over500StepSpaces: number,
+ *     over5000Base: number,
+ *     over5000StepOccupants: number,
+ *     over5000StepSpaces: number
+ *   },
+ *   wheelchairZoneRequirements: {
+ *     upto1Space: number,
+ *     upto4Spaces: number,
+ *     upto8Spaces: number,
+ *     upto16Spaces: number,
+ *     over16Base: number,
+ *     over16StepSpaces: number,
+ *     over16StepZones: number
+ *   }
+ * }} AccessibilityState
+ */
+
+/**
+ * @param {unknown} rawAccessibility
+ * @param {AccessibilityState} [fallbackAccessibility]
+ * @returns {AccessibilityState}
+ */
+function normalizeAccessibilitySettings(rawAccessibility, fallbackAccessibility = createDefaultAccessibilitySettings()) {
+    /** @type {Partial<AccessibilityState>} */
+    const accessibility = rawAccessibility && typeof rawAccessibility === 'object'
+        ? rawAccessibility
+        : {};
+    const fallback = fallbackAccessibility && typeof fallbackAccessibility === 'object'
+        ? fallbackAccessibility
+        : createDefaultAccessibilitySettings();
+    const fallbackSpaceRequirements = fallback.wheelchairSpaceRequirements;
+    const fallbackZoneRequirements = fallback.wheelchairZoneRequirements;
+    /** @type {Partial<AccessibilityState['wheelchairSpaceRequirements']>} */
+    const spaceRequirements = accessibility.wheelchairSpaceRequirements
+        && typeof accessibility.wheelchairSpaceRequirements === 'object'
+        ? accessibility.wheelchairSpaceRequirements
+        : {};
+    /** @type {Partial<AccessibilityState['wheelchairZoneRequirements']>} */
+    const zoneRequirements = accessibility.wheelchairZoneRequirements
+        && typeof accessibility.wheelchairZoneRequirements === 'object'
+        ? accessibility.wheelchairZoneRequirements
+        : {};
+
+    return {
+        companionSeatsPerWheelchair: parseNumber(
+            accessibility.companionSeatsPerWheelchair,
+            fallback.companionSeatsPerWheelchair
+        ),
+        wheelchairAreaSqFt: parseNumber(
+            accessibility.wheelchairAreaSqFt,
+            fallback.wheelchairAreaSqFt
+        ),
+        companionAreaSqFt: parseNumber(
+            accessibility.companionAreaSqFt,
+            fallback.companionAreaSqFt
+        ),
+        wheelchairSpaceRequirements: {
+            upto25: parseNumber(spaceRequirements.upto25, fallbackSpaceRequirements.upto25),
+            upto50: parseNumber(spaceRequirements.upto50, fallbackSpaceRequirements.upto50),
+            upto150: parseNumber(spaceRequirements.upto150, fallbackSpaceRequirements.upto150),
+            upto300: parseNumber(spaceRequirements.upto300, fallbackSpaceRequirements.upto300),
+            upto500: parseNumber(spaceRequirements.upto500, fallbackSpaceRequirements.upto500),
+            over500Base: parseNumber(
+                spaceRequirements.over500Base,
+                fallbackSpaceRequirements.over500Base
+            ),
+            over500StepOccupants: parseNumber(
+                spaceRequirements.over500StepOccupants,
+                fallbackSpaceRequirements.over500StepOccupants
+            ),
+            over500StepSpaces: parseNumber(
+                spaceRequirements.over500StepSpaces,
+                fallbackSpaceRequirements.over500StepSpaces
+            ),
+            over5000Base: parseNumber(
+                spaceRequirements.over5000Base,
+                fallbackSpaceRequirements.over5000Base
+            ),
+            over5000StepOccupants: parseNumber(
+                spaceRequirements.over5000StepOccupants,
+                fallbackSpaceRequirements.over5000StepOccupants
+            ),
+            over5000StepSpaces: parseNumber(
+                spaceRequirements.over5000StepSpaces,
+                fallbackSpaceRequirements.over5000StepSpaces
+            )
+        },
+        wheelchairZoneRequirements: {
+            upto1Space: parseNumber(zoneRequirements.upto1Space, fallbackZoneRequirements.upto1Space),
+            upto4Spaces: parseNumber(zoneRequirements.upto4Spaces, fallbackZoneRequirements.upto4Spaces),
+            upto8Spaces: parseNumber(zoneRequirements.upto8Spaces, fallbackZoneRequirements.upto8Spaces),
+            upto16Spaces: parseNumber(zoneRequirements.upto16Spaces, fallbackZoneRequirements.upto16Spaces),
+            over16Base: parseNumber(zoneRequirements.over16Base, fallbackZoneRequirements.over16Base),
+            over16StepSpaces: parseNumber(
+                zoneRequirements.over16StepSpaces,
+                fallbackZoneRequirements.over16StepSpaces
+            ),
+            over16StepZones: parseNumber(
+                zoneRequirements.over16StepZones,
+                fallbackZoneRequirements.over16StepZones
+            )
+        }
+    };
 }
 
 function normalizeBowlType(value, fallback) {
@@ -509,6 +680,10 @@ function normalizeAppState(rawState = {}, fallbackState = createDefaultStateData
                 fallback.occupancy.showSeatCubes3D
             )
         },
+        accessibility: normalizeAccessibilitySettings(
+            state.accessibility,
+            fallback.accessibility
+        ),
         ui: {
             activeViewTab: normalizeViewTab(state.ui?.activeViewTab, fallback.ui.activeViewTab),
             activeResultsTab: normalizeResultsTab(
@@ -533,6 +708,7 @@ function applyStateData(target, source) {
     target.setup = source.setup;
     target.bowl = source.bowl;
     target.occupancy = source.occupancy;
+    target.accessibility = source.accessibility;
     target.ui = source.ui;
     target.tiers = source.tiers;
     target.bookmarks = source.bookmarks;
@@ -548,6 +724,12 @@ function getTemplateSideLength(template, fallback) {
 function getStateOccupancy(state) {
     return state?.occupancy && typeof state.occupancy === 'object'
         ? state.occupancy
+        : {};
+}
+
+function getStateAccessibility(state) {
+    return state?.accessibility && typeof state.accessibility === 'object'
+        ? state.accessibility
         : {};
 }
 
@@ -666,6 +848,13 @@ export function buildEgressParams(state) {
         egressFactor: occupancy.egressFactor ?? 0,
         seatsBetweenAisles: occupancy.seatsBetweenAisles ?? 0
     };
+}
+
+export function buildAccessibilityParams(state) {
+    return normalizeAccessibilitySettings(
+        getStateAccessibility(state),
+        createDefaultAccessibilitySettings()
+    );
 }
 
 export function buildPrimaryTierParameters(state) {
@@ -825,6 +1014,12 @@ const appStateMethods = {
         const templateDefaults = template?.defaults && typeof template.defaults === 'object'
             ? template.defaults
             : {};
+        const baseAccessibilityDefaults = createDefaultAccessibilitySettings();
+        /** @type {Partial<AccessibilityState>} */
+        const templateAccessibilityDefaults = templateDefaults.accessibility
+            && typeof templateDefaults.accessibility === 'object'
+            ? templateDefaults.accessibility
+            : {};
 
         const partialState = {
             sport: nextSport,
@@ -854,6 +1049,18 @@ const appStateMethods = {
                 maxAisle: templateDefaults.occupancy?.maxAisle,
                 seatsBetweenAisles: templateDefaults.occupancy?.seatsBetweenAisles,
                 egressFactor: templateDefaults.occupancy?.egressFactor
+            },
+            accessibility: {
+                ...baseAccessibilityDefaults,
+                ...templateAccessibilityDefaults,
+                wheelchairSpaceRequirements: {
+                    ...baseAccessibilityDefaults.wheelchairSpaceRequirements,
+                    ...(templateAccessibilityDefaults.wheelchairSpaceRequirements || {})
+                },
+                wheelchairZoneRequirements: {
+                    ...baseAccessibilityDefaults.wheelchairZoneRequirements,
+                    ...(templateAccessibilityDefaults.wheelchairZoneRequirements || {})
+                }
             },
             tiers: [{
                 ...templateDefaults.tier1,

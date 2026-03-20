@@ -7,6 +7,369 @@ import {
     spanGapToSeatCount
 } from './seat-math.js';
 
+/**
+ * @typedef {{
+ *   upto25: number,
+ *   upto50: number,
+ *   upto150: number,
+ *   upto300: number,
+ *   upto500: number,
+ *   over500Base: number,
+ *   over500StepOccupants: number,
+ *   over500StepSpaces: number,
+ *   over5000Base: number,
+ *   over5000StepOccupants: number,
+ *   over5000StepSpaces: number
+ * }} WheelchairSpaceRequirements
+ *
+ * @typedef {{
+ *   upto1Space: number,
+ *   upto4Spaces: number,
+ *   upto8Spaces: number,
+ *   upto16Spaces: number,
+ *   over16Base: number,
+ *   over16StepSpaces: number,
+ *   over16StepZones: number
+ * }} WheelchairZoneRequirements
+ *
+ * @typedef {{
+ *   companionSeatsPerWheelchair: number,
+ *   wheelchairAreaSqFt: number,
+ *   companionAreaSqFt: number,
+ *   wheelchairSpaceRequirements: WheelchairSpaceRequirements,
+ *   wheelchairZoneRequirements: WheelchairZoneRequirements
+ * }} AccessibilitySettings
+ */
+
+/** @type {AccessibilitySettings} */
+const DEFAULT_ACCESSIBILITY_SETTINGS = Object.freeze({
+    companionSeatsPerWheelchair: 1,
+    wheelchairAreaSqFt: 12,
+    companionAreaSqFt: 8,
+    wheelchairSpaceRequirements: Object.freeze({
+        upto25: 1,
+        upto50: 2,
+        upto150: 4,
+        upto300: 5,
+        upto500: 6,
+        over500Base: 6,
+        over500StepOccupants: 150,
+        over500StepSpaces: 1,
+        over5000Base: 36,
+        over5000StepOccupants: 200,
+        over5000StepSpaces: 1
+    }),
+    wheelchairZoneRequirements: Object.freeze({
+        upto1Space: 1,
+        upto4Spaces: 2,
+        upto8Spaces: 3,
+        upto16Spaces: 4,
+        over16Base: 4,
+        over16StepSpaces: 8,
+        over16StepZones: 1
+    })
+});
+
+/**
+ * @param {WheelchairSpaceRequirements} [requirements]
+ * @returns {WheelchairSpaceRequirements}
+ */
+function cloneWheelchairSpaceRequirements(requirements = DEFAULT_ACCESSIBILITY_SETTINGS.wheelchairSpaceRequirements) {
+    return {
+        ...requirements
+    };
+}
+
+/**
+ * @param {WheelchairZoneRequirements} [requirements]
+ * @returns {WheelchairZoneRequirements}
+ */
+function cloneWheelchairZoneRequirements(requirements = DEFAULT_ACCESSIBILITY_SETTINGS.wheelchairZoneRequirements) {
+    return {
+        ...requirements
+    };
+}
+
+/** @returns {AccessibilitySettings} */
+export function createDefaultAccessibilitySettings() {
+    return {
+        companionSeatsPerWheelchair: DEFAULT_ACCESSIBILITY_SETTINGS.companionSeatsPerWheelchair,
+        wheelchairAreaSqFt: DEFAULT_ACCESSIBILITY_SETTINGS.wheelchairAreaSqFt,
+        companionAreaSqFt: DEFAULT_ACCESSIBILITY_SETTINGS.companionAreaSqFt,
+        wheelchairSpaceRequirements: cloneWheelchairSpaceRequirements(
+            DEFAULT_ACCESSIBILITY_SETTINGS.wheelchairSpaceRequirements
+        ),
+        wheelchairZoneRequirements: cloneWheelchairZoneRequirements(
+            DEFAULT_ACCESSIBILITY_SETTINGS.wheelchairZoneRequirements
+        )
+    };
+}
+
+function normalizeCountValue(value, fallback = 0) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return Math.max(0, Math.ceil(Number(fallback) || 0));
+    }
+    return Math.max(0, Math.ceil(numeric));
+}
+
+function normalizePositiveStep(value, fallback = 1) {
+    const numeric = Number(value);
+    if (!(Number.isFinite(numeric) && numeric > 0)) {
+        return Math.max(1, Math.ceil(Number(fallback) || 1));
+    }
+    return Math.max(1, Math.ceil(numeric));
+}
+
+function normalizeMetricValue(value, fallback = 0) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? Math.max(0, numeric) : Math.max(0, Number(fallback) || 0);
+}
+
+function computeIncrementalRequirement({
+    measuredValue,
+    threshold,
+    baseRequirement,
+    stepSize,
+    stepRequirement
+}) {
+    if (!(measuredValue > threshold)) {
+        return normalizeCountValue(baseRequirement);
+    }
+
+    const resolvedStepSize = normalizePositiveStep(stepSize);
+    const resolvedStepRequirement = normalizeCountValue(stepRequirement);
+    const additionalSteps = Math.ceil((measuredValue - threshold) / resolvedStepSize);
+    return normalizeCountValue(baseRequirement) + (additionalSteps * resolvedStepRequirement);
+}
+
+function buildTierWeightEntries(tierOccupancies = []) {
+    return (Array.isArray(tierOccupancies) ? tierOccupancies : []).map((tier, index) => ({
+        tierIndex: Math.max(0, Math.floor(Number(tier?.tierIndex) || index)),
+        occupancy: Math.max(0, Number(tier?.tierSeatCount ?? tier?.occupancy) || 0)
+    }));
+}
+
+function allocateWholeRequirement(totalRequirement, tierWeights = []) {
+    const resolvedTotal = Math.max(0, Math.ceil(Number(totalRequirement) || 0));
+    const safeTierWeights = Array.isArray(tierWeights) ? tierWeights : [];
+    if (safeTierWeights.length === 0) return [];
+    if (!(resolvedTotal > 0)) {
+        return safeTierWeights.map((tier) => ({
+            tierIndex: tier.tierIndex,
+            count: 0,
+            rawShare: 0
+        }));
+    }
+
+    const totalWeight = safeTierWeights.reduce((sum, tier) => (
+        sum + Math.max(0, Number(tier?.occupancy ?? tier?.count) || 0)
+    ), 0);
+    if (!(totalWeight > 0)) {
+        return safeTierWeights.map((tier, index) => ({
+            tierIndex: tier.tierIndex,
+            count: index < resolvedTotal ? 1 : 0,
+            rawShare: 0
+        }));
+    }
+
+    const allocations = safeTierWeights.map((tier) => {
+        const weight = Math.max(0, Number(tier?.occupancy ?? tier?.count) || 0);
+        const rawShare = (weight / totalWeight) * resolvedTotal;
+        const count = Math.floor(rawShare);
+        return {
+            tierIndex: tier.tierIndex,
+            count,
+            rawShare
+        };
+    });
+
+    let remainder = resolvedTotal - allocations.reduce((sum, tier) => sum + tier.count, 0);
+    allocations
+        .slice()
+        .sort((a, b) => {
+            const fractionalDelta = (b.rawShare - b.count) - (a.rawShare - a.count);
+            if (Math.abs(fractionalDelta) > 1e-9) return fractionalDelta;
+            return a.tierIndex - b.tierIndex;
+        })
+        .forEach((tier) => {
+            if (!(remainder > 0)) return;
+            const target = allocations.find((entry) => entry.tierIndex === tier.tierIndex);
+            if (!target) return;
+            target.count += 1;
+            remainder -= 1;
+        });
+
+    return allocations;
+}
+
+/**
+ * @param {{
+ *   totalOccupancy?: number,
+ *   accessibilitySettings?: AccessibilitySettings
+ * }} [options]
+ */
+export function computeMinimumWheelchairSpaces({
+    totalOccupancy,
+    accessibilitySettings = createDefaultAccessibilitySettings()
+} = {}) {
+    const occupancy = Math.max(0, Number(totalOccupancy) || 0);
+    if (!(occupancy > 0)) return 0;
+
+    const requirements = accessibilitySettings?.wheelchairSpaceRequirements
+        || DEFAULT_ACCESSIBILITY_SETTINGS.wheelchairSpaceRequirements;
+    if (occupancy <= 25) return normalizeCountValue(requirements.upto25, 1);
+    if (occupancy <= 50) return normalizeCountValue(requirements.upto50, 2);
+    if (occupancy <= 150) return normalizeCountValue(requirements.upto150, 4);
+    if (occupancy <= 300) return normalizeCountValue(requirements.upto300, 5);
+    if (occupancy <= 500) return normalizeCountValue(requirements.upto500, 6);
+    if (occupancy <= 5000) {
+        return computeIncrementalRequirement({
+            measuredValue: occupancy,
+            threshold: 500,
+            baseRequirement: requirements.over500Base,
+            stepSize: requirements.over500StepOccupants,
+            stepRequirement: requirements.over500StepSpaces
+        });
+    }
+
+    return computeIncrementalRequirement({
+        measuredValue: occupancy,
+        threshold: 5000,
+        baseRequirement: requirements.over5000Base,
+        stepSize: requirements.over5000StepOccupants,
+        stepRequirement: requirements.over5000StepSpaces
+    });
+}
+
+/**
+ * @param {{
+ *   requiredWheelchairSpaces?: number,
+ *   accessibilitySettings?: AccessibilitySettings
+ * }} [options]
+ */
+export function computeMinimumWheelchairZones({
+    requiredWheelchairSpaces,
+    accessibilitySettings = createDefaultAccessibilitySettings()
+} = {}) {
+    const spaces = Math.max(0, Math.ceil(Number(requiredWheelchairSpaces) || 0));
+    if (!(spaces > 0)) return 0;
+
+    const requirements = accessibilitySettings?.wheelchairZoneRequirements
+        || DEFAULT_ACCESSIBILITY_SETTINGS.wheelchairZoneRequirements;
+    if (spaces <= 1) return normalizeCountValue(requirements.upto1Space, 1);
+    if (spaces <= 4) return normalizeCountValue(requirements.upto4Spaces, 2);
+    if (spaces <= 8) return normalizeCountValue(requirements.upto8Spaces, 3);
+    if (spaces <= 16) return normalizeCountValue(requirements.upto16Spaces, 4);
+
+    return computeIncrementalRequirement({
+        measuredValue: spaces,
+        threshold: 16,
+        baseRequirement: requirements.over16Base,
+        stepSize: requirements.over16StepSpaces,
+        stepRequirement: requirements.over16StepZones
+    });
+}
+
+/**
+ * @param {{
+ *   totalOccupancy?: number,
+ *   tierOccupancies?: Array<{ tierIndex?: number, tierSeatCount?: number, occupancy?: number }>,
+ *   accessibilitySettings?: AccessibilitySettings
+ * }} [options]
+ */
+export function buildAccessibilitySummary({
+    totalOccupancy,
+    tierOccupancies = [],
+    accessibilitySettings = createDefaultAccessibilitySettings()
+} = {}) {
+    const totalBaseOccupancy = Math.max(0, Number(totalOccupancy) || 0);
+    const tierWeights = buildTierWeightEntries(tierOccupancies);
+    const totalWheelchairSpacesRequired = computeMinimumWheelchairSpaces({
+        totalOccupancy: totalBaseOccupancy,
+        accessibilitySettings
+    });
+    const totalCompanionSeatsRequired = normalizeCountValue(
+        totalWheelchairSpacesRequired * normalizeMetricValue(
+            accessibilitySettings?.companionSeatsPerWheelchair,
+            DEFAULT_ACCESSIBILITY_SETTINGS.companionSeatsPerWheelchair
+        )
+    );
+    const totalWheelchairZonesRequired = computeMinimumWheelchairZones({
+        requiredWheelchairSpaces: totalWheelchairSpacesRequired,
+        accessibilitySettings
+    });
+    const wheelchairAllocations = allocateWholeRequirement(totalWheelchairSpacesRequired, tierWeights);
+    const companionAllocations = allocateWholeRequirement(
+        totalCompanionSeatsRequired,
+        wheelchairAllocations
+    );
+    const zoneAllocations = allocateWholeRequirement(
+        totalWheelchairZonesRequired,
+        wheelchairAllocations
+    );
+    const companionByTierIndex = new Map(companionAllocations.map((tier) => [tier.tierIndex, tier.count]));
+    const zoneByTierIndex = new Map(zoneAllocations.map((tier) => [tier.tierIndex, tier.count]));
+    const wheelchairAreaSqFt = normalizeMetricValue(
+        accessibilitySettings?.wheelchairAreaSqFt,
+        DEFAULT_ACCESSIBILITY_SETTINGS.wheelchairAreaSqFt
+    );
+    const companionAreaSqFt = normalizeMetricValue(
+        accessibilitySettings?.companionAreaSqFt,
+        DEFAULT_ACCESSIBILITY_SETTINGS.companionAreaSqFt
+    );
+
+    const tierRequirements = wheelchairAllocations.map((tier) => {
+        const wheelchairSpacesRequired = tier.count;
+        const companionSeatsRequired = companionByTierIndex.get(tier.tierIndex) || 0;
+        const wheelchairZonesRequired = zoneByTierIndex.get(tier.tierIndex) || 0;
+        const baseOccupancy = tierWeights.find((entry) => entry.tierIndex === tier.tierIndex)?.occupancy || 0;
+        const wheelchairAreaRequiredSqFt = wheelchairSpacesRequired * wheelchairAreaSqFt;
+        const companionAreaRequiredSqFt = companionSeatsRequired * companionAreaSqFt;
+        return {
+            tierIndex: tier.tierIndex,
+            baseOccupancy,
+            wheelchairSpacesRequired,
+            companionSeatsRequired,
+            wheelchairZonesRequired,
+            wheelchairAreaRequiredSqFt,
+            companionAreaRequiredSqFt,
+            totalAccessibilityAreaRequiredSqFt: wheelchairAreaRequiredSqFt + companionAreaRequiredSqFt,
+            adjustedOccupancy: baseOccupancy + wheelchairSpacesRequired + companionSeatsRequired
+        };
+    });
+
+    const totalWheelchairAreaRequiredSqFt = tierRequirements.reduce((sum, tier) => (
+        sum + tier.wheelchairAreaRequiredSqFt
+    ), 0);
+    const totalCompanionAreaRequiredSqFt = tierRequirements.reduce((sum, tier) => (
+        sum + tier.companionAreaRequiredSqFt
+    ), 0);
+
+    return {
+        assumptions: {
+            companionSeatsPerWheelchair: normalizeMetricValue(
+                accessibilitySettings?.companionSeatsPerWheelchair,
+                DEFAULT_ACCESSIBILITY_SETTINGS.companionSeatsPerWheelchair
+            ),
+            wheelchairAreaSqFt,
+            companionAreaSqFt
+        },
+        tierRequirements,
+        totalWheelchairSpacesRequired,
+        totalCompanionSeatsRequired,
+        totalWheelchairZonesRequired,
+        totalWheelchairAreaRequiredSqFt,
+        totalCompanionAreaRequiredSqFt,
+        totalAccessibilityAreaRequiredSqFt: (
+            totalWheelchairAreaRequiredSqFt + totalCompanionAreaRequiredSqFt
+        ),
+        totalAdjustedOccupancy: (
+            totalBaseOccupancy + totalWheelchairSpacesRequired + totalCompanionSeatsRequired
+        )
+    };
+}
+
 export function computeMinimumBlockCountForSeatLimit({ backRowSeatsPerRun, seatsBetweenAisles }) {
     const backSeats = Math.max(0, Number(backRowSeatsPerRun) || 0);
     const limit = Math.max(1, Math.round(Number(seatsBetweenAisles) || 1));

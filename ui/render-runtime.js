@@ -4,7 +4,9 @@ import {
     buildTierMetricsByIndexFromLayouts
 } from '../core/profile-solver.js';
 import { buildConfigurationAisleSummary } from '../core/aisle-layout.js';
+import { buildAccessibilitySummary } from '../core/egress-policy.js';
 import {
+    buildAccessibilityParams,
     buildBowlConfig,
     buildEgressParams,
     buildFieldVisibility,
@@ -69,6 +71,7 @@ export class RenderRuntime {
         const activeSolvers = filterActiveSolvers(solvers);
         let bowlConfig = buildBowlConfig(state, template);
         const egressParams = buildEgressParams(state);
+        const accessibilityParams = buildAccessibilityParams(state);
         const visibility = buildFieldVisibility(state);
         const seatPreviewOptions = buildSceneSeatPreviewOptions(state);
 
@@ -76,6 +79,11 @@ export class RenderRuntime {
         let visualFocalY = 0;
         let tierMetricsByIndex = new Map();
         let tierAisleLayouts = [];
+        let accessibilitySummary = buildAccessibilitySummary({
+            totalOccupancy: 0,
+            tierOccupancies: [],
+            accessibilitySettings: accessibilityParams
+        });
         let configurationSummary = buildConfigurationAisleSummary({
             tierLayouts: tierAisleLayouts
         });
@@ -90,13 +98,23 @@ export class RenderRuntime {
                 offsetCorrection,
                 egressParams
             ) || [];
+            const baseConfigurationSummary = buildConfigurationAisleSummary({
+                tierLayouts: tierAisleLayouts
+            });
+            accessibilitySummary = buildAccessibilitySummary({
+                totalOccupancy: baseConfigurationSummary.totalOccupancyAllTiers,
+                tierOccupancies: baseConfigurationSummary.tierSeatCounts,
+                accessibilitySettings: accessibilityParams
+            });
             tierMetricsByIndex = buildTierMetricsByIndexFromLayouts({
                 tierLayouts: tierAisleLayouts,
                 egressParams,
-                solvers
+                solvers,
+                accessibilitySummary
             });
             configurationSummary = buildConfigurationAisleSummary({
-                tierLayouts: tierAisleLayouts
+                tierLayouts: tierAisleLayouts,
+                accessibilitySummary
             });
         }
 

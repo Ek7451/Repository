@@ -635,6 +635,7 @@ body.jlg-shell {
 
 .jlg-shell #fieldSetupSection,
 .jlg-shell #occupancySection,
+.jlg-shell #accessibilitySection,
 .jlg-shell #bowlConfigSection,
 .jlg-shell .control-section.tier-section-1 {
     border-left: 4px solid #232323;

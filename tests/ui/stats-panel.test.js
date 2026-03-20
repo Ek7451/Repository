@@ -171,4 +171,53 @@ describe('StatsPanel', () => {
         expect(tierSectionClasses).toContain('results-details');
         expect(tierSectionClasses).not.toContain('collapsed');
     });
+
+    test('renders accessibility totals and tier reporting from the shared stats dto', () => {
+        const viewModel = buildStatsDto({
+            solvers: [createSolver()],
+            focalPointFt: { x: 0, z: 0 },
+            bowlConfig: { type: 'Full' },
+            egressParams: { egressFactor: 0.2 },
+            tierMetricsByIndex: new Map([[0, createMetrics({
+                accessibility: {
+                    wheelchairSpacesRequired: 4,
+                    companionSeatsRequired: 4,
+                    wheelchairZonesRequired: 2,
+                    wheelchairAreaRequiredSqFt: 36,
+                    companionAreaRequiredSqFt: 24,
+                    totalAccessibilityAreaRequiredSqFt: 60,
+                    adjustedOccupancy: 128
+                }
+            })]]),
+            configurationSummary: {
+                totalOccupancyAllTiers: 120,
+                accessibility: {
+                    totalWheelchairSpacesRequired: 4,
+                    totalCompanionSeatsRequired: 4,
+                    totalWheelchairZonesRequired: 2,
+                    totalWheelchairAreaRequiredSqFt: 36,
+                    totalCompanionAreaRequiredSqFt: 24,
+                    totalAccessibilityAreaRequiredSqFt: 60,
+                    totalAdjustedOccupancy: 128
+                }
+            }
+        });
+        const statsEl = { innerHTML: '' };
+        const detailsEl = {
+            innerHTML: '',
+            querySelectorAll: vi.fn(() => [])
+        };
+        const panel = new StatsPanel({
+            statsEl: /** @type {any} */ (statsEl),
+            detailsEl: /** @type {any} */ (detailsEl)
+        });
+
+        panel.update(viewModel);
+
+        expect(statsEl.innerHTML).toContain('ACCESSIBILITY REPORTING');
+        expect(statsEl.innerHTML).toContain('Wheelchair Spaces');
+        expect(statsEl.innerHTML).toContain('Adjusted Occupancy');
+        expect(statsEl.innerHTML).toContain('128');
+        expect(statsEl.innerHTML).toContain('wheelchair locations still do not alter seating blocks or aisle widths');
+    });
 });

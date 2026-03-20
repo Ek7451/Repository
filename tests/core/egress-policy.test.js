@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    buildAccessibilitySummary,
     computeAisleTributaryOccupancies,
     buildDistributedAisleCountMatrix,
     clampAisleWidthIn,
+    computeMinimumWheelchairSpaces,
+    computeMinimumWheelchairZones,
     computeRequiredPerimeterSegmentCounts,
     computeAssignedAisleWidthIn,
     computeMaximumOccupantsPerAisle,
@@ -19,7 +22,8 @@ import {
     solveUniformTierEgressPolicy,
     validatePerimeterSeatCaps,
     validateDistributedSeatCaps,
-    validateTributaryAisleCapacity
+    validateTributaryAisleCapacity,
+    createDefaultAccessibilitySettings
 } from '../../core/egress-policy.js';
 
 describe('egress policy helpers', () => {
@@ -134,6 +138,68 @@ describe('egress policy helpers', () => {
             blocksAddedForEgress: 0,
             converged: true
         });
+    });
+
+    it('computes wheelchair space and zone requirements from the shared accessibility policy', () => {
+        const accessibilitySettings = createDefaultAccessibilitySettings();
+
+        expect(computeMinimumWheelchairSpaces({
+            totalOccupancy: 530,
+            accessibilitySettings
+        })).toBe(7);
+        expect(computeMinimumWheelchairSpaces({
+            totalOccupancy: 5001,
+            accessibilitySettings
+        })).toBe(37);
+        expect(computeMinimumWheelchairZones({
+            requiredWheelchairSpaces: 7,
+            accessibilitySettings
+        })).toBe(3);
+        expect(computeMinimumWheelchairZones({
+            requiredWheelchairSpaces: 17,
+            accessibilitySettings
+        })).toBe(5);
+    });
+
+    it('allocates accessibility totals to tiers deterministically while preserving total sums', () => {
+        const summary = buildAccessibilitySummary({
+            totalOccupancy: 530,
+            tierOccupancies: [
+                { tierIndex: 0, tierSeatCount: 265 },
+                { tierIndex: 1, tierSeatCount: 265 }
+            ],
+            accessibilitySettings: createDefaultAccessibilitySettings()
+        });
+
+        expect(summary).toMatchObject({
+            totalWheelchairSpacesRequired: 7,
+            totalCompanionSeatsRequired: 7,
+            totalWheelchairZonesRequired: 3,
+            totalWheelchairAreaRequiredSqFt: 63,
+            totalCompanionAreaRequiredSqFt: 42,
+            totalAccessibilityAreaRequiredSqFt: 105,
+            totalAdjustedOccupancy: 544
+        });
+        expect(summary.tierRequirements).toEqual([
+            expect.objectContaining({
+                tierIndex: 0,
+                baseOccupancy: 265,
+                wheelchairSpacesRequired: 4,
+                companionSeatsRequired: 4,
+                wheelchairZonesRequired: 2,
+                totalAccessibilityAreaRequiredSqFt: 60,
+                adjustedOccupancy: 273
+            }),
+            expect.objectContaining({
+                tierIndex: 1,
+                baseOccupancy: 265,
+                wheelchairSpacesRequired: 3,
+                companionSeatsRequired: 3,
+                wheelchairZonesRequired: 1,
+                totalAccessibilityAreaRequiredSqFt: 45,
+                adjustedOccupancy: 271
+            })
+        ]);
     });
 
     it('solves uniform tier egress metrics with stable public fields', () => {

@@ -62,6 +62,23 @@ function buildEgressDisplayData({
     };
 }
 
+function buildAccessibilityDisplayData(accessibility = null) {
+    if (!accessibility || typeof accessibility !== 'object') return null;
+
+    return {
+        wheelchairSpacesRequired: Math.max(0, Number(accessibility.wheelchairSpacesRequired) || 0),
+        companionSeatsRequired: Math.max(0, Number(accessibility.companionSeatsRequired) || 0),
+        wheelchairZonesRequired: Math.max(0, Number(accessibility.wheelchairZonesRequired) || 0),
+        wheelchairAreaRequiredSqFt: Math.max(0, Number(accessibility.wheelchairAreaRequiredSqFt) || 0),
+        companionAreaRequiredSqFt: Math.max(0, Number(accessibility.companionAreaRequiredSqFt) || 0),
+        totalAccessibilityAreaRequiredSqFt: Math.max(
+            0,
+            Number(accessibility.totalAccessibilityAreaRequiredSqFt) || 0
+        ),
+        adjustedOccupancy: Math.max(0, Number(accessibility.adjustedOccupancy) || 0)
+    };
+}
+
 function buildTierStatsViewModel({
     solver,
     loopIndex,
@@ -170,6 +187,7 @@ function buildTierStatsViewModel({
             color: accentColor,
             capacity: Math.max(0, Number(metrics?.capacity) || 0)
         },
+        accessibility: buildAccessibilityDisplayData(metrics?.accessibility),
         egress,
         rows
     };
@@ -231,12 +249,47 @@ export function buildStatsViewModel({
         0,
         Number(configurationSummary?.totalOccupancyAllTiers) || 0
     );
+    const accessibilitySummary = configurationSummary?.accessibility && typeof configurationSummary.accessibility === 'object'
+        ? configurationSummary.accessibility
+        : null;
 
     return {
         summary: {
             totalRows,
             totalOccupancy,
             averageCValueDisplay,
+            accessibility: accessibilitySummary
+                ? {
+                    totalWheelchairSpacesRequired: Math.max(
+                        0,
+                        Number(accessibilitySummary.totalWheelchairSpacesRequired) || 0
+                    ),
+                    totalCompanionSeatsRequired: Math.max(
+                        0,
+                        Number(accessibilitySummary.totalCompanionSeatsRequired) || 0
+                    ),
+                    totalWheelchairZonesRequired: Math.max(
+                        0,
+                        Number(accessibilitySummary.totalWheelchairZonesRequired) || 0
+                    ),
+                    totalWheelchairAreaRequiredSqFt: Math.max(
+                        0,
+                        Number(accessibilitySummary.totalWheelchairAreaRequiredSqFt) || 0
+                    ),
+                    totalCompanionAreaRequiredSqFt: Math.max(
+                        0,
+                        Number(accessibilitySummary.totalCompanionAreaRequiredSqFt) || 0
+                    ),
+                    totalAccessibilityAreaRequiredSqFt: Math.max(
+                        0,
+                        Number(accessibilitySummary.totalAccessibilityAreaRequiredSqFt) || 0
+                    ),
+                    totalAdjustedOccupancy: Math.max(
+                        0,
+                        Number(accessibilitySummary.totalAdjustedOccupancy) || 0
+                    )
+                }
+                : null,
             qualityDistribution: [
                 { label: 'Excellent', count: Math.max(0, Number(qualityDistribution.Excellent) || 0) },
                 { label: 'Good', count: Math.max(0, Number(qualityDistribution.Good) || 0) },

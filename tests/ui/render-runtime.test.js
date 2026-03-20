@@ -159,7 +159,45 @@ describe('RenderRuntime', () => {
                 { tierIndex: 0, tierSeatCount: 265 },
                 { tierIndex: 1, tierSeatCount: 265 }
             ],
-            maxRequiredAisleWidthInOverall: 26.6
+            maxRequiredAisleWidthInOverall: 26.6,
+            accessibility: {
+                assumptions: {
+                    companionSeatsPerWheelchair: 1,
+                    wheelchairAreaSqFt: 9,
+                    companionAreaSqFt: 6
+                },
+                tierRequirements: [
+                    {
+                        tierIndex: 0,
+                        baseOccupancy: 265,
+                        wheelchairSpacesRequired: 4,
+                        companionSeatsRequired: 4,
+                        wheelchairZonesRequired: 2,
+                        wheelchairAreaRequiredSqFt: 36,
+                        companionAreaRequiredSqFt: 24,
+                        totalAccessibilityAreaRequiredSqFt: 60,
+                        adjustedOccupancy: 273
+                    },
+                    {
+                        tierIndex: 1,
+                        baseOccupancy: 265,
+                        wheelchairSpacesRequired: 3,
+                        companionSeatsRequired: 3,
+                        wheelchairZonesRequired: 1,
+                        wheelchairAreaRequiredSqFt: 27,
+                        companionAreaRequiredSqFt: 18,
+                        totalAccessibilityAreaRequiredSqFt: 45,
+                        adjustedOccupancy: 271
+                    }
+                ],
+                totalWheelchairSpacesRequired: 7,
+                totalCompanionSeatsRequired: 7,
+                totalWheelchairZonesRequired: 3,
+                totalWheelchairAreaRequiredSqFt: 63,
+                totalCompanionAreaRequiredSqFt: 42,
+                totalAccessibilityAreaRequiredSqFt: 105,
+                totalAdjustedOccupancy: 544
+            }
         });
         expect(snapshot.tierAisleLayouts[0]).toEqual(expect.objectContaining({
             tierIndex: 0,
@@ -187,7 +225,14 @@ describe('RenderRuntime', () => {
             numSections: 1,
             seatsPerBlock: '18.0',
             occupantsPerSection: 265,
-            occupantsPerAisleLine: 133
+            occupantsPerAisleLine: 133,
+            accessibility: {
+                wheelchairSpacesRequired: 4,
+                companionSeatsRequired: 4,
+                wheelchairZonesRequired: 2,
+                totalAccessibilityAreaRequiredSqFt: 60,
+                adjustedOccupancy: 273
+            }
         });
         expect(snapshot.fieldRenderInput).toEqual(expect.objectContaining({
             template: snapshot.template,
@@ -229,7 +274,14 @@ describe('RenderRuntime', () => {
         expect(snapshot.statsViewModel).toEqual(expect.objectContaining({
             summary: expect.objectContaining({
                 totalRows: expect.any(Number),
-                totalOccupancy: 530
+                totalOccupancy: 530,
+                accessibility: expect.objectContaining({
+                    totalWheelchairSpacesRequired: 7,
+                    totalCompanionSeatsRequired: 7,
+                    totalWheelchairZonesRequired: 3,
+                    totalAccessibilityAreaRequiredSqFt: 105,
+                    totalAdjustedOccupancy: 544
+                })
             }),
             tiers: expect.any(Array)
         }));

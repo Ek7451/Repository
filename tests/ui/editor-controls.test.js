@@ -150,6 +150,33 @@ function createState() {
         occupancy: {
             showSeatCubes3D: false
         },
+        accessibility: {
+            companionSeatsPerWheelchair: 1,
+            wheelchairAreaSqFt: 9,
+            companionAreaSqFt: 6,
+            wheelchairSpaceRequirements: {
+                upto25: 1,
+                upto50: 2,
+                upto150: 4,
+                upto300: 5,
+                upto500: 6,
+                over500Base: 6,
+                over500StepOccupants: 150,
+                over500StepSpaces: 1,
+                over5000Base: 36,
+                over5000StepOccupants: 200,
+                over5000StepSpaces: 1
+            },
+            wheelchairZoneRequirements: {
+                upto1Space: 1,
+                upto4Spaces: 2,
+                upto8Spaces: 3,
+                upto16Spaces: 4,
+                over16Base: 4,
+                over16StepSpaces: 8,
+                over16StepZones: 1
+            }
+        },
         ui: {
             activeViewTab: 'profile',
             activeResultsTab: 'statsTab'
@@ -227,6 +254,8 @@ describe('EditorControls', () => {
             bowlSideLengthSlider: createElement(),
             bowlEndLengthInput: createElement(),
             bowlEndLengthSlider: createElement(),
+            accessibilityCompanionRatioInput: createElement(),
+            accessibilitySpacesUpTo500Input: createElement(),
             tier1Section: createElement(),
             tier2Section: createElement(),
             tier3Section: createElement()
@@ -240,6 +269,8 @@ describe('EditorControls', () => {
         state.bowl.endLength = 340;
         state.bowl.straightAisleMode = 'perpendicular';
         state.bowl.chamferAisleMode = 'radial';
+        state.accessibility.companionSeatsPerWheelchair = 1.5;
+        state.accessibility.wheelchairSpaceRequirements.upto500 = 7;
 
         vi.stubGlobal('document', createDocumentStub(elements));
 
@@ -269,6 +300,8 @@ describe('EditorControls', () => {
         expect(elements.chamferAisleMode.value).toBe('radial');
         expect(elements.bowlSideLengthInput.value).toBe('280');
         expect(elements.bowlEndLengthInput.value).toBe('340');
+        expect(elements.accessibilityCompanionRatioInput.value).toBe('1.5');
+        expect(elements.accessibilitySpacesUpTo500Input.value).toBe('7');
         expect(elements.sideLengthRow.hidden).toBe(false);
         expect(elements.sideLength34Row.hidden).toBe(true);
         expect(
@@ -361,6 +394,7 @@ describe('EditorControls', () => {
             bowlEndLengthSlider: createElement({ value: '300' }),
             straightAisleMode: createElement({ value: 'radial' }),
             chamferAisleMode: createElement({ value: 'radial' }),
+            accessibilityCompanionRatioInput: createElement({ value: '1' }),
             enableTier2: createElement(),
             enableTier3: createElement(),
             tier2Section: createElement(),
@@ -462,6 +496,17 @@ describe('EditorControls', () => {
         expect(onChange).toHaveBeenCalledWith({
             reason: 'state',
             controlId: 'chamferAisleMode'
+        });
+
+        onChange.mockClear();
+        elements.accessibilityCompanionRatioInput.value = '1.5';
+        elements.accessibilityCompanionRatioInput.dispatch('input');
+        expect(state.accessibility.companionSeatsPerWheelchair).toBe(1.5);
+        expect(onChange).not.toHaveBeenCalled();
+        elements.accessibilityCompanionRatioInput.dispatch('blur');
+        expect(onChange).toHaveBeenCalledWith({
+            reason: 'state',
+            controlId: 'accessibilityCompanionRatioInput'
         });
 
         const tier2Defaults = buildNextTierDefaultsFromTiers(state.tiers, buildFocalPointFt(state), 2);

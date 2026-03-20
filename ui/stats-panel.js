@@ -18,7 +18,12 @@ const TIER_METRIC_ICONS = {
     sections: '<svg class="tier-metric-icon icon-sections" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h6v16H4z M12 4h8v7h-8z M12 13h8v7h-8z" /></svg>',
     seats: '<svg class="tier-metric-icon icon-seats" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4a2 2 0 012-2h6a2 2 0 012 2v10H7V4z"/><rect x="3" y="14" width="18" height="5" rx="2.5"/></svg>',
     avg: '<svg class="tier-metric-icon icon-avg" viewBox="0 0 24 24" fill="currentColor"><path d="M2.5 8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v4h-5V8z M1 12h8v2H1z M9.5 8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v4h-5V8z M8 12h8v2H8z M16.5 8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v4h-5V8z M15 12h8v2h-8z"/></svg>',
-    load: '<svg class="tier-metric-icon icon-load" viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" /></svg>'
+    load: '<svg class="tier-metric-icon icon-load" viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" /></svg>',
+    wheelchair: '<svg class="tier-metric-icon icon-wheelchair" viewBox="0 0 24 24" fill="currentColor"><circle cx="16.5" cy="17" r="3.5"/><circle cx="10" cy="5" r="2"/><path d="M9 8h4l2 5h-3.5a3.5 3.5 0 0 0-3.35 2.5H6.5L8 9.5A1.5 1.5 0 0 1 9 8z"/><path d="M13 18H7a1 1 0 1 1 0-2h4.4"/></svg>',
+    companion: '<svg class="tier-metric-icon icon-companion" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="8" r="3"/><circle cx="16.5" cy="9" r="2.5"/><path d="M3 19c0-2.8 2.2-5 5-5s5 2.2 5 5v1H3z"/><path d="M13 20c0-2.2 1.8-4 4-4s4 1.8 4 4v0h-8z"/></svg>',
+    zones: '<svg class="tier-metric-icon icon-zones" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h7v7H4z"/><path d="M13 4h7v7h-7z"/><path d="M4 13h7v7H4z"/><path d="M13 13h7v7h-7z"/></svg>',
+    area: '<svg class="tier-metric-icon icon-area" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h6v2H6v4H4V4zm10 0h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm14 0h2v6h-6v-2h4v-4z"/></svg>',
+    adjusted: '<svg class="tier-metric-icon icon-adjusted" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3 2 9l10 6 10-6-10-6zm-7 9.5V16l7 4 7-4v-3.5l-7 4-7-4z"/></svg>'
 };
 
 function escapeStyleValue(value) {
@@ -35,6 +40,98 @@ function serializeStyleVars(styleVars = {}) {
         .map(([name, value]) => `--${name}:${escapeStyleValue(value)}`);
 
     return declarations.length > 0 ? ` style="${declarations.join(';')}"` : '';
+}
+
+function formatMetricCount(value) {
+    return Math.max(0, Math.round(Number(value) || 0)).toLocaleString();
+}
+
+function formatMetricArea(value) {
+    const numeric = Math.max(0, Number(value) || 0);
+    return Number.isInteger(numeric) ? numeric.toLocaleString() : numeric.toFixed(1);
+}
+
+function buildAccessibilityMetricGrid(accessibility = null) {
+    if (!accessibility) return '';
+
+    return `
+        <div class="tier-metrics-grid">
+            <div class="tier-metric-item">
+                <div class="tier-metric-label">Wheelchair Spaces</div>
+                <div class="tier-metric-content">
+                    ${TIER_METRIC_ICONS.wheelchair}
+                    <div class="tier-metric-value">${formatMetricCount(accessibility.wheelchairSpacesRequired)}</div>
+                </div>
+            </div>
+            <div class="tier-metric-item">
+                <div class="tier-metric-label">Companion Seats</div>
+                <div class="tier-metric-content">
+                    ${TIER_METRIC_ICONS.companion}
+                    <div class="tier-metric-value">${formatMetricCount(accessibility.companionSeatsRequired)}</div>
+                </div>
+            </div>
+            <div class="tier-metric-item">
+                <div class="tier-metric-label">Wheelchair Zones</div>
+                <div class="tier-metric-content">
+                    ${TIER_METRIC_ICONS.zones}
+                    <div class="tier-metric-value">${formatMetricCount(accessibility.wheelchairZonesRequired)}</div>
+                </div>
+            </div>
+            <div class="tier-metric-item">
+                <div class="tier-metric-label">Wheelchair Area</div>
+                <div class="tier-metric-content">
+                    ${TIER_METRIC_ICONS.area}
+                    <div class="tier-metric-value">${formatMetricArea(accessibility.wheelchairAreaRequiredSqFt)} <span class="small-text">sf</span></div>
+                </div>
+            </div>
+            <div class="tier-metric-item">
+                <div class="tier-metric-label">Companion Area</div>
+                <div class="tier-metric-content">
+                    ${TIER_METRIC_ICONS.area}
+                    <div class="tier-metric-value">${formatMetricArea(accessibility.companionAreaRequiredSqFt)} <span class="small-text">sf</span></div>
+                </div>
+            </div>
+            <div class="tier-metric-item">
+                <div class="tier-metric-label">Accessibility Area</div>
+                <div class="tier-metric-content">
+                    ${TIER_METRIC_ICONS.area}
+                    <div class="tier-metric-value">${formatMetricArea(accessibility.totalAccessibilityAreaRequiredSqFt)} <span class="small-text">sf</span></div>
+                </div>
+            </div>
+            <div class="tier-metric-item">
+                <div class="tier-metric-label">Adjusted Occupancy</div>
+                <div class="tier-metric-content">
+                    ${TIER_METRIC_ICONS.adjusted}
+                    <div class="tier-metric-value">${formatMetricCount(accessibility.adjustedOccupancy)} <span class="small-text">occ</span></div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function buildAccessibilitySummaryMarkup(summary = {}) {
+    const accessibility = summary?.accessibility;
+    if (!accessibility) return '';
+
+    return `
+        <div class="results-divider results-divider--spacious"></div>
+        <div class="total-occupancy-label results-section-title--spaced">ACCESSIBILITY REPORTING</div>
+        <div class="tier-metrics-card tier-accessibility-summary">
+            <div class="tier-metrics-header tier-accessibility-summary">Configuration Totals</div>
+            ${buildAccessibilityMetricGrid({
+                wheelchairSpacesRequired: accessibility.totalWheelchairSpacesRequired,
+                companionSeatsRequired: accessibility.totalCompanionSeatsRequired,
+                wheelchairZonesRequired: accessibility.totalWheelchairZonesRequired,
+                wheelchairAreaRequiredSqFt: accessibility.totalWheelchairAreaRequiredSqFt,
+                companionAreaRequiredSqFt: accessibility.totalCompanionAreaRequiredSqFt,
+                totalAccessibilityAreaRequiredSqFt: accessibility.totalAccessibilityAreaRequiredSqFt,
+                adjustedOccupancy: accessibility.totalAdjustedOccupancy
+            })}
+            <div class="tier-capacity-check">
+                Accessibility metrics are reported in addition to modeled seating occupancy and do not yet change aisle geometry or remove seats from the plan.
+            </div>
+        </div>
+    `;
 }
 
 function normalizeQualityDistribution(summary = {}) {
@@ -178,6 +275,7 @@ function buildEgressMarkup(tiers = []) {
     tiers.forEach((tier) => {
         const egress = tier?.egress;
         if (!egress) return;
+        const accessibility = tier?.accessibility;
 
         let warningHtml = '';
         if (egress.warningText) {
@@ -186,6 +284,13 @@ function buildEgressMarkup(tiers = []) {
                 ${egress.warningText}
             </div>`;
         }
+        const accessibilityHtml = accessibility
+            ? `
+                <div class="results-divider"></div>
+                <div class="tier-metrics-header tier-${tier.tierNumber}">Accessibility Reporting</div>
+                ${buildAccessibilityMetricGrid(accessibility)}
+            `
+            : '';
 
         cardsHtml += `
             <div class="tier-metrics-card tier-${tier.tierNumber}">
@@ -239,6 +344,7 @@ function buildEgressMarkup(tiers = []) {
                 <div class="tier-capacity-check">
                     Aisle Egress Capacity (per aisle): ${egress.occupantsPerAisleLine} occ &times; ${egress.egressFactor}"/occ = ${egress.capacityWidth}" Req.${egress.perSideMirrorNote}
                 </div>
+                ${accessibilityHtml}
                 ${warningHtml}
             </div>
         `;
@@ -292,11 +398,11 @@ function buildEgressMarkup(tiers = []) {
                 * Code Scope Disclaimer
             </div>
             <div class="section-body results-details-body--disclaimer">
-                Early stage geometric simplification only. The following code egress requirements are EXCLUDED from current results and must be evaluated in later phases:<br />
+                Early stage geometric simplification only. The following code egress requirements remain excluded or only partially represented and must be evaluated in later phases:<br />
                 &bull; 30 ft rules and dead end row access conditions<br />
                 &bull; Vomitory, concourse, door bank, exit stair, discharge capacity and merging flows<br />
                 &bull; Exit loss checks and exit separation<br />
-                &bull; Accessibility and wheelchair locations affecting seating blocks and aisle widths<br />
+                &bull; Accessibility counts, zones, and area assumptions are reported, but wheelchair locations still do not alter seating blocks or aisle widths<br />
                 &bull; Handrail and guard encroachment rules
             </div>
         </div>
@@ -353,6 +459,8 @@ export class StatsPanel {
                     <div class="occupancy-breakdown">
                         ${buildOccupancyBreakdownMarkup(viewModel.tiers, totalOccupancy)}
                     </div>
+
+                    ${buildAccessibilitySummaryMarkup(summary)}
 
                     <div class="results-divider results-divider--spacious"></div>
 

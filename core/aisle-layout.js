@@ -4573,7 +4573,7 @@ export function buildTierAisleAnalysis({
     return lastAnalysis;
 }
 
-export function buildConfigurationAisleSummary({ tierLayouts = [] } = {}) {
+export function buildConfigurationAisleSummary({ tierLayouts = [], accessibilitySummary = null } = {}) {
     const safeTierLayouts = Array.isArray(tierLayouts) ? tierLayouts : [];
     const tierSeatCounts = safeTierLayouts.map((tierLayout, index) => ({
         tierIndex: Math.max(0, Math.floor(Number(tierLayout?.tierIndex) || index)),
@@ -4591,7 +4591,14 @@ export function buildConfigurationAisleSummary({ tierLayouts = [] } = {}) {
         tierSeatCounts,
         maxRequiredAisleWidthInOverall: safeTierLayouts.reduce((maxWidth, tierLayout) => (
             Math.max(maxWidth, Math.max(0, Number(tierLayout?.sectionSummary?.maxRequiredAisleWidthIn) || 0))
-        ), 0)
+        ), 0),
+        ...(accessibilitySummary
+            ? {
+                accessibility: {
+                    ...accessibilitySummary
+                }
+            }
+            : {})
     };
 }
 
