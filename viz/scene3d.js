@@ -10,7 +10,8 @@ import {
     sampleAisleBand,
     buildTierAisleReferenceMap,
     resolveTierAisleStationRatios,
-    samplePathPointByRatio
+    samplePathPointByRatio,
+    getTierRenderedAisleWidthFt
 } from '../core/aisle-layout.js';
 import { buildStructuralProfileGeometry } from '../core/profile-solver.js';
 import { intervalLengthToSeatCount } from '../core/seat-math.js';
@@ -60,10 +61,6 @@ function normalizeThemeName(theme) {
 let BRAND_COLORS = SCENE_THEME_COLORS.light;
 const MIDDLE_CLICK_DOUBLE_MS = 400;
 const MIDDLE_CLICK_DRAG_PX = 6;
-
-function getSectionSummaryAisleWidthFt(tierLayout, aisleIndex) {
-    return Math.max(0, Number(tierLayout?.sectionSummary?.aisles?.[aisleIndex]?.renderedWidthFt) || 0);
-}
 
 function syncSceneThemeColors(theme = 'light') {
     theme = normalizeThemeName(theme);
@@ -756,7 +753,7 @@ export class Scene3D {
                 );
                 if (!ratios) return;
 
-                const widthFt = getSectionSummaryAisleWidthFt(tierAisleLayout, aisleIndex);
+                const widthFt = getTierRenderedAisleWidthFt(tierAisleLayout, aisleIndex);
                 if (widthFt <= 0) return;
                 const bandFront = sampleAisleBand(pathFront, ratios.uFront, widthFt);
                 const bandBack = sampleAisleBand(pathBack, ratios.uBack, widthFt);
@@ -878,7 +875,7 @@ export class Scene3D {
                         ? ((((u % 1) + 1) % 1))
                         : Math.max(0, Math.min(1, u));
                     const centerDist = normalizedU * path.length;
-                    const aisleWidthFt = getSectionSummaryAisleWidthFt(tierAisleLayout, i);
+                    const aisleWidthFt = getTierRenderedAisleWidthFt(tierAisleLayout, i);
                     if (aisleWidthFt <= 0) continue;
                     this._addSeatBlockedSpan(
                         blockedByPath[pathIndex],

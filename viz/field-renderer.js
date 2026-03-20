@@ -14,7 +14,10 @@ import {
     buildTierAisleReferenceMap,
     buildResolvedTierAisleRatioMap,
     pickBestRowAisleSampling,
-    resolveTierAisleStationRatios
+    resolveTierAisleStationRatios,
+    getTierGoverningAisleWidthIn,
+    getTierRenderedAisleWidthFt,
+    getTierRenderedAisleWidthIn
 } from '../core/aisle-layout.js';
 
 const FIELD_THEME_COLORS = {
@@ -42,19 +45,6 @@ const FIELD_THEME_COLORS = {
         legendText: '#b2bdca'
     }
 };
-
-function getSectionSummaryAisle(tierLayout, aisleIndex) {
-    const aisle = tierLayout?.sectionSummary?.aisles?.[aisleIndex] ?? null;
-    return aisle && typeof aisle === 'object' ? aisle : null;
-}
-
-function getSectionSummaryAisleWidthFt(tierLayout, aisleIndex) {
-    return Math.max(0, Number(getSectionSummaryAisle(tierLayout, aisleIndex)?.renderedWidthFt) || 0);
-}
-
-function getSectionSummaryAisleWidthIn(tierLayout, aisleIndex) {
-    return Math.max(0, Number(getSectionSummaryAisle(tierLayout, aisleIndex)?.renderedWidthIn) || 0);
-}
 
 function resolveSectionTemplateBoundaryU(path, aisleMap, boundaryKind, aisleIndex, fallbackU) {
     if (!path) return Number(fallbackU) || 0;
@@ -1383,7 +1373,7 @@ export class FieldRenderer {
                 );
                 if (!ratios) continue;
 
-                const widthFt = getSectionSummaryAisleWidthFt(tierLayout, i);
+                const widthFt = getTierRenderedAisleWidthFt(tierLayout, i);
                 if (widthFt <= 0) continue;
                 const bandFront = sampleAisleBand(pathFront, ratios.uFront, widthFt);
                 const bandBack = sampleAisleBand(pathBack, ratios.uBack, widthFt);
@@ -1511,7 +1501,7 @@ export class FieldRenderer {
                             ? slot.aisleIndexB
                             : (rightIsA ? slot.aisleIndexA : slot.aisleIndexB));
                     const adjacentAisleWidthFt = Number.isFinite(Number(preferredAisleIndex))
-                        ? getSectionSummaryAisleWidthFt(tierLayout, preferredAisleIndex)
+                        ? getTierRenderedAisleWidthFt(tierLayout, preferredAisleIndex)
                         : 0;
                     const labelCenterOffsetFt = (adjacentAisleWidthFt * 0.5) + ROW_SEATCOUNT_LABEL_EDGE_OFFSET_FT;
                     const edgeInsetT = centerGapFt > 1e-6
@@ -1725,8 +1715,9 @@ export class FieldRenderer {
                 }
             }
 
-            const renderedWidthIn = getSectionSummaryAisleWidthIn(tierLayout, aisleIndex);
-            if (renderedWidthIn > 0 && widthFrontPath && widthBackPath) {
+            const displayWidthIn = getTierGoverningAisleWidthIn(tierLayout, aisleIndex)
+                || getTierRenderedAisleWidthIn(tierLayout, aisleIndex);
+            if (displayWidthIn > 0 && widthFrontPath && widthBackPath) {
                 const widthRatios = this._resolveTierAisleStationRatios(
                     widthFrontPath,
                     widthBackPath,
@@ -1743,7 +1734,7 @@ export class FieldRenderer {
                         pathIndex,
                         x: (frontPoint.x + backPoint.x) * 0.5,
                         y: (frontPoint.y + backPoint.y) * 0.5,
-                        text: formatAisleWidthLabel(renderedWidthIn)
+                        text: formatAisleWidthLabel(displayWidthIn)
                     });
                 }
             }
@@ -1809,7 +1800,7 @@ export class FieldRenderer {
                 );
                 if (!ratios) continue;
 
-                const widthFt = getSectionSummaryAisleWidthFt(tierLayout, i);
+                const widthFt = getTierRenderedAisleWidthFt(tierLayout, i);
                 if (widthFt <= 0) continue;
                 const bandFront = sampleAisleBand(pathFront, ratios.uFront, widthFt);
                 const bandBack = sampleAisleBand(pathBack, ratios.uBack, widthFt);

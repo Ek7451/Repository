@@ -6,6 +6,7 @@ import {
     computeUsableRunLengthIn,
     countSeatsFromCenterlineGapFt,
     countSeatsFromUsableRunLengthIn,
+    sectionBoundaryGapToSeatCount,
     sectionCenterGapToSeatCount,
     seatingLengthInToSeatCount,
     seatingLengthToSeatCount,
@@ -35,6 +36,7 @@ describe('seat math helpers', () => {
     });
 
     it('subtracts aisle width for center-gap and span calculations', () => {
+        expect(sectionBoundaryGapToSeatCount(12, 4, 2, 20)).toBe(5);
         expect(sectionCenterGapToSeatCount(12, 4, 20)).toBe(4);
         expect(spanGapToSeatCount(12, 4, 20)).toBe(4);
     });

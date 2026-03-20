@@ -35,9 +35,16 @@ export function computeAverageSeatsPerBlock({ seatsPerRow, blockCount }) {
     return resolvedSeatsPerRow / resolvedBlockCount;
 }
 
-export function sectionCenterGapToSeatCount(centerGapFt, aisleWidthFt, seatWidthIn) {
-    const seatingGapFt = Math.max(0, (Number(centerGapFt) || 0) - normalizeAisleWidthFt(aisleWidthFt));
+export function sectionBoundaryGapToSeatCount(centerGapFt, leftAisleWidthFt, rightAisleWidthFt, seatWidthIn) {
+    const leftAisleFt = normalizeAisleWidthFt(leftAisleWidthFt);
+    const rightAisleFt = normalizeAisleWidthFt(rightAisleWidthFt);
+    const seatingGapFt = Math.max(0, (Number(centerGapFt) || 0) - (leftAisleFt * 0.5) - (rightAisleFt * 0.5));
     return seatingLengthToSeatCount(seatingGapFt, seatWidthIn);
+}
+
+export function sectionCenterGapToSeatCount(centerGapFt, aisleWidthFt, seatWidthIn) {
+    const aisleFt = normalizeAisleWidthFt(aisleWidthFt);
+    return sectionBoundaryGapToSeatCount(centerGapFt, aisleFt, aisleFt, seatWidthIn);
 }
 
 export function countSeatsFromCenterlineGapFt({ centerGapFt, aisleWidthFt, seatWidthIn }) {
@@ -45,9 +52,8 @@ export function countSeatsFromCenterlineGapFt({ centerGapFt, aisleWidthFt, seatW
 }
 
 export function spanGapToSeatCount(gapFt, aisleWidthFt, seatWidthIn) {
-    const spanFt = Math.max(0, Number(gapFt) || 0);
     const aisleFt = normalizeAisleWidthFt(aisleWidthFt);
-    return seatingLengthToSeatCount(Math.max(0, spanFt - aisleFt), seatWidthIn);
+    return sectionBoundaryGapToSeatCount(gapFt, aisleFt, aisleFt, seatWidthIn);
 }
 
 export function intervalLengthToSeatCount(lengthFt, seatWidthIn) {

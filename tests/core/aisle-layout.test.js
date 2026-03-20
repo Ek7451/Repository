@@ -62,6 +62,81 @@ function buildIndependentSideRunSegments({
     ];
 }
 
+function buildClosedRectangleSegments({
+    width = 16,
+    height = 16,
+    offsetX = 0,
+    offsetY = 0
+} = {}) {
+    const halfWidth = width / 2;
+    const halfHeight = height / 2;
+
+    return [
+        { cmd: 'moveTo', x: offsetX - halfWidth, y: offsetY + halfHeight },
+        { cmd: 'lineTo', x: offsetX + halfWidth, y: offsetY + halfHeight },
+        { cmd: 'lineTo', x: offsetX + halfWidth, y: offsetY - halfHeight },
+        { cmd: 'lineTo', x: offsetX - halfWidth, y: offsetY - halfHeight },
+        { cmd: 'closePath' }
+    ];
+}
+
+function buildManualClosedTierLayout(aisleUs = []) {
+    const aisles = aisleUs.map((u) => ({
+        pathIndex: 0,
+        u,
+        forced: false,
+        anchorType: 'manual_closed_test'
+    }));
+
+    return {
+        aisles,
+        aisleWidthFt: 0,
+        targetAisles: aisles.length,
+        forcedCount: 0,
+        axisExclusionFt: 0,
+        sectionBoundaries: [aisles.map((aisle, _aisleIndex) => ({
+            aisleIndex: _aisleIndex,
+            u: aisle.u,
+            forced: false,
+            boundaryKind: 'aisle',
+            boundaryKey: `aisle:${_aisleIndex}`
+        }))]
+    };
+}
+
+function buildClosedLoopSectionRecords(boundaryOrder = []) {
+    return boundaryOrder.map((aisleIndex, slotIndex) => {
+        const nextAisleIndex = boundaryOrder[(slotIndex + 1) % boundaryOrder.length];
+        const startBoundaryKey = `aisle:${aisleIndex}`;
+        const endBoundaryKey = `aisle:${nextAisleIndex}`;
+
+        return {
+            pathIndex: 0,
+            slotIndex,
+            pathClosed: true,
+            aisleIndexA: aisleIndex,
+            aisleIndexB: nextAisleIndex,
+            startBoundaryKind: 'aisle',
+            endBoundaryKind: 'aisle',
+            startBoundaryKey,
+            endBoundaryKey,
+            boundaryPairKey: __testHooks.buildBoundaryPairKey(startBoundaryKey, endBoundaryKey),
+            startU: NaN,
+            endU: NaN
+        };
+    });
+}
+
+function buildSelectiveClosedPathResolver(validOffsets = [], segments = buildClosedRectangleSegments()) {
+    const allowedOffsets = validOffsets.map((offset) => Number(offset) || 0);
+
+    return (offset) => {
+        const numericOffset = Number(offset) || 0;
+        const isAllowed = allowedOffsets.some((allowedOffset) => Math.abs(numericOffset - allowedOffset) <= 1e-6);
+        return isAllowed ? buildGeometryPaths(segments) : [];
+    };
+}
+
 /**
  * @param {string} type
  * @param {{ frontOffset?: number, backOffset?: number, corner?: string, [key: string]: any }} [options]
@@ -274,6 +349,73 @@ function countDistributedAislesBySegment(tierLayout) {
             counts[segmentIndex] = (counts[segmentIndex] || 0) + 1;
             return counts;
         }, {});
+}
+
+function countFixedDeterministicAisles(tierLayout) {
+    return (Array.isArray(tierLayout?.aisles) ? tierLayout.aisles : []).filter(
+        (aisle) => aisle?.forced || aisle?.anchorType === 'open_edge_terminal'
+    ).length;
+}
+
+function getWorstMeasuredSectionSeatCount(summary) {
+    return Math.max(
+        0,
+        ...((Array.isArray(summary?.sections) ? summary.sections : []).map((section) => Math.max(0, Number(section?.maxSeatsPerRow) || 0)))
+    );
+}
+
+function buildRowMatchedDeterministicBaseline({
+    fixture,
+    rows,
+    egressParams
+}) {
+    const renderer = Object.create(FieldRenderer.prototype);
+    const safeRows = Array.isArray(rows) ? rows : [];
+    const firstRow = safeRows[0];
+    const lastRow = safeRows[safeRows.length - 1];
+    const frontSegments = firstRow
+        ? renderer._getBowlGeometry(fixture.bowlConfig, firstRow.x - firstRow.tread_depth)
+        : fixture.frontSegments;
+    const backSegments = lastRow
+        ? renderer._getBowlGeometry(fixture.bowlConfig, lastRow.x)
+        : fixture.backSegments;
+    const tierLayout = buildTierAisleLayout({
+        frontSegments,
+        backSegments,
+        targetAisles: 0,
+        aisleWidthFt: egressParams.maxAisleWidthIn / 12,
+        bowlConfig: fixture.bowlConfig,
+        maxSeatsBetweenAisles: egressParams.seatsBetweenAisles,
+        seatWidthIn: egressParams.seatWidthIn,
+        maxAisleWidthIn: egressParams.maxAisleWidthIn,
+        egressFactor: egressParams.egressFactor,
+        rowCount: safeRows.length
+    });
+    const summary = summarizeTierLayoutForRows({
+        rows: safeRows,
+        tierLayout,
+        bowlConfig: fixture.bowlConfig,
+        seatWidthIn: egressParams.seatWidthIn,
+        minAisleWidthIn: egressParams.minAisleWidthIn,
+        maxAisleWidthIn: egressParams.maxAisleWidthIn,
+        egressFactor: egressParams.egressFactor,
+        maxSeatsBetweenAisles: egressParams.seatsBetweenAisles
+    });
+    const referencePaths = lastRow
+        ? buildGeometryPaths(renderer._getBowlGeometry(fixture.bowlConfig, lastRow.x - (lastRow.tread_depth * 0.5)))
+        : [];
+    const perimeterModel = __testHooks.buildPerimeterModel(
+        buildGeometryPaths(frontSegments),
+        buildGeometryPaths(backSegments),
+        fixture.bowlConfig
+    );
+
+    return {
+        tierLayout,
+        summary,
+        referencePaths,
+        perimeterModel
+    };
 }
 
 function buildTierAisleAnalysisForFixture({
@@ -1360,6 +1502,379 @@ describe('aisle layout geometry seam', () => {
             expect.objectContaining({ rowIndex: 0, seatCount: 4, sectionCount: 2 }),
             expect.objectContaining({ rowIndex: 1, seatCount: 4, sectionCount: 2 })
         ]);
+    });
+
+    it('builds exactly one row-local closed-path gap per sampled boundary and one seam gap', () => {
+        const [path] = buildGeometryPaths(buildClosedRectangleSegments());
+        const sectionRecords = buildClosedLoopSectionRecords([0, 1, 2, 3]);
+        const evaluation = __testHooks.buildRowLocalBoundaryGapMap({
+            path,
+            aisleMap: new Map([
+                [0, 0.05],
+                [1, 0.3],
+                [2, 0.55],
+                [3, 0.8]
+            ]),
+            sectionRecords,
+            pathClosed: true
+        });
+        const participationCounts = evaluation.gaps.reduce((counts, gap) => {
+            counts.set(gap.startBoundaryKey, (counts.get(gap.startBoundaryKey) || 0) + 1);
+            counts.set(gap.endBoundaryKey, (counts.get(gap.endBoundaryKey) || 0) + 1);
+            return counts;
+        }, new Map());
+
+        expect(evaluation.topologyValid).toBe(true);
+        expect(evaluation.measurementValid).toBe(true);
+        expect(evaluation.gapByPairKey.size).toBe(4);
+        expect(evaluation.gaps).toHaveLength(4);
+        expect(evaluation.wrapGapCount).toBe(1);
+        expect(evaluation.gaps.filter((gap) => gap.seamCrossing)).toHaveLength(1);
+        expect(Array.from(participationCounts.values()).sort((a, b) => a - b)).toEqual([2, 2, 2, 2]);
+    });
+
+    it('measures closed-path sections from row-local boundary pair gaps instead of raw slot orientation', () => {
+        const segments = buildClosedRectangleSegments();
+        const [path] = buildGeometryPaths(segments);
+        const tierLayout = buildManualClosedTierLayout([0, 0.25, 0.5, 0.75]);
+        const referencePaths = buildGeometryPaths(segments);
+        const sampledAisleMap = new Map([
+            [0, 0],
+            [1, 0.75],
+            [2, 0.5],
+            [3, 0.25]
+        ]);
+        const evaluation = __testHooks.buildRowLocalBoundaryGapMap({
+            path,
+            aisleMap: sampledAisleMap,
+            sectionRecords: buildClosedLoopSectionRecords([0, 1, 2, 3]),
+            pathClosed: true
+        });
+        const summary = buildTierAisleLayoutSummary({
+            rows: [{ row_number: 1 }, { row_number: 2 }],
+            tierLayout,
+            referencePaths,
+            resolveRowAisleSampling: () => ({
+                paths: referencePaths,
+                aisleRatiosByPath: new Map([[0, sampledAisleMap]])
+            }),
+            seatWidthIn: 24,
+            minAisleWidthIn: 0,
+            maxAisleWidthIn: 120,
+            egressFactor: 0
+        });
+        const aisleZeroPairKey = __testHooks.buildBoundaryPairKey('aisle:0', 'aisle:1');
+
+        expect(evaluation.topologyValid).toBe(true);
+        expect(evaluation.measurementValid).toBe(true);
+        expect(evaluation.gapByPairKey.get(aisleZeroPairKey)?.centerGapFt).toBeCloseTo(path.length * 0.25, 6);
+        expect(summary.topologyValid).toBe(true);
+        expect(summary.measurementValid).toBe(true);
+        expect(summary.rowSummaries.map((rowSummary) => rowSummary.seatCount)).toEqual([32, 32]);
+        expect(summary.sections.map((section) => section.rowSeatCounts)).toEqual([
+            [8, 8],
+            [8, 8],
+            [8, 8],
+            [8, 8]
+        ]);
+    });
+
+    it('marks a closed-path summary invalid when a reference section pair is no longer row-local adjacent', () => {
+        const segments = buildClosedRectangleSegments();
+        const [path] = buildGeometryPaths(segments);
+        const tierLayout = buildManualClosedTierLayout([0, 0.25, 0.5, 0.75]);
+        const referencePaths = buildGeometryPaths(segments);
+        const sampledAisleMap = new Map([
+            [0, 0],
+            [1, 0.5],
+            [2, 0.25],
+            [3, 0.75]
+        ]);
+        const evaluation = __testHooks.buildRowLocalBoundaryGapMap({
+            path,
+            aisleMap: sampledAisleMap,
+            sectionRecords: buildClosedLoopSectionRecords([0, 1, 2, 3]),
+            pathClosed: true
+        });
+        const summary = buildTierAisleLayoutSummary({
+            rows: [{ row_number: 1 }],
+            tierLayout,
+            referencePaths,
+            resolveRowAisleSampling: () => ({
+                paths: referencePaths,
+                aisleRatiosByPath: new Map([[0, sampledAisleMap]])
+            }),
+            seatWidthIn: 24,
+            minAisleWidthIn: 0,
+            maxAisleWidthIn: 120,
+            egressFactor: 0
+        });
+
+        expect(evaluation.topologyValid).toBe(false);
+        expect(evaluation.nonAdjacentPairs).toContain(
+            __testHooks.buildBoundaryPairKey('aisle:0', 'aisle:1')
+        );
+        expect(summary.topologyValid).toBe(false);
+        expect(summary.measurementValid).toBe(false);
+        expect(summary.invalidTopologyPaths).toEqual([0]);
+        expect(summary.invalidTopologyRowIndices).toEqual([0]);
+        expect(summary.failureReason).toBe('invalid_topology');
+        expect(summary.compliance.isCompliant).toBe(false);
+    });
+
+    it('conserves row seats for valid closed-path sampling and stops aisle escalation on topology failure', () => {
+        const segments = buildClosedRectangleSegments();
+        const [path] = buildGeometryPaths(segments);
+        const referencePaths = buildGeometryPaths(segments);
+        const validAisleMap = new Map([
+            [0, 0],
+            [1, 0.75],
+            [2, 0.5],
+            [3, 0.25]
+        ]);
+        const validEvaluation = __testHooks.buildRowLocalBoundaryGapMap({
+            path,
+            aisleMap: validAisleMap,
+            sectionRecords: buildClosedLoopSectionRecords([0, 1, 2, 3]),
+            pathClosed: true
+        });
+        const validSummary = buildTierAisleLayoutSummary({
+            rows: [{ row_number: 1 }, { row_number: 2 }],
+            tierLayout: buildManualClosedTierLayout([0, 0.25, 0.5, 0.75]),
+            referencePaths,
+            resolveRowAisleSampling: () => ({
+                paths: referencePaths,
+                aisleRatiosByPath: new Map([[0, validAisleMap]])
+            }),
+            seatWidthIn: 24,
+            minAisleWidthIn: 0,
+            maxAisleWidthIn: 120,
+            egressFactor: 0
+        });
+        const maxAdjacentGapSeatCount = Math.max(...validEvaluation.gaps.map((gap) => spanGapToSeatCount(gap.centerGapFt, 0, 24)));
+        const rows = [
+            { row_number: 1, x: 10, tread_depth: 2 },
+            { row_number: 2, x: 13, tread_depth: 2 }
+        ];
+        const egressParams = {
+            seatWidthIn: 20,
+            minAisleWidthIn: 48,
+            maxAisleWidthIn: 48,
+            egressFactor: 0.2,
+            seatsBetweenAisles: 24
+        };
+        const baselineLayout = buildTierAisleLayout({
+            frontSegments: segments,
+            backSegments: segments,
+            targetAisles: 0,
+            aisleWidthFt: egressParams.maxAisleWidthIn / 12,
+            bowlConfig: { type: 'Full', corner: 'None' },
+            maxSeatsBetweenAisles: egressParams.seatsBetweenAisles,
+            seatWidthIn: egressParams.seatWidthIn,
+            maxAisleWidthIn: egressParams.maxAisleWidthIn,
+            egressFactor: egressParams.egressFactor,
+            rowCount: rows.length
+        });
+        const topologyFailureAnalysis = buildTierAisleAnalysis({
+            tierIndex: 0,
+            rows,
+            bowlConfig: { type: 'Full', corner: 'None' },
+            offsetCorrection: 0,
+            egressParams,
+            getPathsForOffset: buildSelectiveClosedPathResolver([8, 12, 13], segments),
+            getRowLengthFt: () => path.length
+        });
+
+        validSummary.rowSummaries.forEach((rowSummary, rowIndex) => {
+            const sectionSeatTotal = validSummary.sections.reduce(
+                (sum, section) => sum + Math.max(0, Number(section.rowSeatCounts[rowIndex]) || 0),
+                0
+            );
+
+            expect(sectionSeatTotal).toBe(rowSummary.seatCount);
+        });
+        validSummary.sections.forEach((section) => {
+            section.rowSeatCounts.forEach((rowSeatCount) => {
+                expect(rowSeatCount).toBeLessThanOrEqual(maxAdjacentGapSeatCount);
+            });
+        });
+        expect(topologyFailureAnalysis).not.toBeNull();
+        expect(topologyFailureAnalysis.sectionSummary.topologyValid).toBe(false);
+        expect(topologyFailureAnalysis.sectionSummary.failureReason).toBe('invalid_topology');
+        expect(topologyFailureAnalysis.sectionSummary.layoutSolveConverged).toBe(false);
+        expect(topologyFailureAnalysis.sectionSummary.converged).toBe(false);
+        expect(topologyFailureAnalysis.targetAisles).toBe(baselineLayout.targetAisles);
+        expect(topologyFailureAnalysis.aisles.length).toBe(baselineLayout.aisles.length);
+    });
+
+    it('targets measured violating interval runs when refining deterministic chamfer layouts', () => {
+        const cases = [
+            {
+                fixture: buildRendererBowlFixture('Full', {
+                    width: 85,
+                    length: 200,
+                    radius: 16,
+                    corner: 'Chamfer',
+                    straightAisleMode: 'perpendicular',
+                    chamferAisleMode: 'radial'
+                }),
+                rows: buildTierRows({ count: 10, startX: 55, treadDepth: 2.75 }),
+                egressParams: {
+                    seatWidthIn: 19,
+                    minAisleWidthIn: 48,
+                    maxAisleWidthIn: 66,
+                    egressFactor: 0.2,
+                    seatsBetweenAisles: 24
+                }
+            },
+            {
+                fixture: buildRendererBowlFixture('Full', {
+                    width: 92,
+                    length: 210,
+                    radius: 18,
+                    corner: 'Chamfer',
+                    straightAisleMode: 'perpendicular',
+                    chamferAisleMode: 'radial'
+                }),
+                rows: buildTierRows({ count: 8, startX: 65, treadDepth: 2.75 }),
+                egressParams: {
+                    seatWidthIn: 19,
+                    minAisleWidthIn: 48,
+                    maxAisleWidthIn: 66,
+                    egressFactor: 0.2,
+                    seatsBetweenAisles: 26
+                }
+            }
+        ];
+
+        cases.forEach(({ fixture, rows, egressParams }) => {
+            const baseline = buildRowMatchedDeterministicBaseline({ fixture, rows, egressParams });
+            const refinement = __testHooks.buildMeasuredSeatCapRefinement({
+                perimeterModel: baseline.perimeterModel,
+                referencePaths: baseline.referencePaths,
+                sectionSummary: baseline.summary,
+                aisles: baseline.tierLayout.aisles,
+                maxSeatsBetweenAisles: egressParams.seatsBetweenAisles
+            });
+            const violatingKeys = new Set(
+                refinement.intervalPressures
+                    .filter((pressure) => pressure.deficit > 0)
+                    .map((pressure) => `${pressure.pathIndex}:${pressure.intervalIndex}`)
+            );
+
+            expect(baseline.summary.topologyValid).toBe(true);
+            expect(baseline.summary.compliance.seatCapCompliant).toBe(false);
+            expect(refinement.violatingIntervalCount).toBeGreaterThan(0);
+
+            refinement.intervalPressures
+                .filter((pressure) => pressure.deficit > 0)
+                .forEach((pressure) => {
+                    expect(refinement.nextCounts[pressure.pathIndex][pressure.intervalIndex]).toBeGreaterThan(pressure.currentCount);
+                });
+
+            refinement.intervalPressures
+                .filter((pressure) => (
+                    pressure.deficit === 0 &&
+                    !violatingKeys.has(`${pressure.pathIndex}:${pressure.oppositeIndex}`)
+                ))
+                .forEach((pressure) => {
+                    expect(refinement.nextCounts[pressure.pathIndex][pressure.intervalIndex]).toBe(pressure.currentCount);
+                });
+        });
+    });
+
+    it('resolves challenging synthetic full-chamfer seat-cap cases without runaway aisle escalation', () => {
+        const cases = [
+            {
+                fixture: buildRendererBowlFixture('Full', {
+                    width: 85,
+                    length: 200,
+                    radius: 16,
+                    corner: 'Chamfer',
+                    straightAisleMode: 'perpendicular',
+                    chamferAisleMode: 'radial'
+                }),
+                rows: buildTierRows({ count: 10, startX: 55, treadDepth: 2.75 }),
+                egressParams: {
+                    seatWidthIn: 19,
+                    minAisleWidthIn: 48,
+                    maxAisleWidthIn: 66,
+                    egressFactor: 0.2,
+                    seatsBetweenAisles: 24
+                }
+            },
+            {
+                fixture: buildRendererBowlFixture('Full', {
+                    width: 92,
+                    length: 210,
+                    radius: 18,
+                    corner: 'Chamfer',
+                    straightAisleMode: 'perpendicular',
+                    chamferAisleMode: 'radial'
+                }),
+                rows: buildTierRows({ count: 8, startX: 65, treadDepth: 2.75 }),
+                egressParams: {
+                    seatWidthIn: 19,
+                    minAisleWidthIn: 48,
+                    maxAisleWidthIn: 66,
+                    egressFactor: 0.2,
+                    seatsBetweenAisles: 26
+                }
+            },
+            {
+                fixture: buildRendererBowlFixture('Full', {
+                    width: 100,
+                    length: 220,
+                    radius: 20,
+                    corner: 'Chamfer',
+                    straightAisleMode: 'perpendicular',
+                    chamferAisleMode: 'radial'
+                }),
+                rows: buildTierRows({ count: 8, startX: 55, treadDepth: 2.75 }),
+                egressParams: {
+                    seatWidthIn: 19,
+                    minAisleWidthIn: 48,
+                    maxAisleWidthIn: 66,
+                    egressFactor: 0.2,
+                    seatsBetweenAisles: 24
+                }
+            }
+        ];
+
+        cases.forEach(({ fixture, rows, egressParams }) => {
+            const baseline = buildRowMatchedDeterministicBaseline({ fixture, rows, egressParams });
+            const refinement = __testHooks.buildMeasuredSeatCapRefinement({
+                perimeterModel: baseline.perimeterModel,
+                referencePaths: baseline.referencePaths,
+                sectionSummary: baseline.summary,
+                aisles: baseline.tierLayout.aisles,
+                maxSeatsBetweenAisles: egressParams.seatsBetweenAisles
+            });
+            const analysis = buildTierAisleAnalysisForFixture({
+                fixture,
+                rows,
+                egressParams
+            });
+            const fixedAisleCount = countFixedDeterministicAisles(analysis);
+            const refinedDistributedCount = refinement.nextCounts.reduce(
+                (sum, row) => sum + row.reduce((inner, value) => inner + value, 0),
+                0
+            );
+
+            expect(analysis).not.toBeNull();
+            expect(baseline.summary.compliance.seatCapCompliant).toBe(false);
+            expect(analysis.sectionSummary.topologyValid).toBe(true);
+            expect(analysis.sectionSummary.measurementValid).toBe(true);
+            expect(analysis.sectionSummary.compliance.isCompliant).toBe(true);
+            expect(getWorstMeasuredSectionSeatCount(analysis.sectionSummary)).toBeLessThan(
+                getWorstMeasuredSectionSeatCount(baseline.summary)
+            );
+            expect(getWorstMeasuredSectionSeatCount(analysis.sectionSummary)).toBeLessThanOrEqual(
+                egressParams.seatsBetweenAisles
+            );
+            expect(analysis.aisles.length).toBe(fixedAisleCount + refinedDistributedCount);
+            expect(analysis.targetAisles).toBe(analysis.aisles.length);
+        });
     });
 
     it('builds configuration totals from authoritative tier analyses only', () => {

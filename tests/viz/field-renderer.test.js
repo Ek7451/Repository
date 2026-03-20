@@ -231,7 +231,7 @@ describe('FieldRenderer helper delegation surface', () => {
         }));
     });
 
-    it('renders aisle polygons and width labels from per-aisle rendered widths', () => {
+    it('renders aisle polygons from rendered widths while width labels stay on governing widths', () => {
         const renderer = Object.create(FieldRenderer.prototype);
         const solver = createTierSolver();
         const bowlConfig = createFullChamferBowlConfig();
@@ -242,6 +242,7 @@ describe('FieldRenderer helper delegation surface', () => {
             0,
             createEgressParams()
         );
+        const baselineOverlay = renderer._getTierAisleMetricLabelData(solver, bowlConfig, tierLayout, 0);
         const baselinePolygons = renderer.getTierAisleBandPolygons(solver, bowlConfig, tierLayout, 0)
             .filter((polygon) => polygon.aisleIndex === 0);
         tierLayout.sectionSummary.aisles[0].renderedWidthIn = 60;
@@ -267,8 +268,9 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(polygons.length).toBeGreaterThan(0);
         expect(frontWidthFt).toBeGreaterThan(baselineFrontWidthFt + 0.3);
         expect(overlay.widthLabels[0]).toEqual(expect.objectContaining({
-            text: '60"'
+            text: baselineOverlay.widthLabels[0].text
         }));
+        expect(overlay.widthLabels[0].text).not.toBe('60"');
     });
 
     it('builds section overlays from U-end terminal aisle summaries instead of edge slivers', () => {

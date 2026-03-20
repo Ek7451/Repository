@@ -18,7 +18,7 @@ import {
 import {
     countSeatsFromCenterlineGapFt,
     normalizeSeatWidthIn,
-    seatingLengthToSeatCount
+    sectionBoundaryGapToSeatCount
 } from './seat-math.js';
 
 const EPS = 1e-6;
@@ -1558,6 +1558,44 @@ function createPerimeterCountMatrix(perimeterModel, sourceCounts = null) {
     return out;
 }
 
+function mergePerimeterCountMatrices(perimeterModel, ...sourceCounts) {
+    const merged = createPerimeterCountMatrix(perimeterModel);
+
+    sourceCounts.forEach((source) => {
+        const counts = createPerimeterCountMatrix(perimeterModel, source);
+        for (let pathIndex = 0; pathIndex < counts.length; pathIndex += 1) {
+            for (let intervalIndex = 0; intervalIndex < counts[pathIndex].length; intervalIndex += 1) {
+                merged[pathIndex][intervalIndex] = Math.max(
+                    merged[pathIndex][intervalIndex],
+                    Math.max(0, Math.floor(Number(counts[pathIndex][intervalIndex]) || 0))
+                );
+            }
+        }
+    });
+
+    return merged;
+}
+
+function arePerimeterCountMatricesEqual(leftCounts, rightCounts) {
+    const safeLeft = Array.isArray(leftCounts) ? leftCounts : [];
+    const safeRight = Array.isArray(rightCounts) ? rightCounts : [];
+    const pathCount = Math.max(safeLeft.length, safeRight.length);
+
+    for (let pathIndex = 0; pathIndex < pathCount; pathIndex += 1) {
+        const leftRow = Array.isArray(safeLeft[pathIndex]) ? safeLeft[pathIndex] : [];
+        const rightRow = Array.isArray(safeRight[pathIndex]) ? safeRight[pathIndex] : [];
+        const intervalCount = Math.max(leftRow.length, rightRow.length);
+
+        for (let intervalIndex = 0; intervalIndex < intervalCount; intervalIndex += 1) {
+            const leftValue = Math.max(0, Math.floor(Number(leftRow[intervalIndex]) || 0));
+            const rightValue = Math.max(0, Math.floor(Number(rightRow[intervalIndex]) || 0));
+            if (leftValue !== rightValue) return false;
+        }
+    }
+
+    return true;
+}
+
 function getIntervalSide(interval) {
     return interval?.back || interval?.front || null;
 }
@@ -1790,6 +1828,215 @@ function normalizeRequiredCountsForSymmetry(perimeterModel, requiredCounts) {
     }
 
     return counts;
+}
+
+function isFixedDeterministicAisle(aisle) {
+    return !!aisle?.forced || aisle?.anchorType === 'open_edge_terminal';
+}
+
+function countFixedDeterministicAisles(aisles = []) {
+    return (Array.isArray(aisles) ? aisles : []).reduce((count, aisle) => (
+        count + (isFixedDeterministicAisle(aisle) ? 1 : 0)
+    ), 0);
+}
+
+function countDistributedAislesByInterval(perimeterModel, aisles = []) {
+    const counts = createPerimeterCountMatrix(perimeterModel);
+    (Array.isArray(aisles) ? aisles : []).forEach((aisle) => {
+        if (!aisle || isFixedDeterministicAisle(aisle) || !Number.isFinite(aisle.segmentIndex)) return;
+
+        const pathIndex = Math.max(0, Math.floor(Number(aisle.pathIndex) || 0));
+        const intervalIndex = Math.max(0, Math.floor(Number(aisle.segmentIndex) || 0));
+        if (!counts[pathIndex] || intervalIndex >= counts[pathIndex].length) return;
+        counts[pathIndex][intervalIndex] += 1;
+    });
+    return counts;
+}
+
+function computeSectionMidU(path, section) {
+    if (!Number.isFinite(section?.startU) || !Number.isFinite(section?.endU)) return NaN;
+    if (path?.closed) {
+        const wrapped = computeWrappedSpan(section.startU, section.endU);
+        return normalizeUnit(wrapped.start + (wrapped.span * 0.5));
+    }
+    return clamp01((((Number(section.startU) || 0) + (Number(section.endU) || 0)) * 0.5));
+}
+
+function isPathUWithinInterval(path, startU, endU, u, tolerance = 1e-6) {
+    if (!Number.isFinite(u)) return false;
+
+    if (path?.closed) {
+        const wrapped = computeWrappedSpan(startU, endU);
+        let offset = normalizeUnit(u) - wrapped.start;
+        if (offset < 0) offset += 1;
+        return offset >= -tolerance && offset <= wrapped.span + tolerance;
+    }
+
+    const a = clamp01(startU);
+    const b = clamp01(endU);
+    const target = clamp01(u);
+    return target >= (Math.min(a, b) - tolerance) && target <= (Math.max(a, b) + tolerance);
+}
+
+function findOwningPerimeterInterval(pathRecord, referencePath, section) {
+    if (!pathRecord || !Array.isArray(pathRecord.intervals) || !pathRecord.intervals.length) return null;
+    const path = referencePath || pathRecord.frontPath || pathRecord.backPath;
+    const sectionMidU = computeSectionMidU(path, section);
+    if (!Number.isFinite(sectionMidU)) return null;
+
+    let bestInterval = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (let index = 0; index < pathRecord.intervals.length; index += 1) {
+        const interval = pathRecord.intervals[index];
+        const side = interval?.front || interval?.back;
+        if (!interval || !side) continue;
+
+        if (isPathUWithinInterval(path, side.startU, side.endU, sectionMidU)) {
+            return interval;
+        }
+
+        const midpointU = interpolatePathIntervalU(path, side.startU, side.endU, 0.5);
+        const distance = stationDistance(path, sectionMidU, midpointU);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestInterval = interval;
+        }
+    }
+
+    return bestInterval;
+}
+
+/**
+ * @param {{
+ *   perimeterModel?: any,
+ *   referencePaths?: Array<any>,
+ *   sections?: Array<any>,
+ *   aisles?: Array<any>,
+ *   maxSeatsBetweenAisles?: number
+ * }} [options]
+ */
+function buildMeasuredSeatCapIntervalPressures({
+    perimeterModel,
+    referencePaths = [],
+    sections = [],
+    aisles = [],
+    maxSeatsBetweenAisles = NaN
+} = {}) {
+    const currentCounts = countDistributedAislesByInterval(perimeterModel, aisles);
+    const seatLimit = Number(maxSeatsBetweenAisles);
+    const byInterval = new Map();
+
+    (Array.isArray(sections) ? sections : []).forEach((section, sectionIndex) => {
+        const pathIndex = Math.max(0, Math.floor(Number(section?.pathIndex) || 0));
+        const pathRecord = getPerimeterPathRecord(perimeterModel, pathIndex);
+        if (!pathRecord) return;
+
+        const referencePath = referencePaths[pathIndex] || pathRecord.frontPath || pathRecord.backPath;
+        const interval = findOwningPerimeterInterval(pathRecord, referencePath, section);
+        if (!interval) return;
+
+        const key = `${pathIndex}:${interval.index}`;
+        if (!byInterval.has(key)) {
+            byInterval.set(key, {
+                pathIndex,
+                intervalIndex: interval.index,
+                family: interval.family || 'straight',
+                oppositeIndex: Number.isFinite(interval?.oppositeIndex) ? interval.oppositeIndex : null,
+                currentCount: Math.max(0, Math.floor(Number(currentCounts?.[pathIndex]?.[interval.index]) || 0)),
+                measuredWorstSeats: 0,
+                measuredWorstBackRowSeats: 0,
+                sectionIndexes: []
+            });
+        }
+
+        const pressure = byInterval.get(key);
+        pressure.measuredWorstSeats = Math.max(
+            pressure.measuredWorstSeats,
+            Math.max(0, Number(section?.maxSeatsPerRow) || 0)
+        );
+        pressure.measuredWorstBackRowSeats = Math.max(
+            pressure.measuredWorstBackRowSeats,
+            Math.max(0, Number(section?.backRowSeats) || 0)
+        );
+        pressure.sectionIndexes.push(sectionIndex);
+    });
+
+    return Array.from(byInterval.values())
+        .map((pressure) => ({
+            ...pressure,
+            deficit: Number.isFinite(seatLimit) && seatLimit > 0
+                ? Math.max(0, pressure.measuredWorstSeats - seatLimit)
+                : 0
+        }))
+        .sort((left, right) => {
+            if (right.deficit !== left.deficit) return right.deficit - left.deficit;
+            if (right.measuredWorstSeats !== left.measuredWorstSeats) {
+                return right.measuredWorstSeats - left.measuredWorstSeats;
+            }
+            if (left.pathIndex !== right.pathIndex) return left.pathIndex - right.pathIndex;
+            return left.intervalIndex - right.intervalIndex;
+        });
+}
+
+/**
+ * @param {{
+ *   perimeterModel?: any,
+ *   referencePaths?: Array<any>,
+ *   sectionSummary?: any,
+ *   aisles?: Array<any>,
+ *   maxSeatsBetweenAisles?: number
+ * }} [options]
+ */
+function buildMeasuredSeatCapRefinement({
+    perimeterModel,
+    referencePaths = [],
+    sectionSummary = null,
+    aisles = [],
+    maxSeatsBetweenAisles = NaN
+} = {}) {
+    const currentCounts = countDistributedAislesByInterval(perimeterModel, aisles);
+    const intervalPressures = buildMeasuredSeatCapIntervalPressures({
+        perimeterModel,
+        referencePaths,
+        sections: sectionSummary?.sections,
+        aisles,
+        maxSeatsBetweenAisles
+    });
+    const nextCounts = createPerimeterCountMatrix(perimeterModel, currentCounts);
+
+    intervalPressures.forEach((pressure) => {
+        if (!(pressure.deficit > 0)) return;
+        nextCounts[pressure.pathIndex][pressure.intervalIndex] = Math.max(
+            nextCounts[pressure.pathIndex][pressure.intervalIndex],
+            pressure.currentCount + 1
+        );
+    });
+
+    const normalizedNextCounts = normalizeRequiredCountsForSymmetry(perimeterModel, nextCounts);
+
+    return {
+        currentCounts,
+        nextCounts: normalizedNextCounts,
+        intervalPressures,
+        worstSeatCount: intervalPressures.length
+            ? Math.max(...intervalPressures.map((pressure) => pressure.measuredWorstSeats))
+            : 0,
+        worstDeficit: intervalPressures.length
+            ? Math.max(...intervalPressures.map((pressure) => pressure.deficit))
+            : 0,
+        totalDeficit: intervalPressures.reduce((sum, pressure) => sum + pressure.deficit, 0),
+        violatingIntervalCount: intervalPressures.filter((pressure) => pressure.deficit > 0).length,
+        refined: !arePerimeterCountMatricesEqual(currentCounts, normalizedNextCounts)
+    };
+}
+
+function hasMeasuredSeatPressureImproved(currentMetrics, previousMetrics) {
+    if (!previousMetrics) return true;
+    if ((Number(currentMetrics?.worstSeatCount) || 0) < (Number(previousMetrics?.worstSeatCount) || 0)) return true;
+    if ((Number(currentMetrics?.totalDeficit) || 0) < (Number(previousMetrics?.totalDeficit) || 0)) return true;
+    if ((Number(currentMetrics?.violatingIntervalCount) || 0) < (Number(previousMetrics?.violatingIntervalCount) || 0)) return true;
+    return false;
 }
 
 function sumIntervalCounts(intervalCounts) {
@@ -2072,10 +2319,33 @@ function buildSectionBoundaries(paths, aisles) {
         byPath[pathIndex].push({
             aisleIndex: idx,
             u: Number(aisle.u) || 0,
-            forced: !!aisle.forced
+            forced: !!aisle.forced,
+            boundaryKind: 'aisle',
+            boundaryKey: buildAisleBoundaryKey(idx)
         });
     });
     return byPath.map(entries => entries.sort((a, b) => a.u - b.u));
+}
+
+function buildAisleBoundaryKey(aisleIndex) {
+    return `aisle:${Math.max(0, Math.floor(Number(aisleIndex) || 0))}`;
+}
+
+function buildEdgeBoundaryKey(edge) {
+    return String(edge || '').toLowerCase() === 'end'
+        ? 'edge:end'
+        : 'edge:start';
+}
+
+function buildBoundaryPairKey(boundaryKeyA, boundaryKeyB) {
+    const keys = [String(boundaryKeyA || ''), String(boundaryKeyB || '')].sort();
+    return `${keys[0]}|${keys[1]}`;
+}
+
+function compareBoundaryStations(left, right) {
+    const delta = (Number(left?.u) || 0) - (Number(right?.u) || 0);
+    if (Math.abs(delta) > EPS) return delta;
+    return String(left?.boundaryKey || '').localeCompare(String(right?.boundaryKey || ''));
 }
 
 function resolveMaxOccupantsPerAisle(options = null) {
@@ -2204,12 +2474,26 @@ function buildTierLayoutSectionSlots(referencePaths, sectionBoundaries) {
         const openBoundaries = pathIsClosed
             ? boundaries
             : [
-                { aisleIndex: null, u: 0, forced: false, boundaryKind: 'edge' },
+                {
+                    aisleIndex: null,
+                    u: 0,
+                    forced: false,
+                    boundaryKind: 'edge',
+                    edge: 'start',
+                    boundaryKey: buildEdgeBoundaryKey('start')
+                },
                 ...boundaries.map((boundary) => ({
                     ...boundary,
                     boundaryKind: 'aisle'
                 })),
-                { aisleIndex: null, u: 1, forced: false, boundaryKind: 'edge' }
+                {
+                    aisleIndex: null,
+                    u: 1,
+                    forced: false,
+                    boundaryKind: 'edge',
+                    edge: 'end',
+                    boundaryKey: buildEdgeBoundaryKey('end')
+                }
             ];
         const slotCount = pathIsClosed ? boundaries.length : Math.max(0, openBoundaries.length - 1);
 
@@ -2226,10 +2510,17 @@ function buildTierLayoutSectionSlots(referencePaths, sectionBoundaries) {
             slots.push({
                 pathIndex,
                 slotIndex,
+                pathClosed: pathIsClosed,
                 aisleIndexA: Number.isFinite(Number(aisleA.aisleIndex)) ? aisleA.aisleIndex : null,
                 aisleIndexB: Number.isFinite(Number(aisleB.aisleIndex)) ? aisleB.aisleIndex : null,
                 startBoundaryKind: aisleA.boundaryKind || (pathIsClosed ? 'aisle' : 'edge'),
                 endBoundaryKind: aisleB.boundaryKind || (pathIsClosed ? 'aisle' : 'edge'),
+                startBoundaryKey: aisleA.boundaryKey || buildAisleBoundaryKey(aisleA.aisleIndex),
+                endBoundaryKey: aisleB.boundaryKey || buildAisleBoundaryKey(aisleB.aisleIndex),
+                boundaryPairKey: buildBoundaryPairKey(
+                    aisleA.boundaryKey || buildAisleBoundaryKey(aisleA.aisleIndex),
+                    aisleB.boundaryKey || buildAisleBoundaryKey(aisleB.aisleIndex)
+                ),
                 startU: normalizePathU(path, Number(aisleA.u) || 0),
                 endU: normalizePathU(path, Number(aisleB.u) || 0)
             });
@@ -2323,6 +2614,253 @@ export function buildResolvedTierAisleRatioMap(pathA, pathB, tierLayout, chamfer
     return byPath;
 }
 
+function groupSectionRecordsByPath(sectionRecords = []) {
+    const byPath = new Map();
+    (sectionRecords || []).forEach((section) => {
+        const pathIndex = Math.max(0, Math.floor(Number(section?.pathIndex) || 0));
+        if (!byPath.has(pathIndex)) byPath.set(pathIndex, []);
+        byPath.get(pathIndex).push(section);
+    });
+    return byPath;
+}
+
+function buildRowLocalBoundaryGapMap({
+    path = null,
+    aisleMap = null,
+    sectionRecords = [],
+    pathClosed = false
+} = {}) {
+    const safeSectionRecords = Array.isArray(sectionRecords) ? sectionRecords : [];
+    const gapByPairKey = new Map();
+    const gaps = [];
+    const missingAisles = [];
+    const duplicateBoundaryKeys = [];
+    const duplicateGapKeys = [];
+    const nonAdjacentPairs = [];
+    const requiredAisleIndexes = new Set();
+    const requiredPairKeys = new Set();
+    let topologyValid = true;
+    let measurementValid = true;
+    let wrapGapCount = 0;
+    const pathIsClosed = !!pathClosed;
+
+    safeSectionRecords.forEach((section) => {
+        if (section?.startBoundaryKind === 'aisle' && Number.isFinite(Number(section?.aisleIndexA))) {
+            requiredAisleIndexes.add(Math.max(0, Math.floor(Number(section.aisleIndexA) || 0)));
+        }
+        if (section?.endBoundaryKind === 'aisle' && Number.isFinite(Number(section?.aisleIndexB))) {
+            requiredAisleIndexes.add(Math.max(0, Math.floor(Number(section.aisleIndexB) || 0)));
+        }
+        requiredPairKeys.add(
+            section?.boundaryPairKey || buildBoundaryPairKey(section?.startBoundaryKey, section?.endBoundaryKey)
+        );
+    });
+
+    if (!safeSectionRecords.length) {
+        return {
+            gapByPairKey,
+            gaps,
+            pathClosed: pathIsClosed,
+            topologyValid: true,
+            measurementValid: true,
+            missingAisles,
+            duplicateBoundaryKeys,
+            duplicateGapKeys,
+            nonAdjacentPairs,
+            wrapGapCount,
+            failureReason: null
+        };
+    }
+
+    if (!path || !(path.length > 0)) {
+        return {
+            gapByPairKey,
+            gaps,
+            pathClosed: pathIsClosed,
+            topologyValid: !pathIsClosed,
+            measurementValid: false,
+            missingAisles: Array.from(requiredAisleIndexes).sort((a, b) => a - b),
+            duplicateBoundaryKeys,
+            duplicateGapKeys,
+            nonAdjacentPairs: Array.from(requiredPairKeys.values()).sort(),
+            wrapGapCount,
+            failureReason: pathIsClosed ? 'invalid_topology' : 'invalid_measurement'
+        };
+    }
+
+    const resolvedAisleBoundaries = [];
+    const seenBoundaryKeys = new Set();
+    if (aisleMap instanceof Map) {
+        aisleMap.forEach((u, aisleIndex) => {
+            const boundaryKey = buildAisleBoundaryKey(aisleIndex);
+            if (seenBoundaryKeys.has(boundaryKey)) {
+                duplicateBoundaryKeys.push(boundaryKey);
+                if (pathIsClosed) {
+                    measurementValid = false;
+                    topologyValid = false;
+                }
+                return;
+            }
+
+            seenBoundaryKeys.add(boundaryKey);
+            resolvedAisleBoundaries.push({
+                boundaryKind: 'aisle',
+                boundaryKey,
+                aisleIndex: Math.max(0, Math.floor(Number(aisleIndex) || 0)),
+                u: normalizePathU(path, u)
+            });
+        });
+    }
+
+    resolvedAisleBoundaries.sort(compareBoundaryStations);
+    const resolvedAisleBoundaryKeys = new Set(resolvedAisleBoundaries.map((boundary) => boundary.boundaryKey));
+    requiredAisleIndexes.forEach((aisleIndex) => {
+        if (resolvedAisleBoundaryKeys.has(buildAisleBoundaryKey(aisleIndex))) return;
+        missingAisles.push(aisleIndex);
+        if (pathIsClosed) {
+            measurementValid = false;
+            topologyValid = false;
+        }
+    });
+
+    const boundaryRecords = pathIsClosed
+        ? resolvedAisleBoundaries.slice()
+        : [
+            {
+                boundaryKind: 'edge',
+                boundaryKey: buildEdgeBoundaryKey('start'),
+                aisleIndex: null,
+                edge: 'start',
+                u: normalizePathU(path, 0)
+            },
+            ...resolvedAisleBoundaries,
+            {
+                boundaryKind: 'edge',
+                boundaryKey: buildEdgeBoundaryKey('end'),
+                aisleIndex: null,
+                edge: 'end',
+                u: normalizePathU(path, 1)
+            }
+        ].sort(compareBoundaryStations);
+
+    const boundaryCount = boundaryRecords.length;
+    if (pathIsClosed) {
+        for (let index = 0; index < boundaryCount; index += 1) {
+            const startBoundary = boundaryRecords[index];
+            const endBoundary = boundaryRecords[(index + 1) % boundaryCount];
+            if (!startBoundary || !endBoundary) continue;
+
+            const seamCrossing = endBoundary.u <= startBoundary.u + EPS;
+            const pairKey = buildBoundaryPairKey(startBoundary.boundaryKey, endBoundary.boundaryKey);
+            if (gapByPairKey.has(pairKey)) {
+                duplicateGapKeys.push(pairKey);
+                measurementValid = false;
+                topologyValid = false;
+                continue;
+            }
+
+            if (seamCrossing) wrapGapCount += 1;
+            const gapRecord = {
+                pairKey,
+                startBoundaryKey: startBoundary.boundaryKey,
+                endBoundaryKey: endBoundary.boundaryKey,
+                startU: startBoundary.u,
+                endU: endBoundary.u,
+                seamCrossing,
+                centerGapFt: sectionDistanceOnPath(path, startBoundary.u, endBoundary.u)
+            };
+            gapByPairKey.set(pairKey, gapRecord);
+            gaps.push(gapRecord);
+        }
+
+        if (resolvedAisleBoundaries.length !== gaps.length) {
+            measurementValid = false;
+            topologyValid = false;
+        }
+        if (resolvedAisleBoundaries.length > 0 && wrapGapCount !== 1) {
+            measurementValid = false;
+            topologyValid = false;
+        }
+    } else {
+        for (let index = 0; index < boundaryCount - 1; index += 1) {
+            const startBoundary = boundaryRecords[index];
+            const endBoundary = boundaryRecords[index + 1];
+            if (!startBoundary || !endBoundary) continue;
+
+            const pairKey = buildBoundaryPairKey(startBoundary.boundaryKey, endBoundary.boundaryKey);
+            if (gapByPairKey.has(pairKey)) {
+                duplicateGapKeys.push(pairKey);
+                if (pathIsClosed) {
+                    measurementValid = false;
+                    continue;
+                }
+                continue;
+            }
+
+            const gapRecord = {
+                pairKey,
+                startBoundaryKey: startBoundary.boundaryKey,
+                endBoundaryKey: endBoundary.boundaryKey,
+                startU: startBoundary.u,
+                endU: endBoundary.u,
+                seamCrossing: false,
+                centerGapFt: sectionDistanceOnPath(path, startBoundary.u, endBoundary.u)
+            };
+            gapByPairKey.set(pairKey, gapRecord);
+            gaps.push(gapRecord);
+        }
+    }
+
+    Array.from(requiredPairKeys.values()).forEach((pairKey) => {
+        if (gapByPairKey.has(pairKey)) return;
+        nonAdjacentPairs.push(pairKey);
+        if (pathIsClosed) {
+            measurementValid = false;
+            topologyValid = false;
+        }
+    });
+
+    return {
+        gapByPairKey,
+        gaps,
+        pathClosed: pathIsClosed,
+        topologyValid,
+        measurementValid,
+        missingAisles: missingAisles.sort((a, b) => a - b),
+        duplicateBoundaryKeys: duplicateBoundaryKeys.sort(),
+        duplicateGapKeys: duplicateGapKeys.sort(),
+        nonAdjacentPairs: nonAdjacentPairs.sort(),
+        wrapGapCount,
+        failureReason: !topologyValid
+            ? 'invalid_topology'
+            : (!measurementValid ? 'invalid_measurement' : null)
+    };
+}
+
+function evaluateRowSamplingTopology(paths, aisleRatiosByPath, sectionBoundaries) {
+    const { slots } = buildTierLayoutSectionSlots(paths, sectionBoundaries);
+    const sectionsByPath = groupSectionRecordsByPath(slots);
+    let topologyValid = true;
+    let measurementValid = true;
+
+    sectionsByPath.forEach((sections, pathIndex) => {
+        const path = paths?.[pathIndex] || null;
+        const evaluation = buildRowLocalBoundaryGapMap({
+            path,
+            aisleMap: aisleRatiosByPath instanceof Map ? aisleRatiosByPath.get(pathIndex) : null,
+            sectionRecords: sections,
+            pathClosed: !!sections?.[0]?.pathClosed
+        });
+        if (!evaluation.topologyValid) topologyValid = false;
+        if (!evaluation.measurementValid) measurementValid = false;
+    });
+
+    return {
+        topologyValid,
+        measurementValid
+    };
+}
+
 export function pickBestRowAisleSampling(centerOffset, getPathsForOffset, tierLayout, chamferCache, aisleReferenceMap = null) {
     const baseOffset = Number(centerOffset) || 0;
     const offsetsToTry = [0, 0.02, -0.02, 0.05, -0.05];
@@ -2344,14 +2882,41 @@ export function pickBestRowAisleSampling(centerOffset, getPathsForOffset, tierLa
         aisleRatiosByPath.forEach((map) => {
             score += map?.size || 0;
         });
+        const topology = evaluateRowSamplingTopology(
+            paths,
+            aisleRatiosByPath,
+            Array.isArray(tierLayout?.sectionBoundaries) ? tierLayout.sectionBoundaries : []
+        );
+        const delta = Math.abs(testOffset - baseOffset);
 
-        if (!best || score > best.score) {
-            best = { paths, aisleRatiosByPath, score, sampledOffset: testOffset };
-            if (score >= (tierLayout?.aisles?.length || 0)) break;
+        const candidate = {
+            paths,
+            aisleRatiosByPath,
+            score,
+            sampledOffset: testOffset,
+            topologyValid: topology.topologyValid,
+            measurementValid: topology.measurementValid
+        };
+
+        if (
+            !best ||
+            (candidate.topologyValid && !best.topologyValid) ||
+            (candidate.topologyValid === best.topologyValid && score > best.score) ||
+            (candidate.topologyValid === best.topologyValid && score === best.score && delta < Math.abs(best.sampledOffset - baseOffset))
+        ) {
+            best = candidate;
+            if (candidate.topologyValid && score >= (tierLayout?.aisles?.length || 0)) break;
         }
     }
 
-    return best || { paths: [], aisleRatiosByPath: new Map(), score: 0, sampledOffset: baseOffset };
+    return best || {
+        paths: [],
+        aisleRatiosByPath: new Map(),
+        score: 0,
+        sampledOffset: baseOffset,
+        topologyValid: false,
+        measurementValid: false
+    };
 }
 
 function normalizePathU(path, u) {
@@ -2375,6 +2940,22 @@ export function getTierRenderedAisleWidthIn(tierLayout, aisleIndex) {
 
 export function getTierRenderedAisleWidthFt(tierLayout, aisleIndex) {
     return Math.max(0, getTierRenderedAisleWidthIn(tierLayout, aisleIndex) / 12.0);
+}
+
+export function getTierGoverningAisleWidthIn(tierLayout, aisleIndex) {
+    const governingWidthIn = Number(tierLayout?.sectionSummary?.aisles?.[aisleIndex]?.governingWidthIn);
+    if (Number.isFinite(governingWidthIn) && governingWidthIn > 0) {
+        return governingWidthIn;
+    }
+
+    const maxGoverningWidthIn = Number(
+        tierLayout?.sectionSummary?.maxGoverningAisleWidthIn ?? tierLayout?.sectionSummary?.governingWidthIn
+    );
+    if (Number.isFinite(maxGoverningWidthIn) && maxGoverningWidthIn > 0) {
+        return maxGoverningWidthIn;
+    }
+
+    return 0;
 }
 
 function normalizeRenderedWidthIn(widthIn) {
@@ -2402,14 +2983,6 @@ function widestVectorInCycle(vectors = []) {
     });
 
     return widest;
-}
-
-function buildSectionSeatCountFromRenderedWidths(centerGapFt, leftRenderedWidthFt, rightRenderedWidthFt, seatWidthIn) {
-    const usableGapFt = Math.max(
-        0,
-        (Number(centerGapFt) || 0) - (Math.max(0, Number(leftRenderedWidthFt) || 0) * 0.5) - (Math.max(0, Number(rightRenderedWidthFt) || 0) * 0.5)
-    );
-    return seatingLengthToSeatCount(usableGapFt, seatWidthIn);
 }
 
 function buildSectionRecords(slots, rowCount) {
@@ -2441,6 +3014,12 @@ function measureSectionsFromRenderedWidths({
     const safeRows = Array.isArray(rows) ? rows : [];
     const safeSectionRecords = Array.isArray(sectionRecords) ? sectionRecords : [];
     const resolvedSeatWidthIn = normalizeSeatWidthIn(seatWidthIn);
+    const sectionsByPath = groupSectionRecordsByPath(safeSectionRecords);
+    const invalidTopologyPaths = new Set();
+    const invalidTopologyRowIndices = new Set();
+    let topologyValid = true;
+    let measurementValid = true;
+    let failureReason = null;
 
     if (typeof resolveRowAisleSampling === 'function') {
         for (let rowIndex = 0; rowIndex < safeRows.length; rowIndex += 1) {
@@ -2449,20 +3028,41 @@ function measureSectionsFromRenderedWidths({
             const aisleRatiosByPath = sampledRow.aisleRatiosByPath instanceof Map
                 ? sampledRow.aisleRatiosByPath
                 : new Map();
+            const rowPathEvaluations = new Map();
+
+            const getRowPathEvaluation = (pathIndex) => {
+                if (rowPathEvaluations.has(pathIndex)) return rowPathEvaluations.get(pathIndex);
+
+                const sectionsForPath = sectionsByPath.get(pathIndex) || [];
+                const evaluation = buildRowLocalBoundaryGapMap({
+                    path: paths[pathIndex] || null,
+                    aisleMap: aisleRatiosByPath.get(pathIndex),
+                    sectionRecords: sectionsForPath,
+                    pathClosed: !!sectionsForPath?.[0]?.pathClosed
+                });
+                rowPathEvaluations.set(pathIndex, evaluation);
+
+                if (!evaluation.topologyValid) {
+                    topologyValid = false;
+                    invalidTopologyPaths.add(pathIndex);
+                    invalidTopologyRowIndices.add(rowIndex);
+                    failureReason = 'invalid_topology';
+                }
+                if (!evaluation.measurementValid) {
+                    measurementValid = false;
+                    if (!failureReason) failureReason = evaluation.failureReason || 'invalid_measurement';
+                }
+
+                return evaluation;
+            };
 
             for (let sectionIndex = 0; sectionIndex < safeSectionRecords.length; sectionIndex += 1) {
                 const section = safeSectionRecords[sectionIndex];
                 const path = paths[section.pathIndex];
-                const aisleMap = aisleRatiosByPath.get(section.pathIndex);
-                if (!path || !(path.length > 0)) continue;
-
-                const uA = section.startBoundaryKind === 'edge'
-                    ? normalizePathU(path, section.startU)
-                    : (aisleMap instanceof Map ? aisleMap.get(section.aisleIndexA) : NaN);
-                const uB = section.endBoundaryKind === 'edge'
-                    ? normalizePathU(path, section.endU)
-                    : (aisleMap instanceof Map ? aisleMap.get(section.aisleIndexB) : NaN);
-                if (!Number.isFinite(uA) || !Number.isFinite(uB)) continue;
+                const pathEvaluation = getRowPathEvaluation(section.pathIndex);
+                const gapRecord = pathEvaluation.gapByPairKey.get(section.boundaryPairKey);
+                if (!path || !(path.length > 0) || !gapRecord) continue;
+                if (pathEvaluation.pathClosed && !pathEvaluation.measurementValid) continue;
 
                 const leftRenderedWidthFt = Number.isFinite(section.aisleIndexA)
                     ? (normalizeRenderedWidthIn(renderedWidthsIn[section.aisleIndexA]) / 12.0)
@@ -2470,9 +3070,8 @@ function measureSectionsFromRenderedWidths({
                 const rightRenderedWidthFt = Number.isFinite(section.aisleIndexB)
                     ? (normalizeRenderedWidthIn(renderedWidthsIn[section.aisleIndexB]) / 12.0)
                     : 0;
-                const centerGapFt = sectionDistanceOnPath(path, uA, uB);
-                section.rowSeatCounts[rowIndex] = buildSectionSeatCountFromRenderedWidths(
-                    centerGapFt,
+                section.rowSeatCounts[rowIndex] = sectionBoundaryGapToSeatCount(
+                    gapRecord.centerGapFt,
                     leftRenderedWidthFt,
                     rightRenderedWidthFt,
                     resolvedSeatWidthIn
@@ -2538,7 +3137,12 @@ function measureSectionsFromRenderedWidths({
 
     return {
         sections,
-        rowSummaries
+        rowSummaries,
+        topologyValid,
+        measurementValid,
+        invalidTopologyPaths: Array.from(invalidTopologyPaths.values()).sort((a, b) => a - b),
+        invalidTopologyRowIndices: Array.from(invalidTopologyRowIndices.values()).sort((a, b) => a - b),
+        failureReason
     };
 }
 
@@ -2685,7 +3289,12 @@ export function buildTierAisleLayoutSummary({
                 minAisleWidthIn: resolvedMinAisleWidthIn,
                 maxAisleWidthIn: resolvedMaxAisleWidthIn,
                 renderedWidthsIn
-            })
+            }),
+            topologyValid: measured.topologyValid,
+            measurementValid: measured.measurementValid,
+            invalidTopologyPaths: measured.invalidTopologyPaths,
+            invalidTopologyRowIndices: measured.invalidTopologyRowIndices,
+            failureReason: measured.failureReason
         };
     };
 
@@ -2743,6 +3352,8 @@ export function buildTierAisleLayoutSummary({
     const rowSummaries = evaluated.rowSummaries;
     const aisleOccupancyTotals = evaluated.aisleOccupancyTotals;
     const aisleSummaries = evaluated.aisleSummaries;
+    const topologyValid = evaluated.topologyValid !== false;
+    const measurementValid = evaluated.measurementValid !== false;
     const backRowSectionSeatCounts = sections.map((section) => section.backRowSeats);
     const sectionOccupancyTotals = sections.map((section) => section.occupancy);
     const avgBackRowSeatsPerSection = backRowSectionSeatCounts.length
@@ -2774,12 +3385,22 @@ export function buildTierAisleLayoutSummary({
         || sections.every((section) => section.maxSeatsPerRow <= seatLimit + 1e-9);
     const egressCapCompliant = aisleSummaries.every((aisle) => aisle.withinMaxWidth);
     const renderedWidthCompliant = aisleSummaries.every((aisle) => aisle.renderedWidthCompliant);
-    const converged = !!layoutSolveConverged && !!renderedWidthSolveConverged;
+    const converged = !!layoutSolveConverged
+        && !!renderedWidthSolveConverged
+        && topologyValid;
+    const failureReason = !topologyValid
+        ? 'invalid_topology'
+        : (!measurementValid ? (evaluated.failureReason || 'invalid_measurement') : null);
 
     return {
         actualAisles: safeAisles.length,
         actualSections: sections.length,
         allSectionPathsClosed,
+        topologyValid,
+        measurementValid,
+        invalidTopologyPaths: Array.isArray(evaluated.invalidTopologyPaths) ? evaluated.invalidTopologyPaths.slice() : [],
+        invalidTopologyRowIndices: Array.isArray(evaluated.invalidTopologyRowIndices) ? evaluated.invalidTopologyRowIndices.slice() : [],
+        failureReason,
         backRowSectionSeatCounts,
         sectionOccupancyTotals,
         aisleOccupancyTotals,
@@ -2806,7 +3427,7 @@ export function buildTierAisleLayoutSummary({
             seatCapCompliant,
             egressCapCompliant,
             renderedWidthCompliant,
-            isCompliant: seatCapCompliant && egressCapCompliant && renderedWidthCompliant
+            isCompliant: topologyValid && measurementValid && seatCapCompliant && egressCapCompliant && renderedWidthCompliant
         },
         rowSummaries,
         sections,
@@ -2825,7 +3446,8 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
         maxOccupantsPerAisle = NaN,
         maxAisleWidthIn = NaN,
         egressFactor = NaN,
-        rowCount = NaN
+        rowCount = NaN,
+        requestedIntervalCounts = null
     } = params;
 
     if (!Array.isArray(paths) || !paths.length) {
@@ -2835,7 +3457,8 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
             targetAisles: 0,
             forcedCount: 0,
             sectionBoundaries: [],
-            axisExclusionFt: Math.max(0.5, Number(axisToleranceFt) || 2)
+            axisExclusionFt: Math.max(0.5, Number(axisToleranceFt) || 2),
+            allocationMode: 'none'
         };
     }
 
@@ -2880,8 +3503,10 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
         !!paths[0] &&
         paths[0].closed &&
         forcedAisles.length === 0;
+    let allocationMode = 'none';
 
     if (useIndependentSidesOpenDistribution) {
+        allocationMode = 'independent_open';
         aisles = computeEvenAislesForOpenPaths(
             paths,
             Math.max(safeTarget, resolveOpenPathTargetAisles(paths, {
@@ -2894,6 +3519,7 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
             widthFt
         );
     } else if (useEvenOpenPathDistribution) {
+        allocationMode = 'even_open';
         aisles = computeEvenOpenPathAisleStations(
             paths,
             Math.max(safeTarget, resolveOpenPathTargetAisles(paths, {
@@ -2906,6 +3532,7 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
             widthFt
         );
     } else if (useDeterministicPerimeterAllocation) {
+        allocationMode = 'deterministic_perimeter';
         const requiredCounts = normalizeRequiredCountsForSymmetry(
             perimeterModel,
             computeRequiredSegmentCounts(perimeterModel, {
@@ -2920,10 +3547,14 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
                 rowCount
             })
         );
+        const seededCounts = normalizeRequiredCountsForSymmetry(
+            perimeterModel,
+            mergePerimeterCountMatrices(perimeterModel, requiredCounts, requestedIntervalCounts)
+        );
         const intervalCounts = allocateDeterministicCounts(
             perimeterModel,
             Math.max(0, safeTarget - forcedAisles.length),
-            requiredCounts,
+            seededCounts,
             {
                 aisleWidthFt: widthFt,
                 axisExclusionFt,
@@ -2951,6 +3582,7 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
             throw new Error('Deterministic aisle allocation violated maxSeatsBetweenAisles.');
         }
     } else if (useClosedEvenPathDistribution) {
+        allocationMode = 'even_closed';
         aisles = computeEvenClosedPathAisleStations(
             paths,
             Math.max(safeTarget, resolveClosedPathTargetAisles(paths[0], {
@@ -2973,7 +3605,8 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
         targetAisles: Math.max(safeTarget, aisles.length),
         forcedCount: aisles.filter((aisle) => aisle.forced).length,
         sectionBoundaries: buildSectionBoundaries(paths, aisles),
-        axisExclusionFt
+        axisExclusionFt,
+        allocationMode
     };
 }
 
@@ -2992,6 +3625,7 @@ function buildTierAisleAnalysisCandidate({
     maxSeatsBetweenAisles = NaN,
     placementWidthFt = 0,
     targetAisles = 0,
+    requestedIntervalCounts = null,
     getPathsForOffset = null,
     getRowLengthFt = null
 } = {}) {
@@ -3004,7 +3638,8 @@ function buildTierAisleAnalysisCandidate({
         seatWidthIn,
         maxAisleWidthIn,
         egressFactor,
-        rowCount: safeRows.length
+        rowCount: safeRows.length,
+        requestedIntervalCounts
     });
     const layoutForSummary = {
         ...layout,
@@ -3050,6 +3685,8 @@ function buildTierAisleAnalysisCandidate({
         forcedCount: layout.forcedCount || 0,
         sectionBoundaries: layout.sectionBoundaries || [],
         axisExclusionFt: layout.axisExclusionFt || 0,
+        allocationMode: layout.allocationMode || 'none',
+        failureReason: summary?.failureReason || null,
         sectionSummary: summary || null
     };
 }
@@ -3082,8 +3719,11 @@ export function buildTierAisleAnalysis({
     if (!frontPaths.length || !backPaths.length || !referencePaths.length) return null;
 
     const maxAttempts = Math.max(8, Math.min(128, safeRows.length * 6));
+    const perimeterModel = buildPerimeterModel(frontPaths, backPaths, bowlConfig);
     let requestedTargetAisles = 0;
+    let requestedIntervalCounts = null;
     let lastAnalysis = null;
+    let previousSeatPressureMetrics = null;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
         const analysis = buildTierAisleAnalysisCandidate({
@@ -3101,12 +3741,78 @@ export function buildTierAisleAnalysis({
             maxSeatsBetweenAisles,
             placementWidthFt,
             targetAisles: requestedTargetAisles,
+            requestedIntervalCounts,
             getPathsForOffset,
             getRowLengthFt
         });
         lastAnalysis = analysis;
 
+        if (analysis.sectionSummary?.topologyValid === false) {
+            analysis.sectionSummary.layoutSolveConverged = false;
+            analysis.sectionSummary.converged = false;
+            analysis.sectionSummary.failureReason = 'invalid_topology';
+            analysis.sectionSummary.compliance = {
+                ...analysis.sectionSummary.compliance,
+                isCompliant: false
+            };
+            return analysis;
+        }
+
         if (analysis.sectionSummary?.compliance?.isCompliant) {
+            return analysis;
+        }
+
+        if (
+            analysis.allocationMode === 'deterministic_perimeter' &&
+            !!analysis.sectionSummary?.measurementValid &&
+            analysis.sectionSummary?.compliance?.seatCapCompliant === false
+        ) {
+            const refinement = buildMeasuredSeatCapRefinement({
+                perimeterModel,
+                referencePaths,
+                sectionSummary: analysis.sectionSummary,
+                aisles: analysis.aisles,
+                maxSeatsBetweenAisles
+            });
+            const currentSeatMetrics = {
+                worstSeatCount: refinement.worstSeatCount,
+                totalDeficit: refinement.totalDeficit,
+                violatingIntervalCount: refinement.violatingIntervalCount
+            };
+
+            if (
+                previousSeatPressureMetrics &&
+                !hasMeasuredSeatPressureImproved(currentSeatMetrics, previousSeatPressureMetrics)
+            ) {
+                analysis.sectionSummary.layoutSolveConverged = false;
+                analysis.sectionSummary.converged = false;
+                analysis.sectionSummary.failureReason = 'seat_cap_stagnated';
+                analysis.sectionSummary.compliance = {
+                    ...analysis.sectionSummary.compliance,
+                    isCompliant: false
+                };
+                analysis.failureReason = 'seat_cap_stagnated';
+                return analysis;
+            }
+
+            if (refinement.refined) {
+                previousSeatPressureMetrics = currentSeatMetrics;
+                requestedIntervalCounts = refinement.nextCounts;
+                requestedTargetAisles = Math.max(
+                    countFixedDeterministicAisles(analysis.aisles) + sumIntervalCounts(refinement.nextCounts),
+                    analysis.forcedCount || 0
+                );
+                continue;
+            }
+
+            analysis.sectionSummary.layoutSolveConverged = false;
+            analysis.sectionSummary.converged = false;
+            analysis.sectionSummary.failureReason = 'seat_cap_stagnated';
+            analysis.sectionSummary.compliance = {
+                ...analysis.sectionSummary.compliance,
+                isCompliant: false
+            };
+            analysis.failureReason = 'seat_cap_stagnated';
             return analysis;
         }
 
@@ -3153,6 +3859,10 @@ export function buildConfigurationAisleSummary({ tierLayouts = [] } = {}) {
 
 export const __testHooks = {
     buildPerimeterModel,
+    buildBoundaryPairKey,
+    buildRowLocalBoundaryGapMap,
+    buildMeasuredSeatCapIntervalPressures,
+    buildMeasuredSeatCapRefinement,
     distributeIntervalTs,
     estimateWorstSeatsInInterval,
     resolveStraightIntervalPlacementPolicy
