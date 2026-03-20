@@ -9,6 +9,7 @@ import {
     computeMaximumOccupantsPerAisle,
     computeMinimumBlockCountForSeatLimit,
     computeRequiredAisleWidthIn,
+    estimateWorstOccupantsPerSectionInTaperedInterval,
     computeRequiredBlockCountForWidthCap,
     computeTierEgressMetrics,
     computeTributaryOccupancyPerAisle,
@@ -70,6 +71,26 @@ describe('egress policy helpers', () => {
             maxOccupantsPerAisle: 25,
             rowCount: 4,
             measureWorstSeatsForCount: (count) => estimateWorstSeatsInInterval(30, count, { aisleWidthFt: 4, seatWidthIn: 20 }),
+            maxCount: 10
+        })).toBe(1);
+    });
+
+    it('estimates tapered interval occupancy from front and back section widths', () => {
+        expect(estimateWorstOccupantsPerSectionInTaperedInterval({
+            frontIntervalLengthFt: 53,
+            backIntervalLengthFt: 87.1715,
+            distributedCount: 1,
+            rowCount: 15,
+            aisleWidthFt: 5.5,
+            seatWidthIn: 19,
+            measureSegments: () => [0, 0.5, 1]
+        })).toBe(285);
+
+        expect(findRequiredIntervalAisleCountForAisleLoad({
+            maxOccupantsPerAisle: 330,
+            rowCount: 15,
+            measureWorstSeatsForCount: (count) => [51, 24, 14][count] ?? 0,
+            measureWorstOccupantsPerSectionForCount: (count) => [700, 285, 210][count] ?? 0,
             maxCount: 10
         })).toBe(1);
     });

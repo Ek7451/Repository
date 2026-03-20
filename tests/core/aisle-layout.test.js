@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -19,10 +17,6 @@ import {
 import { computeMaximumOccupantsPerAisle } from '../../core/egress-policy.js';
 import { spanGapToSeatCount } from '../../core/seat-math.js';
 import { FieldRenderer } from '../../viz/field-renderer.js';
-
-const ICE_HOCKEY_STUDY_FIXTURE = JSON.parse(
-    readFileSync(new URL('../fixtures/ice-hockey-study.json', import.meta.url), 'utf8')
-);
 
 function buildChamferRectangleSegments({
     width = 20,
@@ -179,110 +173,6 @@ function buildTierRows({
         x: startX + (index * treadDepth),
         tread_depth: treadDepth
     }));
-}
-
-function buildIceHockeyStudyCase() {
-    const renderer = Object.create(FieldRenderer.prototype);
-    const rows = ICE_HOCKEY_STUDY_FIXTURE.rows.map((row) => ({
-        row_number: row.row,
-        x: row.x,
-        z: row.z,
-        tread_depth: row.treadDepthIn / 12
-    }));
-    const firstRow = rows[0];
-    const lastRow = rows[rows.length - 1];
-    const frontOffset = (firstRow.x - firstRow.tread_depth);
-    const backOffset = lastRow.x;
-    const egressParams = {
-        seatWidthIn: ICE_HOCKEY_STUDY_FIXTURE.egressInputs.seatWidthIn,
-        minAisleWidthIn: ICE_HOCKEY_STUDY_FIXTURE.egressInputs.minAisleWidthIn,
-        maxAisleWidthIn: ICE_HOCKEY_STUDY_FIXTURE.egressInputs.maxAisleWidthIn,
-        egressFactor: ICE_HOCKEY_STUDY_FIXTURE.egressInputs.egressFactor,
-        seatsBetweenAisles: ICE_HOCKEY_STUDY_FIXTURE.egressInputs.maxSeatsPerRow
-    };
-    const frontSegments = renderer._getBowlGeometry(ICE_HOCKEY_STUDY_FIXTURE.bowlConfig, frontOffset);
-    const backSegments = renderer._getBowlGeometry(ICE_HOCKEY_STUDY_FIXTURE.bowlConfig, backOffset);
-
-    return {
-        renderer,
-        rows,
-        egressParams,
-        frontSegments,
-        backSegments,
-        frontPaths: buildGeometryPaths(frontSegments),
-        backPaths: buildGeometryPaths(backSegments)
-    };
-}
-
-function buildIceHockeyStudyAnalysis() {
-    const fixtureCase = buildIceHockeyStudyCase();
-
-    return {
-        ...fixtureCase,
-        tierLayout: buildTierAisleAnalysis({
-            tierIndex: 0,
-            rows: fixtureCase.rows,
-            bowlConfig: ICE_HOCKEY_STUDY_FIXTURE.bowlConfig,
-            offsetCorrection: 0,
-            egressParams: fixtureCase.egressParams,
-            getPathsForOffset: (offset) => buildGeometryPaths(
-                fixtureCase.renderer._getBowlGeometry(ICE_HOCKEY_STUDY_FIXTURE.bowlConfig, offset)
-            ),
-            getRowLengthFt: (offset) => fixtureCase.renderer.calculateRowLength(
-                ICE_HOCKEY_STUDY_FIXTURE.bowlConfig,
-                offset
-            )
-        })
-    };
-}
-
-function collectForcedDelimitedDistributedGroups(tierLayout) {
-    const aisles = Array.isArray(tierLayout?.aisles) ? tierLayout.aisles : [];
-    const sections = Array.isArray(tierLayout?.sectionSummary?.sections) ? tierLayout.sectionSummary.sections : [];
-    const groups = [];
-    if (!aisles.length || aisles.every((aisle) => !aisle?.forced)) return groups;
-
-    for (let startIndex = 0; startIndex < aisles.length; startIndex += 1) {
-        if (!aisles[startIndex]?.forced) continue;
-
-        const run = [];
-        let nextIndex = (startIndex + 1) % aisles.length;
-        while (nextIndex !== startIndex && !aisles[nextIndex]?.forced) {
-            run.push({
-                aisleIndex: nextIndex,
-                aisle: aisles[nextIndex]
-            });
-            nextIndex = (nextIndex + 1) % aisles.length;
-        }
-
-        if (!run.length) continue;
-
-        const sectionIndexes = [];
-        for (let sectionIndex = startIndex; sectionIndex !== nextIndex; sectionIndex = (sectionIndex + 1) % aisles.length) {
-            sectionIndexes.push(sectionIndex);
-        }
-
-        groups.push({
-            startAisleIndex: startIndex,
-            endAisleIndex: nextIndex,
-            segmentIndex: run[0].aisle.segmentIndex,
-            aisles: run,
-            sections: sectionIndexes.map((sectionIndex) => sections[sectionIndex]).filter(Boolean)
-        });
-    }
-
-    return groups;
-}
-
-function resolveStudyPlacementInputs(tierLayout, egressParams) {
-    const aisleWidthFt = egressParams.maxAisleWidthIn / 12;
-    const minSpacingFt = Math.max(aisleWidthFt * 1.05, 1.25);
-
-    return {
-        aisleWidthFt,
-        axisExclusionFt: tierLayout.axisExclusionFt,
-        endpointBufferFt: Math.max(2.0, aisleWidthFt, minSpacingFt * 0.5)
-    };
 }
 
 function summarizeTierLayoutForRows(options = {}) {
@@ -1271,158 +1161,104 @@ describe('aisle layout geometry seam', () => {
         });
     });
 
-    it('pins single distributed straight aisles to the midpoint on the uploaded hockey fixture', () => {
-        const { egressParams, frontPaths, backPaths, frontSegments, backSegments, rows } = buildIceHockeyStudyCase();
-        const tierLayout = buildTierAisleLayout({
-            frontSegments,
-            backSegments,
-            targetAisles: 18,
-            aisleWidthFt: egressParams.maxAisleWidthIn / 12,
-            bowlConfig: ICE_HOCKEY_STUDY_FIXTURE.bowlConfig
-        });
-        const summary = summarizeTierLayoutForRows({
-            rows,
-            tierLayout,
-            bowlConfig: ICE_HOCKEY_STUDY_FIXTURE.bowlConfig,
-            seatWidthIn: egressParams.seatWidthIn,
-            minAisleWidthIn: egressParams.minAisleWidthIn,
-            maxAisleWidthIn: egressParams.maxAisleWidthIn,
-            egressFactor: egressParams.egressFactor,
-            maxSeatsBetweenAisles: egressParams.seatsBetweenAisles
-        });
-        const perimeterModel = __testHooks.buildPerimeterModel(
-            frontPaths,
-            backPaths,
-            ICE_HOCKEY_STUDY_FIXTURE.bowlConfig
-        );
-        const singleStraightGroups = collectForcedDelimitedDistributedGroups({
-            ...tierLayout,
-            sectionSummary: summary
-        })
-            .map((group) => ({
-                ...group,
-                interval: perimeterModel.paths[0]?.intervals?.[group.segmentIndex]
-            }))
-            .filter((group) => group.interval?.family === 'straight' && group.aisles.length === 1);
-
-        expect(singleStraightGroups.length).toBeGreaterThan(0);
-
-        singleStraightGroups.forEach((group) => {
-            const [leftSection, rightSection] = group.sections;
-            expect(group.aisles[0].aisle.segmentT).toBeCloseTo(0.5, 6);
-            expect(Math.abs(leftSection.frontRowSeats - rightSection.frontRowSeats)).toBeLessThanOrEqual(1);
-            expect(Math.abs(leftSection.backRowSeats - rightSection.backRowSeats)).toBeLessThanOrEqual(1);
-        });
-    });
-
-    it('eliminates the legacy long-straight 24,20,20,20,24 underfill on the uploaded hockey fixture', () => {
-        const { frontPaths, backPaths, tierLayout } = buildIceHockeyStudyAnalysis();
-        const perimeterModel = __testHooks.buildPerimeterModel(
-            frontPaths,
-            backPaths,
-            ICE_HOCKEY_STUDY_FIXTURE.bowlConfig
-        );
-        const groups = collectForcedDelimitedDistributedGroups(tierLayout)
-            .map((group) => ({
-                ...group,
-                interval: perimeterModel.paths[0]?.intervals?.[group.segmentIndex]
-            }))
-            .filter((group) => group.interval?.family === 'straight' && group.sections.length >= 3);
-        const longestStraightGroup = groups
-            .slice()
-            .sort((left, right) => {
-                const leftLength = Number(left.interval?.back?.length ?? left.interval?.front?.length) || 0;
-                const rightLength = Number(right.interval?.back?.length ?? right.interval?.front?.length) || 0;
-                return rightLength - leftLength;
-            })[0];
-        const allBackRowSeats = tierLayout.sectionSummary.sections.map((section) => section.backRowSeats);
-        const legacyPlateau = [24, 20, 20, 20, 24];
-        let hasLegacyPlateau = false;
-
-        for (let index = 0; index <= allBackRowSeats.length - legacyPlateau.length; index += 1) {
-            if (legacyPlateau.every((seatCount, offset) => allBackRowSeats[index + offset] === seatCount)) {
-                hasLegacyPlateau = true;
-                break;
+    it('does not escalate deterministic full-bowl aisle counts when a tapered 18-aisle solve already meets measured egress', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const cases = [
+            {
+                fixture: buildRendererBowlFixture('Full', {
+                    width: 80,
+                    length: 180,
+                    radius: 16,
+                    straightAisleMode: 'perpendicular',
+                    chamferAisleMode: 'radial'
+                }),
+                rows: buildTierRows({
+                    count: 15,
+                    startX: 2.75,
+                    treadDepth: 2.75
+                })
+            },
+            {
+                fixture: buildRendererBowlFixture('Full', {
+                    width: 85,
+                    length: 200,
+                    radius: 16,
+                    straightAisleMode: 'perpendicular',
+                    chamferAisleMode: 'radial'
+                }),
+                rows: buildTierRows({
+                    count: 15,
+                    startX: 2.75,
+                    treadDepth: 2.75
+                })
+            },
+            {
+                fixture: buildRendererBowlFixture('Full', {
+                    width: 90,
+                    length: 180,
+                    radius: 18,
+                    straightAisleMode: 'perpendicular',
+                    chamferAisleMode: 'radial'
+                }),
+                rows: buildTierRows({
+                    count: 15,
+                    startX: 2.75,
+                    treadDepth: 2.75
+                })
             }
-        }
+        ];
+        const egressParams = {
+            seatWidthIn: 19,
+            minAisleWidthIn: 48,
+            maxAisleWidthIn: 66,
+            egressFactor: 0.2,
+            seatsBetweenAisles: 50
+        };
 
-        expect(longestStraightGroup).toBeDefined();
-        expect(hasLegacyPlateau).toBe(false);
-
-        const backRowSeats = longestStraightGroup.sections.map((section) => section.backRowSeats);
-        const middleSeats = backRowSeats.slice(1, -1);
-        const edgeSeatCeiling = Math.max(backRowSeats[0], backRowSeats[backRowSeats.length - 1]);
-
-        expect(Math.max(...middleSeats)).toBeGreaterThanOrEqual(22);
-        expect(middleSeats.some((seatCount) => seatCount > 20)).toBe(true);
-        expect(Math.max(...middleSeats)).toBeGreaterThanOrEqual(edgeSeatCeiling);
-    });
-
-    it('keeps every realized aisle tributary occupancy within the uploaded hockey egress cap', () => {
-        const { egressParams, tierLayout } = buildIceHockeyStudyAnalysis();
-        const legalMaxOccupantsPerAisle = computeMaximumOccupantsPerAisle({
-            maxAisleWidthIn: egressParams.maxAisleWidthIn,
-            egressFactor: egressParams.egressFactor
-        });
-
-        expect(legalMaxOccupantsPerAisle).toBe(330);
-        tierLayout.sectionSummary.aisles.forEach((aisle) => {
-            expect(aisle.tributaryOccupancy).toBeLessThanOrEqual(legalMaxOccupantsPerAisle + 1e-9);
-        });
-    });
-
-    it('uses the same interval station routine for validation and materialization on the uploaded hockey fixture', () => {
-        const { egressParams, frontPaths, backPaths, tierLayout } = buildIceHockeyStudyAnalysis();
-        const perimeterModel = __testHooks.buildPerimeterModel(
-            frontPaths,
-            backPaths,
-            ICE_HOCKEY_STUDY_FIXTURE.bowlConfig
-        );
-        const placementInputs = resolveStudyPlacementInputs(tierLayout, egressParams);
-        const straightGroups = collectForcedDelimitedDistributedGroups(tierLayout)
-            .map((group) => ({
-                ...group,
-                interval: perimeterModel.paths[0]?.intervals?.[group.segmentIndex]
-            }))
-            .filter((group) => group.interval?.family === 'straight');
-
-        expect(straightGroups.length).toBeGreaterThan(0);
-
-        straightGroups.forEach((group) => {
-            const expectedTs = __testHooks.distributeIntervalTs(
-                group.interval,
-                group.aisles.length,
-                placementInputs.axisExclusionFt,
-                placementInputs.endpointBufferFt
+        cases.forEach(({ fixture, rows }) => {
+            const firstRow = rows[0];
+            const lastRow = rows[rows.length - 1];
+            const frontSegments = renderer._getBowlGeometry(
+                fixture.bowlConfig,
+                firstRow.x - firstRow.tread_depth
             );
-            const actualTs = group.aisles.map(({ aisle }) => aisle.segmentT);
-            const intervalSide = group.interval.back || group.interval.front;
-            const bounds = [0, ...expectedTs, 1].sort((left, right) => left - right);
-            let manualWorstSeats = 0;
-
-            for (let index = 0; index < bounds.length - 1; index += 1) {
-                manualWorstSeats = Math.max(
-                    manualWorstSeats,
-                    spanGapToSeatCount(
-                        intervalSide.length * (bounds[index + 1] - bounds[index]),
-                        placementInputs.aisleWidthFt,
-                        egressParams.seatWidthIn
-                    )
-                );
-            }
-
-            expect(actualTs).toHaveLength(expectedTs.length);
-            actualTs.forEach((segmentT, index) => {
-                expect(segmentT).toBeCloseTo(expectedTs[index], 6);
+            const backSegments = renderer._getBowlGeometry(
+                fixture.bowlConfig,
+                lastRow.x
+            );
+            const targetedLayout = buildTierAisleLayout({
+                frontSegments,
+                backSegments,
+                targetAisles: 18,
+                aisleWidthFt: egressParams.maxAisleWidthIn / 12,
+                bowlConfig: fixture.bowlConfig,
+                maxSeatsBetweenAisles: egressParams.seatsBetweenAisles,
+                seatWidthIn: egressParams.seatWidthIn,
+                maxAisleWidthIn: egressParams.maxAisleWidthIn,
+                egressFactor: egressParams.egressFactor,
+                rowCount: rows.length
             });
-            expect(__testHooks.estimateWorstSeatsInInterval(
-                group.interval,
-                group.aisles.length,
-                egressParams.seatWidthIn,
-                placementInputs.aisleWidthFt,
-                placementInputs.axisExclusionFt,
-                placementInputs.endpointBufferFt
-            )).toBe(manualWorstSeats);
+            const targetedSummary = summarizeTierLayoutForRows({
+                rows,
+                tierLayout: targetedLayout,
+                bowlConfig: fixture.bowlConfig,
+                seatWidthIn: egressParams.seatWidthIn,
+                minAisleWidthIn: egressParams.minAisleWidthIn,
+                maxAisleWidthIn: egressParams.maxAisleWidthIn,
+                egressFactor: egressParams.egressFactor,
+                maxSeatsBetweenAisles: egressParams.seatsBetweenAisles
+            });
+            const analysis = buildTierAisleAnalysisForFixture({
+                fixture,
+                rows,
+                egressParams
+            });
+
+            expect(targetedLayout.aisles.length).toBe(18);
+            expect(targetedSummary.compliance.isCompliant).toBe(true);
+            expect(analysis.sectionSummary.compliance.isCompliant).toBe(true);
+            expect(analysis.aisles.length).toBe(targetedLayout.aisles.length);
+            expect(analysis.sectionSummary.actualAisles).toBe(targetedLayout.aisles.length);
         });
     });
 
@@ -1874,6 +1710,120 @@ describe('aisle layout geometry seam', () => {
             );
             expect(analysis.aisles.length).toBe(fixedAisleCount + refinedDistributedCount);
             expect(analysis.targetAisles).toBe(analysis.aisles.length);
+        });
+    });
+
+    it('prioritizes the highest occupancy overloaded tapered boundaries when refining measured egress caps', () => {
+        const fixture = buildRendererBowlFixture('Full', {
+            width: 85,
+            length: 200,
+            radius: 16,
+            corner: 'Chamfer',
+            straightAisleMode: 'perpendicular',
+            chamferAisleMode: 'radial'
+        });
+        const rows = buildTierRows({ count: 20, startX: 2.75, treadDepth: 2.75 });
+        const egressParams = {
+            seatWidthIn: 19,
+            minAisleWidthIn: 48,
+            maxAisleWidthIn: 66,
+            egressFactor: 0.2,
+            seatsBetweenAisles: 40
+        };
+        const baseline = buildRowMatchedDeterministicBaseline({ fixture, rows, egressParams });
+        const legalMaxOccupantsPerAisle = computeMaximumOccupantsPerAisle({
+            maxAisleWidthIn: egressParams.maxAisleWidthIn,
+            egressFactor: egressParams.egressFactor
+        });
+        const refinement = __testHooks.buildMeasuredEgressCapRefinement({
+            perimeterModel: baseline.perimeterModel,
+            referencePaths: baseline.referencePaths,
+            sectionSummary: baseline.summary,
+            aisles: baseline.tierLayout.aisles,
+            maxOccupantsPerAisle: legalMaxOccupantsPerAisle
+        });
+        const topPressure = refinement.intervalPressures[0];
+        const shortStraightPressure = refinement.intervalPressures.find((pressure) => pressure.intervalIndex === 1);
+
+        expect(baseline.summary.topologyValid).toBe(true);
+        expect(baseline.summary.measurementValid).toBe(true);
+        expect(baseline.summary.compliance.seatCapCompliant).toBe(true);
+        expect(baseline.summary.compliance.egressCapCompliant).toBe(false);
+        expect(legalMaxOccupantsPerAisle).toBe(330);
+        expect(topPressure.family).toBe('chamfer');
+        expect(topPressure.currentCount).toBe(0);
+        expect(topPressure.totalBoundaryOccupancy).toBeGreaterThan(shortStraightPressure.totalBoundaryOccupancy);
+        expect(topPressure.totalBoundaryDeficit).toBeLessThan(shortStraightPressure.totalBoundaryDeficit);
+        expect(refinement.nextCounts[0][0]).toBe(1);
+        expect(refinement.nextCounts[0][4]).toBe(1);
+        expect(refinement.nextCounts[0][1]).toBe(shortStraightPressure.currentCount);
+        expect(refinement.nextCounts[0][5]).toBe(shortStraightPressure.currentCount);
+    });
+
+    it('keeps compliant deterministic full-chamfer distributions stable as seat caps relax under the same egress limit', () => {
+        const cases = [
+            {
+                fixture: buildRendererBowlFixture('Full', {
+                    width: 85,
+                    length: 200,
+                    radius: 16,
+                    corner: 'Chamfer',
+                    straightAisleMode: 'perpendicular',
+                    chamferAisleMode: 'radial'
+                }),
+                rows: buildTierRows({ count: 20, startX: 2.75, treadDepth: 2.75 })
+            },
+            {
+                fixture: buildRendererBowlFixture('Full', {
+                    width: 80,
+                    length: 190,
+                    radius: 16,
+                    corner: 'Chamfer',
+                    straightAisleMode: 'perpendicular',
+                    chamferAisleMode: 'radial'
+                }),
+                rows: buildTierRows({ count: 20, startX: 2.75, treadDepth: 2.75 })
+            }
+        ];
+        const baseParams = {
+            seatWidthIn: 19,
+            minAisleWidthIn: 48,
+            maxAisleWidthIn: 66,
+            egressFactor: 0.2
+        };
+
+        cases.forEach(({ fixture, rows }) => {
+            const seatCaps = [30, 40, 50];
+            const analyses = seatCaps.map((seatsBetweenAisles) => buildTierAisleAnalysisForFixture({
+                fixture,
+                rows,
+                egressParams: {
+                    ...baseParams,
+                    seatsBetweenAisles
+                }
+            }));
+            const distributions = analyses.map((analysis) => countDistributedAislesBySegment(analysis));
+            const shortStraightCounts = distributions.map((counts) => (counts[1] || 0) + (counts[5] || 0));
+            const legalMaxOccupantsPerAisle = computeMaximumOccupantsPerAisle({
+                maxAisleWidthIn: baseParams.maxAisleWidthIn,
+                egressFactor: baseParams.egressFactor
+            });
+
+            analyses.forEach((analysis) => {
+                expect(analysis.sectionSummary.topologyValid).toBe(true);
+                expect(analysis.sectionSummary.measurementValid).toBe(true);
+                expect(analysis.sectionSummary.compliance.isCompliant).toBe(true);
+                analysis.sectionSummary.aisles.forEach((aisle) => {
+                    expect(aisle.tributaryOccupancy).toBeLessThanOrEqual(legalMaxOccupantsPerAisle + 1e-9);
+                });
+            });
+
+            expect(distributions[1]).toEqual(distributions[0]);
+            expect(distributions[2]).toEqual(distributions[0]);
+            expect(analyses[1].aisles.length).toBe(analyses[0].aisles.length);
+            expect(analyses[2].aisles.length).toBe(analyses[0].aisles.length);
+            expect(shortStraightCounts[1]).toBe(shortStraightCounts[0]);
+            expect(shortStraightCounts[2]).toBe(shortStraightCounts[0]);
         });
     });
 

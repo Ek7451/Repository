@@ -9,6 +9,7 @@ import {
     computeAssignedAisleWidthIn,
     computeMaximumOccupantsPerAisle,
     computeRequiredAisleWidthIn,
+    estimateWorstOccupantsPerSectionInTaperedInterval,
     estimateWorstSeatsInInterval as estimateWorstSeatsInIntervalByPolicy,
     findRequiredIntervalAisleCount,
     findRequiredIntervalAisleCountForAisleLoad,
@@ -1796,7 +1797,29 @@ function computeRequiredSegmentCounts(perimeterModel, options) {
                     maxOccupantsPerAisle,
                     rowCount: resolvedRowCount,
                     maxCount: 500,
-                    measureWorstSeatsForCount: measureWorstSeats
+                    measureWorstSeatsForCount: measureWorstSeats,
+                    measureWorstOccupantsPerSectionForCount: (count) => estimateWorstOccupantsPerSectionInTaperedInterval({
+                        frontIntervalLengthFt: interval?.front?.length,
+                        backIntervalLengthFt: interval?.back?.length,
+                        distributedCount: count,
+                        rowCount: resolvedRowCount,
+                        aisleWidthFt,
+                        seatWidthIn,
+                        measureSegments: typeof measureWorstSeatsForCount === 'function'
+                            ? undefined
+                            : (distributedCount) => {
+                                const resolvedCount = Math.max(0, Math.floor(Number(distributedCount) || 0));
+                                const intervalSide = getIntervalSide(interval);
+                                if (!intervalSide || intervalSide.length <= EPS) return [0, 1];
+
+                                return [0, ...distributeIntervalTs(
+                                    interval,
+                                    resolvedCount,
+                                    axisExclusionFt,
+                                    endpointBufferFt
+                                ), 1].sort((left, right) => left - right);
+                            }
+                    })
                 })
                 : 0;
 
@@ -2031,9 +2054,200 @@ function buildMeasuredSeatCapRefinement({
     };
 }
 
+/**
+ * @param {{
+ *   sectionSummary?: any,
+ *   maxOccupantsPerAisle?: number
+ * }} [options]
+ * @returns {Map<number, { deficit:number, tributaryOccupancy:number }>}
+ */
+function buildOverloadedAisleDeficitMap({
+    sectionSummary = null,
+    maxOccupantsPerAisle = NaN
+} = {}) {
+    const byAisle = new Map();
+    const loadCap = Number(maxOccupantsPerAisle);
+    if (!(Number.isFinite(loadCap) && loadCap > 0)) return byAisle;
+
+    const aisleSummaries = Array.isArray(sectionSummary?.aisles) ? sectionSummary.aisles : [];
+    aisleSummaries.forEach((aisleSummary, aisleIndex) => {
+        const tributaryOccupancy = Math.max(0, Number(aisleSummary?.tributaryOccupancy) || 0);
+        const deficit = Math.max(0, tributaryOccupancy - loadCap);
+        if (!(deficit > 0)) return;
+
+        byAisle.set(aisleIndex, {
+            deficit,
+            tributaryOccupancy
+        });
+    });
+
+    return byAisle;
+}
+
+/**
+ * @param {{
+ *   perimeterModel?: any,
+ *   referencePaths?: Array<any>,
+ *   sections?: Array<any>,
+ *   aisles?: Array<any>,
+ *   maxOccupantsPerAisle?: number,
+ *   sectionSummary?: any
+ * }} [options]
+ * @returns {Array<any>}
+ */
+function buildMeasuredEgressCapIntervalPressures({
+    perimeterModel,
+    referencePaths = [],
+    sections = [],
+    aisles = [],
+    maxOccupantsPerAisle = NaN,
+    sectionSummary = null
+} = {}) {
+    const currentCounts = countDistributedAislesByInterval(perimeterModel, aisles);
+    const overloadedAisles = buildOverloadedAisleDeficitMap({
+        sectionSummary,
+        maxOccupantsPerAisle
+    });
+    const byInterval = new Map();
+
+    if (!overloadedAisles.size) return [];
+
+    (Array.isArray(sections) ? sections : []).forEach((section, sectionIndex) => {
+        const occupancy = Math.max(0, Number(section?.occupancy) || 0);
+        if (!(occupancy > 0)) return;
+
+        const aisleIndexA = Number.isFinite(Number(section?.aisleIndexA))
+            ? Math.max(0, Math.floor(Number(section.aisleIndexA) || 0))
+            : null;
+        const aisleIndexB = Number.isFinite(Number(section?.aisleIndexB))
+            ? Math.max(0, Math.floor(Number(section.aisleIndexB) || 0))
+            : null;
+        const leftOverloaded = aisleIndexA !== null ? overloadedAisles.get(aisleIndexA) : null;
+        const rightOverloaded = aisleIndexB !== null ? overloadedAisles.get(aisleIndexB) : null;
+        const affectedAisleCount = (leftOverloaded ? 1 : 0) + (rightOverloaded ? 1 : 0);
+        if (!(affectedAisleCount > 0)) return;
+
+        const pathIndex = Math.max(0, Math.floor(Number(section?.pathIndex) || 0));
+        const pathRecord = getPerimeterPathRecord(perimeterModel, pathIndex);
+        if (!pathRecord) return;
+
+        const referencePath = referencePaths[pathIndex] || pathRecord.frontPath || pathRecord.backPath;
+        const interval = findOwningPerimeterInterval(pathRecord, referencePath, section);
+        if (!interval) return;
+
+        const key = `${pathIndex}:${interval.index}`;
+        if (!byInterval.has(key)) {
+            byInterval.set(key, {
+                pathIndex,
+                intervalIndex: interval.index,
+                family: interval.family || 'straight',
+                oppositeIndex: Number.isFinite(interval?.oppositeIndex) ? interval.oppositeIndex : null,
+                currentCount: Math.max(0, Math.floor(Number(currentCounts?.[pathIndex]?.[interval.index]) || 0)),
+                overloadedBoundaryCount: 0,
+                totalBoundaryOccupancy: 0,
+                totalBoundaryDeficit: 0,
+                maxBoundaryOccupancy: 0,
+                sectionIndexes: []
+            });
+        }
+
+        const pressure = byInterval.get(key);
+        pressure.overloadedBoundaryCount += affectedAisleCount;
+        pressure.totalBoundaryOccupancy += occupancy * affectedAisleCount;
+        pressure.totalBoundaryDeficit += (leftOverloaded?.deficit || 0) + (rightOverloaded?.deficit || 0);
+        pressure.maxBoundaryOccupancy = Math.max(pressure.maxBoundaryOccupancy, occupancy);
+        pressure.sectionIndexes.push(sectionIndex);
+    });
+
+    return Array.from(byInterval.values())
+        .map((pressure) => ({
+            ...pressure,
+            deficit: pressure.totalBoundaryDeficit
+        }))
+        .sort((left, right) => {
+            if (right.totalBoundaryOccupancy !== left.totalBoundaryOccupancy) {
+                return right.totalBoundaryOccupancy - left.totalBoundaryOccupancy;
+            }
+            if (right.overloadedBoundaryCount !== left.overloadedBoundaryCount) {
+                return right.overloadedBoundaryCount - left.overloadedBoundaryCount;
+            }
+            if (right.maxBoundaryOccupancy !== left.maxBoundaryOccupancy) {
+                return right.maxBoundaryOccupancy - left.maxBoundaryOccupancy;
+            }
+            if (right.totalBoundaryDeficit !== left.totalBoundaryDeficit) {
+                return right.totalBoundaryDeficit - left.totalBoundaryDeficit;
+            }
+            if (left.pathIndex !== right.pathIndex) return left.pathIndex - right.pathIndex;
+            return left.intervalIndex - right.intervalIndex;
+        });
+}
+
+/**
+ * @param {{
+ *   perimeterModel?: any,
+ *   referencePaths?: Array<any>,
+ *   sectionSummary?: any,
+ *   aisles?: Array<any>,
+ *   maxOccupantsPerAisle?: number
+ * }} [options]
+ * @returns {any}
+ */
+function buildMeasuredEgressCapRefinement({
+    perimeterModel,
+    referencePaths = [],
+    sectionSummary = null,
+    aisles = [],
+    maxOccupantsPerAisle = NaN
+} = {}) {
+    const currentCounts = countDistributedAislesByInterval(perimeterModel, aisles);
+    const intervalPressures = buildMeasuredEgressCapIntervalPressures({
+        perimeterModel,
+        referencePaths,
+        sections: sectionSummary?.sections,
+        aisles,
+        maxOccupantsPerAisle,
+        sectionSummary
+    });
+    const nextCounts = createPerimeterCountMatrix(perimeterModel, currentCounts);
+    const bestPressure = intervalPressures[0] || null;
+
+    if (bestPressure && bestPressure.deficit > 0) {
+        nextCounts[bestPressure.pathIndex][bestPressure.intervalIndex] = Math.max(
+            nextCounts[bestPressure.pathIndex][bestPressure.intervalIndex],
+            bestPressure.currentCount + 1
+        );
+    }
+
+    const normalizedNextCounts = normalizeRequiredCountsForSymmetry(perimeterModel, nextCounts);
+
+    return {
+        currentCounts,
+        nextCounts: normalizedNextCounts,
+        intervalPressures,
+        worstAisleOccupancy: Math.max(
+            0,
+            ...((Array.isArray(sectionSummary?.aisles) ? sectionSummary.aisles : []).map((aisle) => Math.max(0, Number(aisle?.tributaryOccupancy) || 0)))
+        ),
+        worstDeficit: intervalPressures.length
+            ? Math.max(...intervalPressures.map((pressure) => pressure.deficit))
+            : 0,
+        totalDeficit: intervalPressures.reduce((sum, pressure) => sum + pressure.deficit, 0),
+        violatingIntervalCount: intervalPressures.filter((pressure) => pressure.deficit > 0).length,
+        refined: !arePerimeterCountMatricesEqual(currentCounts, normalizedNextCounts)
+    };
+}
+
 function hasMeasuredSeatPressureImproved(currentMetrics, previousMetrics) {
     if (!previousMetrics) return true;
     if ((Number(currentMetrics?.worstSeatCount) || 0) < (Number(previousMetrics?.worstSeatCount) || 0)) return true;
+    if ((Number(currentMetrics?.totalDeficit) || 0) < (Number(previousMetrics?.totalDeficit) || 0)) return true;
+    if ((Number(currentMetrics?.violatingIntervalCount) || 0) < (Number(previousMetrics?.violatingIntervalCount) || 0)) return true;
+    return false;
+}
+
+function hasMeasuredEgressPressureImproved(currentMetrics, previousMetrics) {
+    if (!previousMetrics) return true;
+    if ((Number(currentMetrics?.worstAisleOccupancy) || 0) < (Number(previousMetrics?.worstAisleOccupancy) || 0)) return true;
     if ((Number(currentMetrics?.totalDeficit) || 0) < (Number(previousMetrics?.totalDeficit) || 0)) return true;
     if ((Number(currentMetrics?.violatingIntervalCount) || 0) < (Number(previousMetrics?.violatingIntervalCount) || 0)) return true;
     return false;
@@ -3724,6 +3938,7 @@ export function buildTierAisleAnalysis({
     let requestedIntervalCounts = null;
     let lastAnalysis = null;
     let previousSeatPressureMetrics = null;
+    let previousEgressPressureMetrics = null;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
         const analysis = buildTierAisleAnalysisCandidate({
@@ -3816,6 +4031,63 @@ export function buildTierAisleAnalysis({
             return analysis;
         }
 
+        if (
+            analysis.allocationMode === 'deterministic_perimeter' &&
+            !!analysis.sectionSummary?.measurementValid &&
+            analysis.sectionSummary?.compliance?.egressCapCompliant === false
+        ) {
+            const refinement = buildMeasuredEgressCapRefinement({
+                perimeterModel,
+                referencePaths,
+                sectionSummary: analysis.sectionSummary,
+                aisles: analysis.aisles,
+                maxOccupantsPerAisle: resolveMaxOccupantsPerAisle({
+                    maxAisleWidthIn,
+                    egressFactor
+                })
+            });
+            const currentEgressMetrics = {
+                worstAisleOccupancy: refinement.worstAisleOccupancy,
+                totalDeficit: refinement.totalDeficit,
+                violatingIntervalCount: refinement.violatingIntervalCount
+            };
+
+            if (
+                previousEgressPressureMetrics &&
+                !hasMeasuredEgressPressureImproved(currentEgressMetrics, previousEgressPressureMetrics)
+            ) {
+                analysis.sectionSummary.layoutSolveConverged = false;
+                analysis.sectionSummary.converged = false;
+                analysis.sectionSummary.failureReason = 'egress_cap_stagnated';
+                analysis.sectionSummary.compliance = {
+                    ...analysis.sectionSummary.compliance,
+                    isCompliant: false
+                };
+                analysis.failureReason = 'egress_cap_stagnated';
+                return analysis;
+            }
+
+            if (refinement.refined) {
+                previousEgressPressureMetrics = currentEgressMetrics;
+                requestedIntervalCounts = refinement.nextCounts;
+                requestedTargetAisles = Math.max(
+                    countFixedDeterministicAisles(analysis.aisles) + sumIntervalCounts(refinement.nextCounts),
+                    analysis.forcedCount || 0
+                );
+                continue;
+            }
+
+            analysis.sectionSummary.layoutSolveConverged = false;
+            analysis.sectionSummary.converged = false;
+            analysis.sectionSummary.failureReason = 'egress_cap_stagnated';
+            analysis.sectionSummary.compliance = {
+                ...analysis.sectionSummary.compliance,
+                isCompliant: false
+            };
+            analysis.failureReason = 'egress_cap_stagnated';
+            return analysis;
+        }
+
         requestedTargetAisles = Math.max(
             requestedTargetAisles + 1,
             Math.max(0, Number(analysis.targetAisles) || 0) + 1,
@@ -3861,6 +4133,8 @@ export const __testHooks = {
     buildPerimeterModel,
     buildBoundaryPairKey,
     buildRowLocalBoundaryGapMap,
+    buildMeasuredEgressCapIntervalPressures,
+    buildMeasuredEgressCapRefinement,
     buildMeasuredSeatCapIntervalPressures,
     buildMeasuredSeatCapRefinement,
     distributeIntervalTs,

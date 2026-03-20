@@ -201,6 +201,7 @@ export function findRequiredIntervalAisleCount({
  *   maxOccupantsPerAisle?: number,
  *   rowCount?: number,
  *   measureWorstSeatsForCount?: ((count: number) => number),
+ *   measureWorstOccupantsPerSectionForCount?: ((count: number) => number),
  *   maxCount?: number
  * }} [options]
  */
@@ -208,6 +209,7 @@ export function findRequiredIntervalAisleCountForAisleLoad({
     maxOccupantsPerAisle,
     rowCount,
     measureWorstSeatsForCount,
+    measureWorstOccupantsPerSectionForCount,
     maxCount = 500
 } = {}) {
     const loadCap = Number(maxOccupantsPerAisle);
@@ -219,7 +221,9 @@ export function findRequiredIntervalAisleCountForAisleLoad({
     let required = 0;
     while (required < safeMaxCount) {
         const worstSeatsPerSection = Math.max(0, Number(measureWorstSeatsForCount(required)) || 0);
-        const occupantsPerSection = worstSeatsPerSection * resolvedRowCount;
+        const occupantsPerSection = typeof measureWorstOccupantsPerSectionForCount === 'function'
+            ? Math.max(0, Number(measureWorstOccupantsPerSectionForCount(required)) || 0)
+            : (worstSeatsPerSection * resolvedRowCount);
         const tributaryOccupancy = computeTributaryOccupancyPerAisle({
             occupantsPerBlock: occupantsPerSection,
             blockCount: required + 1
@@ -321,6 +325,74 @@ export function estimateWorstSeatsInInterval(intervalLengthFt, distributedCount,
     }
     const segmentLengthFt = count >= 0 ? gapFt / (count + 1) : gapFt;
     return spanGapToSeatCount(segmentLengthFt, aisleWidthFt, seatWidthIn);
+}
+
+function buildIntervalSectionSeatCounts(intervalLengthFt, distributedCount, options = {}) {
+    const gapFt = Math.max(0, Number(intervalLengthFt) || 0);
+    const count = Math.max(0, Math.floor(Number(distributedCount) || 0));
+    const aisleWidthFt = normalizeAisleWidthFt(options.aisleWidthFt);
+    const seatWidthIn = normalizeSeatWidthIn(options.seatWidthIn);
+
+    if (typeof options.measureSegments === 'function') {
+        const bounds = options.measureSegments(count);
+        if (Array.isArray(bounds) && bounds.length >= 2) {
+            const seatCounts = [];
+            for (let i = 0; i < bounds.length - 1; i += 1) {
+                const start = Math.max(0, Math.min(1, Number(bounds[i]) || 0));
+                const end = Math.max(0, Math.min(1, Number(bounds[i + 1]) || 0));
+                seatCounts.push(spanGapToSeatCount(Math.max(0, gapFt * (end - start)), aisleWidthFt, seatWidthIn));
+            }
+            return seatCounts;
+        }
+    }
+
+    return new Array(count + 1).fill(
+        spanGapToSeatCount(count >= 0 ? (gapFt / (count + 1)) : gapFt, aisleWidthFt, seatWidthIn)
+    );
+}
+
+/**
+ * @param {{
+ *   frontIntervalLengthFt?: number,
+ *   backIntervalLengthFt?: number,
+ *   distributedCount?: number,
+ *   rowCount?: number,
+ *   aisleWidthFt?: number,
+ *   seatWidthIn?: number,
+ *   measureSegments?: ((count: number) => number[])
+ * }} [options]
+ */
+export function estimateWorstOccupantsPerSectionInTaperedInterval({
+    frontIntervalLengthFt,
+    backIntervalLengthFt,
+    distributedCount,
+    rowCount,
+    aisleWidthFt,
+    seatWidthIn,
+    measureSegments
+} = {}) {
+    const resolvedRowCount = Math.max(1, Math.round(Number(rowCount) || 1));
+    const frontSeatCounts = buildIntervalSectionSeatCounts(frontIntervalLengthFt, distributedCount, {
+        aisleWidthFt,
+        seatWidthIn,
+        measureSegments
+    });
+    const backSeatCounts = buildIntervalSectionSeatCounts(backIntervalLengthFt, distributedCount, {
+        aisleWidthFt,
+        seatWidthIn,
+        measureSegments
+    });
+    const sectionCount = Math.max(frontSeatCounts.length, backSeatCounts.length);
+    let worstOccupancy = 0;
+
+    for (let i = 0; i < sectionCount; i += 1) {
+        const frontSeats = Math.max(0, Number(frontSeatCounts[i] ?? backSeatCounts[i]) || 0);
+        const backSeats = Math.max(0, Number(backSeatCounts[i] ?? frontSeatCounts[i]) || 0);
+        const estimatedAverageSeats = Math.ceil((frontSeats + backSeats) * 0.5);
+        worstOccupancy = Math.max(worstOccupancy, estimatedAverageSeats * resolvedRowCount);
+    }
+
+    return worstOccupancy;
 }
 
 export function computeTierEgressMetrics({
