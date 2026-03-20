@@ -58,20 +58,20 @@ const SPORTS_TEMPLATES = {
             setup: { customRunoff: 25.0, focalZ: 0.0, focalX: 0.0 },
             bowl: {
                 type: "Full",
-                cornerRad: 10,
+                cornerRad: 25,
                 sideLength: 360,
                 structuralDepth: 12,
                 structuralProfileMode: "stepped",
                 straightAisleMode: "perpendicular",
                 chamferAisleMode: "radial",
-                radius: 10
+                radius: 25
             },
             occupancy: {
-                seatWidth: 20,
+                seatWidth: 19,
                 minAisle: 48,
                 maxAisle: 72,
-                seatsBetweenAisles: 20,
-                egressFactor: 0.2
+                seatsBetweenAisles: 28,
+                egressFactor: 0.096
             },
             tier1: {
                 targetCValue: 4.0,
@@ -98,20 +98,20 @@ const SPORTS_TEMPLATES = {
             setup: { customRunoff: 20.0, focalZ: 0.0, focalX: 0.0 },
             bowl: {
                 type: "Full",
-                cornerRad: 2,
+                cornerRad: 20,
                 sideLength: 345,
                 structuralDepth: 12,
                 structuralProfileMode: "stepped",
                 straightAisleMode: "perpendicular",
                 chamferAisleMode: "radial",
-                radius: 2
+                radius: 20
             },
             occupancy: {
-                seatWidth: 20,
+                seatWidth: 19,
                 minAisle: 48,
                 maxAisle: 72,
-                seatsBetweenAisles: 20,
-                egressFactor: 0.2
+                seatsBetweenAisles: 28,
+                egressFactor: 0.096
             },
             tier1: {
                 targetCValue: 3.5, // FIFA Recommendation
@@ -138,25 +138,25 @@ const SPORTS_TEMPLATES = {
             setup: { customRunoff: 6.5, focalZ: 2.5, focalX: 0.0 },
             bowl: {
                 type: "Full",
-                cornerRad: 1,
+                cornerRad: 20,
                 sideLength: 94,
                 structuralDepth: 12,
                 structuralProfileMode: "stepped",
                 straightAisleMode: "perpendicular",
                 chamferAisleMode: "radial",
-                radius: 1
+                radius: 20
             },
             occupancy: {
-                seatWidth: 20,
+                seatWidth: 19,
                 minAisle: 48,
-                maxAisle: 72,
-                seatsBetweenAisles: 20,
+                maxAisle: 66,
+                seatsBetweenAisles: 28,
                 egressFactor: 0.2
             },
             tier1: {
                 targetCValue: 4.0,
                 numRows: 20,
-                firstRowDist: 20.0, // Courtside
+                firstRowDist: 30.0, // Courtside
                 firstRowElev: 2.0,
                 treadDepth: 34,
                 riserHeight: 12, // Gradual start

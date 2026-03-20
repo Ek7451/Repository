@@ -5,6 +5,7 @@ import {
     buildProfileDxf,
     buildProfileDxfExportDescriptor
 } from '../../export/dxf-exporter.js';
+import { buildFieldGeometrySegments } from '../../viz/field-renderer.js';
 
 function createSolver() {
     return {
@@ -25,6 +26,41 @@ function createSolver() {
             return [[{ x: 8, z: 1 }, { x: 10, z: 1 }]];
         }
     };
+}
+
+function createPlanTemplateCases() {
+    return [
+        {
+            shape: 'rectangle',
+            field_length: 100,
+            field_width: 50,
+            focal_x: 0,
+            focal_y: 0
+        },
+        {
+            shape: 'rounded_rect',
+            field_length: 200,
+            field_width: 85,
+            corner_radius: 28,
+            focal_x: 0,
+            focal_y: -42.5
+        },
+        {
+            shape: 'oval',
+            straight_length: 580.5,
+            field_width: 303.6,
+            corner_radius: 120,
+            focal_x: 0,
+            focal_y: 0
+        },
+        {
+            shape: 'arc',
+            field_radius: 325,
+            arc_angle: 90,
+            focal_x: 0,
+            focal_y: 0
+        }
+    ];
 }
 
 describe('buildProfileDxf', () => {
@@ -137,6 +173,25 @@ describe('buildProfileDxfExportDescriptor', () => {
 });
 
 describe('buildPlanDxf', () => {
+    test('writes supported shared field shapes without invalid entities', () => {
+        createPlanTemplateCases().forEach((template) => {
+            const dxf = buildPlanDxf({
+                template,
+                runoffFt: 10,
+                visualFocalXFt: 0,
+                tierPlanArtifacts: [],
+                fieldEdgeSegments: buildFieldGeometrySegments(template, 0),
+                runoffSegments: buildFieldGeometrySegments(template, 10)
+            });
+
+            expect(dxf).toContain('Field_Edge');
+            expect(dxf).toContain('Runoff');
+            expect(dxf).not.toContain('NaN');
+            expect(dxf).not.toContain('Infinity');
+            expect(dxf).toContain('EOF');
+        });
+    });
+
     test('writes field and runoff layers from passed arguments', () => {
         const dxf = buildPlanDxf({
             template: {
@@ -148,6 +203,20 @@ describe('buildPlanDxf', () => {
             },
             runoffFt: 10,
             visualFocalXFt: 15,
+            fieldEdgeSegments: buildFieldGeometrySegments({
+                shape: 'rectangle',
+                field_length: 100,
+                field_width: 50,
+                focal_x: 0,
+                focal_y: -80
+            }, 0),
+            runoffSegments: buildFieldGeometrySegments({
+                shape: 'rectangle',
+                field_length: 100,
+                field_width: 50,
+                focal_x: 0,
+                focal_y: -80
+            }, 10),
             tierPlanArtifacts: [
                 {
                     tierIndex: 0,
@@ -192,6 +261,20 @@ describe('buildPlanDxf', () => {
             },
             runoffFt: 10,
             visualFocalXFt: 0,
+            fieldEdgeSegments: buildFieldGeometrySegments({
+                shape: 'rectangle',
+                field_length: 100,
+                field_width: 50,
+                focal_x: 0,
+                focal_y: 0
+            }, 0),
+            runoffSegments: buildFieldGeometrySegments({
+                shape: 'rectangle',
+                field_length: 100,
+                field_width: 50,
+                focal_x: 0,
+                focal_y: 0
+            }, 10),
             tierPlanArtifacts: [
                 {
                     tierIndex: 0,
@@ -228,6 +311,20 @@ describe('buildPlanDxfExportDescriptor', () => {
             },
             runoffFt: 10,
             visualFocalXFt: 0,
+            fieldEdgeSegments: buildFieldGeometrySegments({
+                shape: 'rectangle',
+                field_length: 100,
+                field_width: 50,
+                focal_x: 0,
+                focal_y: 0
+            }, 0),
+            runoffSegments: buildFieldGeometrySegments({
+                shape: 'rectangle',
+                field_length: 100,
+                field_width: 50,
+                focal_x: 0,
+                focal_y: 0
+            }, 10),
             tierPlanArtifacts: [
                 {
                     tierIndex: 0,

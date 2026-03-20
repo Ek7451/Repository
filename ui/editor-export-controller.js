@@ -118,18 +118,28 @@ export class EditorExportController {
     }
 
     _buildPlanDxfDescriptor(exportContext) {
+        const fieldGeometryPort = this._getFieldGeometryPort();
+        if (!fieldGeometryPort) return null;
+
         const tierPlanArtifacts = this._buildTierRuntimeArtifacts(exportContext).map((artifact) => ({
             tierIndex: artifact.tierIndex,
             rowGeometries: artifact.rowGeometries,
             aislePolygons: artifact.aislePolygons,
             overlayData: artifact.overlayData
         }));
+        const fieldEdgeSegments = fieldGeometryPort.getFieldGeometrySegments?.(exportContext.template, 0) || [];
+        const runoffSegments = fieldGeometryPort.getFieldGeometrySegments?.(
+            exportContext.template,
+            exportContext.runoffDistance
+        ) || [];
 
         return buildPlanDxfExportDescriptor({
             template: exportContext.template,
             runoffFt: exportContext.runoffDistance,
             visualFocalXFt: exportContext.focalPointFt.x,
             tierPlanArtifacts,
+            fieldEdgeSegments,
+            runoffSegments,
             sportName: exportContext.sportName
         });
     }

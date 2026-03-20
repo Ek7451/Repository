@@ -1,11 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { FieldRenderer } from '../../viz/field-renderer.js';
+import {
+    FieldRenderer,
+    buildBowlGeometrySegments,
+    buildBowlGeometrySubpaths,
+    buildFieldGeometrySegments,
+    buildBowlBandPolygons
+} from '../../viz/field-renderer.js';
 import {
     buildGeometryPaths,
     resolveAisleStationRatios,
     samplePathPointByRatio
 } from '../../core/aisle-layout.js';
+import { resolvePlanFocalYFt } from '../../core/sports-templates.js';
 
 vi.mock('three', async () => import('../../lib/three.module.js'));
 
@@ -48,6 +55,77 @@ function createEgressParams() {
     };
 }
 
+function createFieldTemplateCases() {
+    return [
+        {
+            shape: 'rectangle',
+            field_length: 360,
+            field_width: 160
+        },
+        {
+            shape: 'rounded_rect',
+            field_length: 200,
+            field_width: 85,
+            corner_radius: 28
+        },
+        {
+            shape: 'oval',
+            straight_length: 580.5,
+            field_width: 303.6,
+            corner_radius: 120
+        },
+        {
+            shape: 'arc',
+            field_radius: 325,
+            arc_angle: 90
+        }
+    ];
+}
+
+function createSharedBowlGeometryCases() {
+    return [
+        createFullChamferBowlConfig({ corner: 'Square', radius: 0 }),
+        createFullChamferBowlConfig({ corner: 'Chamfer', radius: 18 }),
+        createFullChamferBowlConfig({ corner: 'Radius', radius: 18 }),
+        createFullChamferBowlConfig({ type: 'U-End1', corner: 'Chamfer', radius: 18 }),
+        createFullChamferBowlConfig({ type: 'Sides', corner: 'Radius', radius: 18 }),
+        {
+            shape: 'arc',
+            radius_arc: 325,
+            arc_angle: 90,
+            type: 'Full'
+        }
+    ];
+}
+
+function subpathIsClosed(points = []) {
+    if (!Array.isArray(points) || points.length < 2) return false;
+    const first = points[0];
+    const last = points[points.length - 1];
+    return Math.abs((first?.x || 0) - (last?.x || 0)) < 1e-9
+        && Math.abs((first?.y || 0) - (last?.y || 0)) < 1e-9;
+}
+
+function normalizeAnglePi(angle) {
+    let normalized = Number(angle) || 0;
+    while (normalized <= -Math.PI) normalized += Math.PI * 2;
+    while (normalized > Math.PI) normalized -= Math.PI * 2;
+    return normalized;
+}
+
+function isReadableLabelAngle(angle) {
+    const normalized = normalizeAnglePi(angle);
+    const baselineX = Math.cos(normalized);
+    const bottomX = Math.sin(normalized);
+    const bottomY = Math.cos(normalized);
+    return baselineX >= -1e-6
+        && (bottomY >= -1e-6 || (Math.abs(bottomY) <= 1e-6 && bottomX >= -1e-6));
+}
+
+function smallestAngleDistance(a, b) {
+    return Math.abs(normalizeAnglePi((Number(a) || 0) - (Number(b) || 0)));
+}
+
 describe('FieldRenderer helper delegation surface', () => {
     it('preserves sport-based offset correction behavior', () => {
         const renderer = Object.create(FieldRenderer.prototype);
@@ -66,6 +144,196 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(renderer.getVisualFocalY({ focal_y: 0, field_width: 303.6 }, { x: 10 }, 'Track')).toBeCloseTo(-161.8);
         expect(renderer.getVisualFocalY({ focal_y: 0, field_radius: 325 }, { x: 5 }, 'Baseball')).toBe(-5);
         expect(renderer.getVisualFocalY(null, null, 'Soccer')).toBe(0);
+    });
+
+    it('builds shared field perimeter segments across supported template shapes', () => {
+        createFieldTemplateCases().forEach((template) => {
+            const baseSegments = buildFieldGeometrySegments(template, 0);
+            const expandedSegments = buildFieldGeometrySegments(template, 5);
+            const hasClosedBaseContour = baseSegments.some((segment) => segment.cmd === 'closePath')
+                || baseSegments[baseSegments.length - 1]?.cmd === 'lineTo';
+            const hasClosedExpandedContour = expandedSegments.some((segment) => segment.cmd === 'closePath')
+                || expandedSegments[expandedSegments.length - 1]?.cmd === 'lineTo';
+
+            expect(baseSegments.length).toBeGreaterThan(0);
+            expect(baseSegments[0]).toEqual(expect.objectContaining({ cmd: 'moveTo' }));
+            expect(hasClosedBaseContour).toBe(true);
+            expect(expandedSegments.length).toBeGreaterThan(0);
+            expect(expandedSegments[0]).toEqual(expect.objectContaining({ cmd: 'moveTo' }));
+            expect(hasClosedExpandedContour).toBe(true);
+        });
+    });
+
+    it('draws runoff and field edge beneath seating in plan view', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const callOrder = [];
+        renderer.canvas = { width: 800, height: 600 };
+        renderer.ctx = {
+            clearRect: vi.fn(),
+            fillStyle: '',
+            fillRect: vi.fn(),
+            save: vi.fn(),
+            translate: vi.fn(),
+            scale: vi.fn(),
+            restore: vi.fn()
+        };
+        renderer._userHasZoomed = false;
+        renderer._drawGrid = vi.fn();
+        renderer._drawLegend = vi.fn();
+        renderer._getBounds = vi.fn(() => ({
+            minX: -100,
+            maxX: 100,
+            minY: -50,
+            maxY: 50
+        }));
+        renderer._calcScale = vi.fn(() => 1);
+        renderer._drawShape = vi.fn((_ctx, _template, extraRunoff) => {
+            callOrder.push(extraRunoff > 0 ? 'runoff' : 'field');
+        });
+        renderer._drawSeating = vi.fn(() => {
+            callOrder.push('seating');
+        });
+        renderer._drawFocalPoint = vi.fn(() => {
+            callOrder.push('focal');
+        });
+
+        renderer.render(
+            {
+                shape: 'rectangle',
+                field_length: 360,
+                field_width: 160,
+                runoff: 10
+            },
+            null,
+            [createTierSolver()],
+            { showSeating: true, t1: true, t2: false, t3: false },
+            0,
+            createFullChamferBowlConfig(),
+            0,
+            []
+        );
+
+        expect(callOrder).toEqual(['runoff', 'field', 'seating', 'focal']);
+    });
+
+    it('keeps the plan-view focal marker on the field centerline', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const ctx = {
+            save: vi.fn(),
+            restore: vi.fn(),
+            setLineDash: vi.fn(),
+            beginPath: vi.fn(),
+            moveTo: vi.fn(),
+            lineTo: vi.fn(),
+            stroke: vi.fn(),
+            arc: vi.fn()
+        };
+
+        renderer._drawFocalPoint(
+            ctx,
+            { focal_x: -10, focal_y: -42.5 },
+            1,
+            -54.5
+        );
+
+        expect(ctx.moveTo).toHaveBeenNthCalledWith(1, -8, -54.5);
+        expect(ctx.lineTo).toHaveBeenNthCalledWith(1, 8, -54.5);
+        expect(ctx.moveTo).toHaveBeenNthCalledWith(2, 0, -62.5);
+        expect(ctx.lineTo).toHaveBeenNthCalledWith(2, 0, -46.5);
+        expect(ctx.arc).toHaveBeenCalledWith(0, -54.5, 4.8, 0, Math.PI * 2);
+    });
+
+    it('shares bowl geometry segments across renderer consumers for supported bowl families', async () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const { Scene3D } = await import('../../viz/scene3d.js');
+        const scene = Object.create(Scene3D.prototype);
+
+        createSharedBowlGeometryCases().forEach((bowlConfig) => {
+            [0, 6, 18].forEach((offset) => {
+                expect(renderer.getBowlGeometrySegments(bowlConfig, offset)).toEqual(
+                    buildBowlGeometrySegments(bowlConfig, offset)
+                );
+                expect(scene.getBowlGeometrySegments(bowlConfig, offset)).toEqual(
+                    buildBowlGeometrySegments(bowlConfig, offset)
+                );
+            });
+        });
+    });
+
+    it('anchors chamfer slider values at the interior reference edge while preserving 45-degree growth outward', () => {
+        const bowlConfig = createFullChamferBowlConfig({
+            width: 160,
+            length: 360,
+            radius: 5,
+            chamferReferenceOffset: 30
+        });
+
+        const interiorSegments = buildBowlGeometrySegments(bowlConfig, 30);
+        const outerSegments = buildBowlGeometrySegments(bowlConfig, 42);
+        const interiorHalfWidth = (bowlConfig.width / 2) + 30;
+        const interiorHalfLength = (bowlConfig.length / 2) + 30;
+        const outerHalfWidth = (bowlConfig.width / 2) + 42;
+        const outerHalfLength = (bowlConfig.length / 2) + 42;
+        const expectedOuterLeg = 5 + ((42 - 30) * 0.5858);
+
+        expect(interiorSegments[0]).toEqual({
+            cmd: 'moveTo',
+            x: interiorHalfLength - 5,
+            y: interiorHalfWidth
+        });
+        expect(interiorSegments[1]).toEqual({
+            cmd: 'lineTo',
+            x: interiorHalfLength,
+            y: interiorHalfWidth - 5
+        });
+
+        expect(outerSegments[0].x).toBeCloseTo(outerHalfLength - expectedOuterLeg);
+        expect(outerSegments[0].y).toBeCloseTo(outerHalfWidth);
+        expect(outerSegments[1].x).toBeCloseTo(outerHalfLength);
+        expect(outerSegments[1].y).toBeCloseTo(outerHalfWidth - expectedOuterLeg);
+    });
+
+    it('accepts the renamed human-readable bowl type aliases without changing geometry output', () => {
+        const cShapeConfig = createFullChamferBowlConfig({ type: 'C-Shape', corner: 'Chamfer', radius: 18 });
+        const uShapeConfig = createFullChamferBowlConfig({ type: 'U-Shape', corner: 'Radius', radius: 18 });
+
+        expect(buildBowlGeometrySegments(cShapeConfig, 6)).toEqual(
+            buildBowlGeometrySegments(createFullChamferBowlConfig({ type: 'U-End1', corner: 'Chamfer', radius: 18 }), 6)
+        );
+        expect(buildBowlGeometrySegments(uShapeConfig, 6)).toEqual(
+            buildBowlGeometrySegments(createFullChamferBowlConfig({ type: 'U-End2', corner: 'Radius', radius: 18 }), 6)
+        );
+    });
+
+    it('builds row band polygons from both front and back offsets across bowl families', () => {
+        createSharedBowlGeometryCases().forEach((bowlConfig) => {
+            const frontOffset = 9;
+            const backOffset = 12;
+            const frontSubpaths = buildBowlGeometrySubpaths(bowlConfig, frontOffset);
+            const backSubpaths = buildBowlGeometrySubpaths(bowlConfig, backOffset);
+            const polygons = buildBowlBandPolygons(bowlConfig, frontOffset, backOffset);
+
+            expect(polygons.length).toBe(Math.min(frontSubpaths.length, backSubpaths.length));
+
+            polygons.forEach((polygon, index) => {
+                const frontPath = frontSubpaths[index];
+                const backPath = backSubpaths[index];
+                const expectClosedBand = subpathIsClosed(frontPath) && subpathIsClosed(backPath);
+
+                expect(polygon.points.length).toBe(frontPath.length + backPath.length);
+                expect(polygon.points[0]).toEqual(frontPath[0]);
+                expect(polygon.points[frontPath.length - 1]).toEqual(frontPath[frontPath.length - 1]);
+                expect(polygon.points[frontPath.length]).toEqual(backPath[backPath.length - 1]);
+                expect(polygon.points[polygon.points.length - 1]).toEqual(backPath[0]);
+
+                if (expectClosedBand) {
+                    expect(frontPath[0]).toEqual(frontPath[frontPath.length - 1]);
+                    expect(backPath[0]).toEqual(backPath[backPath.length - 1]);
+                    expect(polygon.points[frontPath.length - 1]).toEqual(polygon.points[0]);
+                    expect(polygon.points[polygon.points.length - 1]).toEqual(backPath[0]);
+                }
+            });
+        });
     });
 
     it('builds tier aisle layouts for solved tiers with rows and ignores metrics as a truth source', () => {
@@ -229,11 +497,24 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(overlay.widthLabels).toHaveLength(tierLayout.aisles.length);
         expect(overlay.occupancyLabels[targetAisleIndex]).toEqual(expect.objectContaining({
             text: '123.5occ',
-            rotationRad: expect.any(Number)
+            rotationRad: expect.any(Number),
+            arrow: expect.objectContaining({
+                direction: expect.any(Number)
+            })
         }));
         expect(overlay.widthLabels[targetAisleIndex]).toEqual(expect.objectContaining({
-            text: '48.3"'
+            text: '48.3"',
+            rotationRad: expect.any(Number)
         }));
+        expect(isReadableLabelAngle(overlay.occupancyLabels[targetAisleIndex].rotationRad)).toBe(true);
+        expect(Math.abs(overlay.occupancyLabels[targetAisleIndex].arrow.direction)).toBe(1);
+        expect(isReadableLabelAngle(overlay.widthLabels[targetAisleIndex].rotationRad)).toBe(true);
+        expect(
+            Math.abs(smallestAngleDistance(
+                overlay.widthLabels[targetAisleIndex].rotationRad,
+                overlay.occupancyLabels[targetAisleIndex].rotationRad
+            ) - (Math.PI * 0.5))
+        ).toBeLessThan(0.25);
     });
 
     it('renders aisle polygons from rendered widths while width labels stay on governing widths', () => {
@@ -319,18 +600,189 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(overlay.sectionLabels.length).toBe(sections.length);
         expect(overlay.rowSeatLabels.some((label) => label.slotIndex === firstSection.slotIndex)).toBe(true);
         expect(overlay.rowSeatLabels.some((label) => label.slotIndex === lastSection.slotIndex)).toBe(true);
+        expect(overlay.rowSeatLabels.every((label) => Number.isFinite(label.rotationRad))).toBe(true);
+        expect(overlay.rowSeatLabels.every((label) => isReadableLabelAngle(label.rotationRad))).toBe(true);
     });
 
-    it('restores the canvas context after drawing section metrics overlays', () => {
+    it('renders U-end terminal aisle polygons flush to the open segment edge', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const solver = createTierSolver();
+        const bowlConfig = createFullChamferBowlConfig({
+            type: 'U-End1',
+            width: 85,
+            length: 200,
+            radius: 28,
+            straightAisleMode: 'perpendicular',
+            chamferAisleMode: 'radial'
+        });
+        const tierLayout = renderer.generateTierAisleLayout(
+            solver,
+            bowlConfig,
+            createTierMetrics(),
+            0,
+            createEgressParams()
+        );
+        const polygons = renderer.getTierAisleBandPolygons(solver, bowlConfig, tierLayout, 0)
+            .filter((polygon) => polygon.aisleIndex === 0);
+
+        expect(tierLayout.aisles[0]).toEqual(expect.objectContaining({
+            anchorType: 'open_edge_terminal',
+            edge: 'start'
+        }));
+        expect(polygons).toHaveLength(solver.rows.length);
+
+        polygons.forEach((polygon, rowIndex) => {
+            const row = solver.rows[rowIndex];
+            const frontPaths = buildGeometryPaths(
+                renderer._getBowlGeometry(bowlConfig, row.x - row.tread_depth)
+            );
+            const backPaths = buildGeometryPaths(
+                renderer._getBowlGeometry(bowlConfig, row.x)
+            );
+            const pathIndex = tierLayout.aisles[0].pathIndex;
+            const frontPath = frontPaths[pathIndex];
+            const backPath = backPaths[pathIndex];
+            const frontOuterX = Math.max(polygon.points[0].x, polygon.points[1].x);
+            const backOuterX = Math.max(polygon.points[2].x, polygon.points[3].x);
+
+            expect(frontOuterX).toBeCloseTo(frontPath.startX, 6);
+            expect(backOuterX).toBeCloseTo(backPath.startX, 6);
+        });
+    });
+
+    it('renders side-run terminal aisle polygons flush to the open segment edge', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const solver = createTierSolver();
+
+        ['Side1', 'Side2', 'Sides'].forEach((type) => {
+            const bowlConfig = createFullChamferBowlConfig({
+                type,
+                width: 85,
+                length: 200,
+                radius: 0,
+                corner: 'None',
+                straightAisleMode: 'perpendicular',
+                chamferAisleMode: 'radial'
+            });
+            const tierLayout = renderer.generateTierAisleLayout(
+                solver,
+                bowlConfig,
+                createTierMetrics(),
+                0,
+                createEgressParams()
+            );
+
+            const firstAislesByPath = new Map();
+            tierLayout.aisles.forEach((aisle, aisleIndex) => {
+                if (aisle.anchorType !== 'distributed_linear_even') return;
+                const pathIndex = Math.max(0, Math.floor(Number(aisle.pathIndex) || 0));
+                const current = firstAislesByPath.get(pathIndex);
+                if (!current || (Number(aisle.u) || 0) < (Number(current.aisle.u) || 0)) {
+                    firstAislesByPath.set(pathIndex, { aisle, aisleIndex });
+                }
+            });
+
+            firstAislesByPath.forEach(({ aisleIndex }, pathIndex) => {
+                const polygons = renderer.getTierAisleBandPolygons(solver, bowlConfig, tierLayout, 0)
+                    .filter((polygon) => polygon.aisleIndex === aisleIndex);
+
+                expect(polygons).toHaveLength(solver.rows.length);
+
+                polygons.forEach((polygon, rowIndex) => {
+                    const row = solver.rows[rowIndex];
+                    const frontPaths = buildGeometryPaths(
+                        renderer._getBowlGeometry(bowlConfig, row.x - row.tread_depth)
+                    );
+                    const backPaths = buildGeometryPaths(
+                        renderer._getBowlGeometry(bowlConfig, row.x)
+                    );
+                    const frontPath = frontPaths[pathIndex];
+                    const backPath = backPaths[pathIndex];
+                    const frontOuterX = Math.min(polygon.points[0].x, polygon.points[1].x);
+                    const backOuterX = Math.min(polygon.points[2].x, polygon.points[3].x);
+
+                    expect(frontOuterX).toBeCloseTo(frontPath.startX, 6);
+                    expect(backOuterX).toBeCloseTo(backPath.startX, 6);
+                });
+            });
+        });
+    });
+
+    it('anchors row seat-count labels to the section start-side aisle instead of screen-right heuristics', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const solver = createTierSolver();
+        const bowlConfig = createFullChamferBowlConfig({
+            type: 'U-End1',
+            width: 85,
+            length: 200,
+            radius: 28
+        });
+        const tierLayout = renderer.generateTierAisleLayout(
+            solver,
+            bowlConfig,
+            createTierMetrics(),
+            0,
+            createEgressParams()
+        );
+        const overlay = renderer.getTierSectionMetricsOverlayData(solver, bowlConfig, tierLayout, 0);
+        const targetSection = tierLayout.sectionSummary.sections.find((section) => (
+            section.startBoundaryKind === 'aisle'
+            && Number.isFinite(section.aisleIndexA)
+            && Number.isFinite(section.aisleIndexB)
+        ));
+        expect(targetSection).toBeTruthy();
+        const targetLabel = overlay.rowSeatLabels.find((label) => (
+            label.slotIndex === targetSection?.slotIndex && label.rowIndex === 0
+        ));
+        const pathCache = new Map();
+        const getPathsForOffset = (offset) => {
+            const key = offset.toFixed(6);
+            if (!pathCache.has(key)) {
+                pathCache.set(key, buildGeometryPaths(renderer._getBowlGeometry(bowlConfig, offset)));
+            }
+            return pathCache.get(key);
+        };
+        const chamferCache = new Map();
+        const aisleReferenceMap = renderer._buildTierAisleReferenceMap(
+            solver,
+            bowlConfig,
+            tierLayout,
+            0,
+            getPathsForOffset,
+            chamferCache
+        );
+        const row = solver.rows[0];
+        const centerOffset = row.x - (row.tread_depth * 0.5);
+        const sampledRow = renderer._pickBestRowLabelSampling(
+            centerOffset,
+            getPathsForOffset,
+            tierLayout,
+            chamferCache,
+            aisleReferenceMap
+        );
+        expect(targetLabel).toBeTruthy();
+        const path = sampledRow.paths[targetLabel.pathIndex];
+        const aisleMap = sampledRow.aisleRatiosByPath.get(targetLabel.pathIndex);
+        const startU = aisleMap.get(targetSection.aisleIndexA);
+        const endU = aisleMap.get(targetSection.aisleIndexB);
+        const startPoint = samplePathPointByRatio(path, startU);
+        const endPoint = samplePathPointByRatio(path, endU);
+        const startDistance = Math.hypot(targetLabel.x - startPoint.x, targetLabel.y - startPoint.y);
+        const endDistance = Math.hypot(targetLabel.x - endPoint.x, targetLabel.y - endPoint.y);
+
+        expect(startDistance).toBeLessThan(endDistance);
+    });
+
+    it('gates row, section-occupancy, and aisle detail labels at their configured zoom thresholds', () => {
         const renderer = Object.create(FieldRenderer.prototype);
         renderer._drawWorldTextLabel = vi.fn();
         renderer.getTierSectionMetricsOverlayData = vi.fn(() => ({
-            sectionLabels: [{ x: 12, y: 18, text: '#101', occText: null }],
-            rowSeatLabels: []
+            sectionLabels: [{ x: 12, y: 18, text: '#101', occText: '240occ' }],
+            rowSeatLabels: [{ x: 10, y: 14, text: '24', rotationRad: Math.PI / 2 }]
         }));
         renderer._getTierAisleMetricLabelData = vi.fn(() => ({
-            occupancyLabels: [],
-            widthLabels: []
+            occupancyLabels: [{ x: 4, y: 8, text: '120occ', rotationRad: 0, arrow: { direction: 1 } }],
+            widthLabels: [{ x: 6, y: 10, text: '48"', rotationRad: Math.PI / 2 }]
         }));
 
         const ctx = {
@@ -345,13 +797,119 @@ describe('FieldRenderer helper delegation surface', () => {
             createFullChamferBowlConfig(),
             { aisles: [{}, {}], seatWidthIn: 20 },
             0,
-            1,
+            2.9,
             0,
             0
         );
 
+        expect(renderer._getTierAisleMetricLabelData).not.toHaveBeenCalled();
+        expect(renderer._drawWorldTextLabel).toHaveBeenCalledTimes(1);
+
+        renderer._drawWorldTextLabel.mockClear();
+        renderer._getTierAisleMetricLabelData.mockClear();
+        ctx.save.mockClear();
+        ctx.restore.mockClear();
+        ctx.translate.mockClear();
+
+        renderer._drawTierSectionMetrics(
+            ctx,
+            createTierSolver(),
+            createFullChamferBowlConfig(),
+            { aisles: [{}, {}], seatWidthIn: 20 },
+            0,
+            4.9,
+            0,
+            0
+        );
+
+        expect(renderer._getTierAisleMetricLabelData).not.toHaveBeenCalled();
+        expect(renderer._drawWorldTextLabel).toHaveBeenCalledTimes(2);
+        expect(ctx.save).toHaveBeenCalledTimes(1);
+        expect(ctx.restore).toHaveBeenCalledTimes(1);
+
+        renderer._drawWorldTextLabel.mockClear();
+        renderer._getTierAisleMetricLabelData.mockClear();
+        ctx.save.mockClear();
+        ctx.restore.mockClear();
+        ctx.translate.mockClear();
+
+        renderer._drawTierSectionMetrics(
+            ctx,
+            createTierSolver(),
+            createFullChamferBowlConfig(),
+            { aisles: [{}, {}], seatWidthIn: 20 },
+            0,
+            5.1,
+            0,
+            0
+        );
+
+        expect(renderer._getTierAisleMetricLabelData).not.toHaveBeenCalled();
+        expect(renderer._drawWorldTextLabel).toHaveBeenCalledTimes(2);
+        expect(ctx.save).toHaveBeenCalledTimes(1);
+        expect(ctx.restore).toHaveBeenCalledTimes(1);
+
+        renderer._drawWorldTextLabel.mockClear();
+        renderer._getTierAisleMetricLabelData.mockClear();
+        ctx.save.mockClear();
+        ctx.restore.mockClear();
+        ctx.translate.mockClear();
+
+        renderer._drawTierSectionMetrics(
+            ctx,
+            createTierSolver(),
+            createFullChamferBowlConfig(),
+            { aisles: [{}, {}], seatWidthIn: 20 },
+            0,
+            7.1,
+            0,
+            0
+        );
+
+        expect(renderer._getTierAisleMetricLabelData).toHaveBeenCalledTimes(1);
+        expect(renderer._drawWorldTextLabel).toHaveBeenCalledTimes(5);
         expect(ctx.save).toHaveBeenCalledTimes(2);
         expect(ctx.restore).toHaveBeenCalledTimes(2);
+    });
+
+    it('skips label background and border fills when transparent label styling is requested and still draws arrows', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const ctx = {
+            save: vi.fn(),
+            restore: vi.fn(),
+            translate: vi.fn(),
+            scale: vi.fn(),
+            rotate: vi.fn(),
+            fillRect: vi.fn(),
+            strokeRect: vi.fn(),
+            fillText: vi.fn(),
+            measureText: vi.fn(() => ({ width: 20 })),
+            beginPath: vi.fn(),
+            moveTo: vi.fn(),
+            lineTo: vi.fn(),
+            stroke: vi.fn(),
+            font: '',
+            textAlign: '',
+            textBaseline: '',
+            fillStyle: '',
+            strokeStyle: '',
+            lineWidth: 0
+        };
+
+        renderer._drawWorldTextLabel(ctx, 2, 5, 6, '120occ', {
+            bgColor: null,
+            borderColor: null,
+            rotationRad: Math.PI / 2,
+            arrow: { direction: 1 }
+        });
+
+        expect(ctx.fillRect).not.toHaveBeenCalled();
+        expect(ctx.strokeRect).not.toHaveBeenCalled();
+        expect(ctx.fillText).toHaveBeenCalledWith('120occ', 0, 0);
+        expect(ctx.beginPath).toHaveBeenCalledTimes(1);
+        expect(ctx.moveTo).toHaveBeenCalled();
+        expect(ctx.lineTo).toHaveBeenCalled();
+        expect(ctx.stroke).toHaveBeenCalledTimes(1);
     });
 
     it('keeps straight perpendicular aisle polygons on one tier-stable axis in plan view', () => {
@@ -566,7 +1124,7 @@ describe('FieldRenderer helper delegation surface', () => {
             expect(targetAisleIndex).toBeGreaterThanOrEqual(0);
 
             const getPathsForOffset = (offset) => buildGeometryPaths(
-                scene._getBowlGeometrySegments(bowlConfig, offset)
+                scene.getBowlGeometrySegments(bowlConfig, offset)
             );
             const fieldChamferCache = new Map();
             const sceneChamferCache = new Map();
@@ -595,6 +1153,7 @@ describe('FieldRenderer helper delegation surface', () => {
                 backPaths[pathIndex],
                 tierLayout.aisles[targetAisleIndex],
                 targetAisleIndex,
+                tierLayout,
                 fieldChamferCache,
                 fieldReferenceMap
             );
@@ -603,6 +1162,7 @@ describe('FieldRenderer helper delegation surface', () => {
                 backPaths[pathIndex],
                 tierLayout.aisles[targetAisleIndex],
                 targetAisleIndex,
+                tierLayout,
                 sceneChamferCache,
                 sceneReferenceMap
             );
@@ -655,6 +1215,40 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(baseGeometry).not.toBeNull();
         expect(widenedGeometry).not.toBeNull();
         expect(widenedFrontWidthFt).toBeGreaterThan(baseFrontWidthFt + 0.3);
+    });
+
+    it('keeps the 3d focal marker on the field centerline while preserving depth', async () => {
+        const { Scene3D } = await import('../../viz/scene3d.js');
+        const THREE = await import('../../lib/three.module.js');
+        const scene = Object.create(Scene3D.prototype);
+        scene._initialized = true;
+        scene.THREE = THREE;
+        scene.fieldGroup = {
+            children: [],
+            add(child) {
+                this.children.push(child);
+            },
+            remove(child) {
+                const index = this.children.indexOf(child);
+                if (index >= 0) this.children.splice(index, 1);
+            }
+        };
+
+        const template = {
+            shape: 'rectangle',
+            field_length: 360,
+            field_width: 160,
+            runoff: 18,
+            focal_x: -10,
+            focal_y: -42.5
+        };
+
+        scene.updateField(template, null, 9, 18);
+
+        const marker = scene.fieldGroup.children.at(-1);
+        expect(marker.position.x).toBe(0);
+        expect(marker.position.y).toBe(9);
+        expect(marker.position.z).toBeCloseTo(-resolvePlanFocalYFt(template, 18));
     });
 });
 

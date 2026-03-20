@@ -121,6 +121,13 @@ function createFieldRenderer() {
             { cmd: 'moveTo', x: 1, y: 2 },
             { cmd: 'lineTo', x: 3, y: 4 }
         ]),
+        getFieldGeometrySegments: vi.fn(() => [
+            { cmd: 'moveTo', x: -10, y: -5 },
+            { cmd: 'lineTo', x: 10, y: -5 },
+            { cmd: 'lineTo', x: 10, y: 5 },
+            { cmd: 'lineTo', x: -10, y: 5 },
+            { cmd: 'closePath' }
+        ]),
         getTierSectionMetricsOverlayData: vi.fn(() => ({
             sectionLabels: [
                 {
@@ -374,6 +381,7 @@ describe('EditorExportController', () => {
 
     test('uses core tier-index fallback when building the public study-results descriptor', async () => {
         const getBowlGeometrySegments = vi.fn(() => []);
+        const getFieldGeometrySegments = vi.fn(() => []);
         const getTierSectionMetricsOverlayData = vi.fn(() => ({ sectionLabels: [], rowSeatLabels: [] }));
         const getTierAisleBandPolygons = vi.fn(() => []);
         const controller = new EditorExportController({
@@ -451,6 +459,7 @@ describe('EditorExportController', () => {
             getFieldGeometryPort: () => ({
                 calculateRowLength: vi.fn(() => 100),
                 getBowlGeometrySegments,
+                getFieldGeometrySegments,
                 getTierSectionMetricsOverlayData,
                 getTierAisleBandPolygons
             })

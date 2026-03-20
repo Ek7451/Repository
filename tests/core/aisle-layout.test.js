@@ -11,6 +11,7 @@ import {
     buildTierAisleLayoutSummary,
     pickBestRowAisleSampling,
     resolveAisleStationRatios,
+    resolveTierAisleStationRatios,
     sampleAisleBand,
     samplePathPointByRatio
 } from '../../core/aisle-layout.js';
@@ -981,6 +982,62 @@ describe('aisle layout geometry seam', () => {
         expect(bottomRun.map((aisle) => aisle.u)).toEqual([0.1, 0.5, 0.9]);
         expect(layout.aisles.every((aisle) => aisle.anchorType === 'distributed_linear_even')).toBe(true);
         expect(layout.aisles.every((aisle) => aisle.alignmentMode === 'radial')).toBe(true);
+    });
+
+    it('resolves side-run terminal aisles from rendered widths so edge bands stay flush', () => {
+        const fixture = buildRendererBowlFixture('Side1', {
+            corner: 'None',
+            width: 200,
+            length: 85,
+            radius: 0
+        });
+        const rows = buildTierRows();
+        const renderer = Object.create(FieldRenderer.prototype);
+        const tierLayout = buildTierAisleAnalysis({
+            tierIndex: 0,
+            rows,
+            bowlConfig: fixture.bowlConfig,
+            offsetCorrection: 0,
+            egressParams: {
+                seatWidthIn: 20,
+                minAisleWidthIn: 48,
+                maxAisleWidthIn: 72,
+                egressFactor: 0.2,
+                seatsBetweenAisles: 24
+            },
+            getPathsForOffset: (offset) => buildGeometryPaths(renderer._getBowlGeometry(fixture.bowlConfig, offset)),
+            getRowLengthFt: (offset) => renderer.calculateRowLength(fixture.bowlConfig, offset)
+        });
+        const chamferCache = new Map();
+        const getPathsForOffset = (offset) => buildGeometryPaths(renderer._getBowlGeometry(fixture.bowlConfig, offset));
+        const aisleReferenceMap = buildTierAisleReferenceMap({
+            rows,
+            tierLayout,
+            offsetCorrection: 0,
+            getPathsForOffset,
+            chamferCache
+        });
+        const firstRow = rows[0];
+        const frontPath = getPathsForOffset(firstRow.x - firstRow.tread_depth)[0];
+        const backPath = getPathsForOffset(firstRow.x)[0];
+        const ratios = resolveTierAisleStationRatios(
+            frontPath,
+            backPath,
+            tierLayout.aisles[0],
+            0,
+            chamferCache,
+            aisleReferenceMap,
+            tierLayout
+        );
+        const widthFt = tierLayout.sectionSummary.aisles[0].renderedWidthFt;
+        const frontBand = sampleAisleBand(frontPath, ratios.uFront, widthFt);
+        const backBand = sampleAisleBand(backPath, ratios.uBack, widthFt);
+
+        expect(tierLayout.aisles[0]).toEqual(expect.objectContaining({
+            anchorType: 'distributed_linear_even'
+        }));
+        expect(frontBand.left.x).toBeCloseTo(frontPath.startX, 6);
+        expect(backBand.left.x).toBeCloseTo(backPath.startX, 6);
     });
 
     it('enforces seat and egress caps on simple open-path layouts', () => {

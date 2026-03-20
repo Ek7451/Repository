@@ -183,7 +183,10 @@ function getTierPlanColors(tierIdx) {
 
 const LABEL_FONT_FAMILY = 'Manrope, Inter, system-ui, sans-serif';
 const SECTION_LABEL_MIN_SCALE = 0.5;     // px/ft, effectively always visible at normal extents
-const ROW_SEATCOUNT_MIN_SCALE = 4.0;     // px/ft, tuned to show near close-up screenshot zoom
+const ROW_SEATCOUNT_MIN_SCALE = 6.0;     // px/ft, tuned to show near close-up screenshot zoom
+const SECTION_OCC_MIN_SCALE = 3.0;       // px/ft, kept aligned with row seat counts by default
+const AISLE_OCC_MIN_SCALE = 6.0;         // px/ft, kept aligned with row seat counts by default
+const AISLE_WIDTH_MIN_SCALE = 6.0;       // px/ft, kept aligned with row seat counts by default
 // Target sizing: ~40% larger than original labels (not 2x).
 const ROW_SEATCOUNT_LABEL_FONT_PX = 11.2;   // original 8
 const SECTION_LABEL_FONT_PX_ZOOMED_OUT = 9.5;   // ~5% smaller than the prior full-extent size
@@ -197,7 +200,7 @@ const SECTION_LABEL_STACK_OFFSET_PX = 12.6; // original 9
 // across all tiers (not a % of section width, which varies by tier/chamfer).
 // Gap beyond the visible aisle edge for the row seat-count label center.
 // Combined with aisle half-width this gives a consistent cross-tier offset.
-const ROW_SEATCOUNT_LABEL_EDGE_OFFSET_FT = 0.9;
+const ROW_SEATCOUNT_LABEL_EDGE_OFFSET_FT = 2.0;
 const ROW_SEATCOUNT_LABEL_MIN_T = 0.08;
 const ROW_SEATCOUNT_LABEL_MAX_T = 0.45;
 
@@ -249,6 +252,55 @@ function sectionDistanceOnPath(path, startU, endU) {
     return Math.abs(clampUnit01(endU) - clampUnit01(startU)) * path.length;
 }
 
+function normalizeAnglePi(angleRad) {
+    let angle = Number(angleRad) || 0;
+    while (angle <= -Math.PI) angle += Math.PI * 2;
+    while (angle > Math.PI) angle -= Math.PI * 2;
+    return angle;
+}
+
+function compareReadableLabelAngles(aRad, bRad) {
+    const candidates = [aRad, bRad].map((angle) => {
+        const normalized = normalizeAnglePi(angle);
+        const baselineX = Math.cos(normalized);
+        const bottomX = Math.sin(normalized);
+        const bottomY = Math.cos(normalized);
+        return {
+            angle: normalized,
+            score: [
+                baselineX < -1e-6 ? 1 : 0,
+                (bottomY < -1e-6 || (Math.abs(bottomY) <= 1e-6 && bottomX < -1e-6)) ? 1 : 0,
+                bottomX < -1e-6 ? 1 : 0
+            ]
+        };
+    });
+
+    for (let i = 0; i < candidates[0].score.length; i += 1) {
+        if (candidates[0].score[i] !== candidates[1].score[i]) {
+            return candidates[0].score[i] - candidates[1].score[i];
+        }
+    }
+    return 0;
+}
+
+function normalizeReadableLabelAngle(angleRad) {
+    const primary = normalizeAnglePi(angleRad);
+    const flipped = normalizeAnglePi(primary + Math.PI);
+    return compareReadableLabelAngles(primary, flipped) <= 0 ? primary : flipped;
+}
+
+function computeScreenAngleFromWorldVector(dx, dy) {
+    return Math.atan2(-(Number(dy) || 0), Number(dx) || 0);
+}
+
+function isAngleForward(normalizedAngleRad, forwardAngleRad) {
+    return Math.abs(normalizeAnglePi(normalizedAngleRad - forwardAngleRad)) < (Math.PI * 0.5);
+}
+
+function getFiniteAisleIndex(value) {
+    return Number.isFinite(Number(value)) ? value : null;
+}
+
 function formatAisleWidthLabel(widthIn) {
     return `${formatComputedLabelNumber(widthIn)}"`;
 }
@@ -262,6 +314,441 @@ function formatComputedLabelNumber(value, maxDecimals = 12) {
         }
     }
     return `${numericValue}`;
+}
+
+const PLAN_SEGMENT_ARC_RESOLUTION_DEG = 5;
+
+export function buildFieldGeometrySegments(template, extraRunoff = 0) {
+    if (!template || typeof template !== 'object') return [];
+
+    const shape = template.shape;
+    const segments = [];
+    const addLine = (x, y) => segments.push({ cmd: 'lineTo', x, y });
+    const addMove = (x, y) => segments.push({ cmd: 'moveTo', x, y });
+    const addArc = (x, y, r, sa, ea, ccw) => segments.push({ cmd: 'arc', x, y, r, sa, ea, ccw });
+    const addClose = () => segments.push({ cmd: 'closePath' });
+
+    if (shape === 'rectangle') {
+        const halfL = (template.field_length || 0) / 2 + extraRunoff;
+        const halfW = (template.field_width || 0) / 2 + extraRunoff;
+        addMove(-halfL, -halfW);
+        addLine(halfL, -halfW);
+        addLine(halfL, halfW);
+        addLine(-halfL, halfW);
+        addClose();
+        return segments;
+    }
+
+    if (shape === 'rounded_rect') {
+        const halfL = (template.field_length || 0) / 2 + extraRunoff;
+        const halfW = (template.field_width || 0) / 2 + extraRunoff;
+        const r = Math.min((template.corner_radius || 0) + extraRunoff, halfL, halfW);
+        const rx = halfL - r;
+        const ry = halfW - r;
+
+        addMove(-rx, -halfW);
+        addLine(rx, -halfW);
+        addArc(rx, -ry, r, -Math.PI / 2, 0, false);
+        addLine(halfL, ry);
+        addArc(rx, ry, r, 0, Math.PI / 2, false);
+        addLine(-rx, halfW);
+        addArc(-rx, ry, r, Math.PI / 2, Math.PI, false);
+        addLine(-halfL, -ry);
+        addArc(-rx, -ry, r, Math.PI, 1.5 * Math.PI, false);
+        addClose();
+        return segments;
+    }
+
+    if (shape === 'oval') {
+        const halfStraight = (template.straight_length || 0) / 2 - (template.corner_radius || 0) + extraRunoff;
+        const halfW = (template.field_width || 0) / 2 + extraRunoff;
+
+        addMove(-halfStraight, halfW);
+        addLine(halfStraight, halfW);
+        addArc(halfStraight, 0, halfW, Math.PI / 2, -Math.PI / 2, true);
+        addLine(-halfStraight, -halfW);
+        addArc(-halfStraight, 0, halfW, -Math.PI / 2, Math.PI / 2, true);
+        addClose();
+        return segments;
+    }
+
+    if (shape === 'arc') {
+        const radius = (template.field_radius || 0) + extraRunoff;
+        const halfAngle = ((template.arc_angle || 90) / 2) * Math.PI / 180;
+        const startAngle = Math.PI / 2 - halfAngle;
+        const endAngle = Math.PI / 2 + halfAngle;
+
+        addMove(0, 0);
+        addLine(
+            radius * Math.cos(startAngle),
+            radius * Math.sin(startAngle)
+        );
+        addArc(0, 0, radius, startAngle, endAngle, false);
+        addLine(0, 0);
+        return segments;
+    }
+
+    return [];
+}
+
+function buildBowlParams(bowlConfig, offset) {
+    const W = (bowlConfig.width || 200) / 2;
+    let type = bowlConfig.type || 'Full';
+    const L = (type.includes('Side') && bowlConfig.sideLength) ? (bowlConfig.sideLength / 2) : (bowlConfig.length || 300) / 2;
+    let corner = bowlConfig.corner || 'Chamfer';
+    let r = bowlConfig.radius || 0;
+    const chamferReferenceOffset = Math.max(0, Number(bowlConfig.chamferReferenceOffset) || 0);
+
+    const d = offset;
+    const w_eff = W + d;
+    const l_eff = L + d;
+
+    const right = l_eff;
+    const left = -l_eff;
+    const top = w_eff;
+    const bottom = -w_eff;
+
+    if (r < 1) {
+        corner = 'Square';
+        r = 0;
+    }
+
+    const r_eff = (corner === 'Radius') ? (r + d) : 0;
+    const chamfer_growth_offset = Math.max(0, d - chamferReferenceOffset);
+    const chamfer_leg = (corner === 'Chamfer') ? (r + chamfer_growth_offset * 0.5858) : 0;
+    const c_size = Math.max(r_eff, chamfer_leg);
+
+    const pts = {
+        tr_start: { x: right - c_size, y: top },
+        tr_end: { x: right, y: top - c_size },
+        tr_center: { x: right - r_eff, y: top - r_eff },
+
+        br_start: { x: right, y: bottom + c_size },
+        br_end: { x: right - c_size, y: bottom },
+        br_center: { x: right - r_eff, y: bottom + r_eff },
+
+        bl_start: { x: left + c_size, y: bottom },
+        bl_end: { x: left, y: bottom + c_size },
+        bl_center: { x: left + r_eff, y: bottom + r_eff },
+
+        tl_start: { x: left, y: top - c_size },
+        tl_end: { x: left + c_size, y: top },
+        tl_center: { x: left + r_eff, y: top - r_eff },
+
+        fixed_right: L,
+        fixed_left: -L,
+        fixed_top: W,
+        fixed_bottom: -W,
+
+        left, right, top, bottom
+    };
+
+    return { pts, type, corner, r_eff };
+}
+
+export function buildBowlGeometrySegments(bowlConfig, offset) {
+    if (bowlConfig.shape === 'arc') {
+        const r = (bowlConfig.radius_arc || 325) + offset;
+        const halfAngle = ((bowlConfig.arc_angle || 90) / 2) * Math.PI / 180;
+        const startAngle = Math.PI / 2 - halfAngle;
+        const endAngle = Math.PI / 2 + halfAngle;
+
+        const segments = [];
+        const addLine = (x, y) => segments.push({ cmd: 'lineTo', x, y });
+        const addMove = (x, y) => segments.push({ cmd: 'moveTo', x, y });
+        const addArc = (x, y, rad, sa, ea, ccw) => segments.push({ cmd: 'arc', x, y, r: rad, sa, ea, ccw });
+        const addClose = () => segments.push({ cmd: 'closePath' });
+
+        let type = bowlConfig.type || 'Full';
+        const dx1 = r * Math.cos(startAngle);
+        const dy1 = r * Math.sin(startAngle);
+        const dx2 = r * Math.cos(endAngle);
+        const dy2 = r * Math.sin(endAngle);
+
+        const dBack = offset;
+        const hx = 0;
+        const hy = -dBack;
+
+        if (type === 'Sides') {
+            addMove(dx1, dy1);
+            addLine(hx, hy);
+            addMove(hx, hy);
+            addLine(dx2, dy2);
+        } else if (type === 'U-End1' || type === 'U-Shape (End 1)' || type === 'C-Shape') {
+            addMove(dx1, dy1);
+            addArc(0, 0, r, startAngle, endAngle, false);
+            addLine(hx, hy);
+            addLine(dx1, dy1);
+        } else {
+            addMove(dx2, dy2);
+            addLine(hx, hy);
+            addLine(dx1, dy1);
+            addArc(0, 0, r, startAngle, endAngle, false);
+            addClose();
+        }
+
+        return segments;
+    }
+
+    const { pts, type, corner, r_eff } = buildBowlParams(bowlConfig, offset);
+    const segments = [];
+
+    const addLine = (x, y) => segments.push({ cmd: 'lineTo', x, y });
+    const addMove = (x, y) => segments.push({ cmd: 'moveTo', x, y });
+    const addArc = (x, y, r, sa, ea, ccw) => segments.push({ cmd: 'arc', x, y, r, sa, ea, ccw });
+    const addClose = () => segments.push({ cmd: 'closePath' });
+
+    if (type === 'Sides') {
+        addMove(pts.fixed_left, pts.bottom);
+        addLine(pts.fixed_right, pts.bottom);
+        addMove(pts.fixed_left, pts.top);
+        addLine(pts.fixed_right, pts.top);
+    } else if (type === 'Side1') {
+        addMove(pts.fixed_left, pts.bottom);
+        addLine(pts.fixed_right, pts.bottom);
+    } else if (type === 'Side2') {
+        addMove(pts.fixed_left, pts.top);
+        addLine(pts.fixed_right, pts.top);
+    } else if (type === 'U-Shape (End 1)' || type === 'U-End1' || type === 'C-Shape') {
+        addMove(pts.fixed_right, pts.top);
+        addLine(pts.tl_end.x, pts.top);
+
+        if (corner === 'Radius') addArc(pts.tl_center.x, pts.tl_center.y, r_eff, 0.5 * Math.PI, 1.0 * Math.PI, false);
+        else if (corner === 'Chamfer') addLine(pts.tl_start.x, pts.tl_start.y);
+        else addLine(pts.left, pts.top);
+
+        addLine(pts.left, pts.bl_end.y);
+
+        if (corner === 'Radius') addArc(pts.bl_center.x, pts.bl_center.y, r_eff, 1.0 * Math.PI, 1.5 * Math.PI, false);
+        else if (corner === 'Chamfer') addLine(pts.bl_start.x, pts.bl_start.y);
+        else addLine(pts.left, pts.bottom);
+
+        addLine(pts.fixed_right, pts.bottom);
+    } else if (type === 'U-Shape (End 2)' || type === 'U-End2' || type === 'U-Shape') {
+        addMove(pts.right, pts.fixed_top);
+        addLine(pts.right, pts.br_start.y);
+
+        if (corner === 'Radius') addArc(pts.br_center.x, pts.br_center.y, r_eff, 0, 1.5 * Math.PI, true);
+        else if (corner === 'Chamfer') addLine(pts.br_end.x, pts.br_end.y);
+        else addLine(pts.right, pts.bottom);
+
+        addLine(pts.bl_start.x, pts.bottom);
+
+        if (corner === 'Radius') addArc(pts.bl_center.x, pts.bl_center.y, r_eff, 1.5 * Math.PI, 1.0 * Math.PI, true);
+        else if (corner === 'Chamfer') addLine(pts.bl_end.x, pts.bl_end.y);
+        else addLine(pts.left, pts.bottom);
+
+        addLine(pts.left, pts.fixed_top);
+    } else {
+        addMove(pts.tr_start.x, pts.top);
+
+        if (corner === 'Radius') addArc(pts.tr_center.x, pts.tr_center.y, r_eff, 0.5 * Math.PI, 0, true);
+        else if (corner === 'Chamfer') addLine(pts.tr_end.x, pts.tr_end.y);
+        else addLine(pts.right, pts.top);
+
+        addLine(pts.right, pts.br_start.y);
+
+        if (corner === 'Radius') addArc(pts.br_center.x, pts.br_center.y, r_eff, 0, 1.5 * Math.PI, true);
+        else if (corner === 'Chamfer') addLine(pts.br_end.x, pts.br_end.y);
+        else addLine(pts.right, pts.bottom);
+
+        addLine(pts.bl_start.x, pts.bottom);
+
+        if (corner === 'Radius') addArc(pts.bl_center.x, pts.bl_center.y, r_eff, 1.5 * Math.PI, 1.0 * Math.PI, true);
+        else if (corner === 'Chamfer') addLine(pts.bl_end.x, pts.bl_end.y);
+        else addLine(pts.left, pts.bottom);
+
+        addLine(pts.left, pts.tl_start.y);
+
+        if (corner === 'Radius') addArc(pts.tl_center.x, pts.tl_center.y, r_eff, 1.0 * Math.PI, 0.5 * Math.PI, true);
+        else if (corner === 'Chamfer') addLine(pts.tl_end.x, pts.tl_end.y);
+        else addLine(pts.left, pts.top);
+
+        addClose();
+    }
+
+    return segments;
+}
+
+function calculateSegmentLength(segments) {
+    let totalLength = 0;
+    let lastX = 0;
+    let lastY = 0;
+    let startX = 0;
+    let startY = 0;
+
+    (segments || []).forEach((segment) => {
+        if (segment.cmd === 'moveTo') {
+            lastX = segment.x;
+            lastY = segment.y;
+            startX = segment.x;
+            startY = segment.y;
+        } else if (segment.cmd === 'lineTo') {
+            totalLength += Math.hypot(segment.x - lastX, segment.y - lastY);
+            lastX = segment.x;
+            lastY = segment.y;
+        } else if (segment.cmd === 'arc') {
+            let angle = segment.ea - segment.sa;
+            if (segment.ccw) {
+                while (angle > 0) angle -= 2 * Math.PI;
+                while (angle <= -2 * Math.PI) angle += 2 * Math.PI;
+            } else {
+                while (angle < 0) angle += 2 * Math.PI;
+                while (angle >= 2 * Math.PI) angle -= 2 * Math.PI;
+            }
+            totalLength += segment.r * Math.abs(angle);
+            lastX = segment.x + segment.r * Math.cos(segment.ea);
+            lastY = segment.y + segment.r * Math.sin(segment.ea);
+        } else if (segment.cmd === 'closePath') {
+            totalLength += Math.hypot(startX - lastX, startY - lastY);
+            lastX = startX;
+            lastY = startY;
+        }
+    });
+
+    return totalLength;
+}
+
+function computeSegmentBounds(segments) {
+    if (!segments.length) return null;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    const addPoint = (x, y) => {
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+    };
+
+    segments.forEach((segment) => {
+        if (segment.cmd === 'moveTo' || segment.cmd === 'lineTo') {
+            addPoint(segment.x, segment.y);
+            return;
+        }
+
+        if (segment.cmd === 'arc') {
+            const steps = 96;
+            for (let i = 0; i <= steps; i++) {
+                const t = i / steps;
+                const angle = segment.sa + ((segment.ea - segment.sa) * t);
+                addPoint(
+                    segment.x + (segment.r * Math.cos(angle)),
+                    segment.y + (segment.r * Math.sin(angle))
+                );
+            }
+        }
+    });
+
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+        return null;
+    }
+
+    return { minX, minY, maxX, maxY };
+}
+
+function buildPath2DFromSegments(segments) {
+    const path = new Path2D();
+
+    (segments || []).forEach((segment) => {
+        if (segment.cmd === 'moveTo') path.moveTo(segment.x, segment.y);
+        else if (segment.cmd === 'lineTo') path.lineTo(segment.x, segment.y);
+        else if (segment.cmd === 'arc') path.arc(segment.x, segment.y, segment.r, segment.sa, segment.ea, segment.ccw);
+        else if (segment.cmd === 'closePath') path.closePath();
+    });
+
+    return path;
+}
+
+export function buildPlanSubpathsFromSegments(segments, arcResolutionDeg = PLAN_SEGMENT_ARC_RESOLUTION_DEG) {
+    const subpaths = [];
+    let currentPoints = null;
+
+    const addPoint = (x, y) => {
+        if (!currentPoints) {
+            currentPoints = [];
+            subpaths.push(currentPoints);
+        }
+        currentPoints.push({ x, y });
+    };
+
+    (segments || []).forEach((segment) => {
+        if (segment.cmd === 'moveTo') {
+            currentPoints = [];
+            subpaths.push(currentPoints);
+            addPoint(segment.x, segment.y);
+            return;
+        }
+
+        if (segment.cmd === 'lineTo') {
+            addPoint(segment.x, segment.y);
+            return;
+        }
+
+        if (segment.cmd === 'arc') {
+            let start = segment.sa;
+            let end = segment.ea;
+            if (segment.ccw) {
+                while (end < start) end += Math.PI * 2;
+            } else {
+                while (end > start) end -= Math.PI * 2;
+            }
+
+            const totalAngle = Math.abs(end - start);
+            const steps = Math.max(1, Math.ceil(totalAngle * (180 / Math.PI) / Math.max(0.1, arcResolutionDeg)));
+
+            for (let i = 1; i <= steps; i++) {
+                const t = i / steps;
+                const angle = start + (end - start) * t;
+                addPoint(
+                    segment.x + segment.r * Math.cos(angle),
+                    segment.y + segment.r * Math.sin(angle)
+                );
+            }
+            return;
+        }
+
+        if (segment.cmd === 'closePath' && currentPoints && currentPoints.length > 0) {
+            currentPoints.push({ x: currentPoints[0].x, y: currentPoints[0].y });
+        }
+    });
+
+    return subpaths.filter((subpath) => subpath.length > 0);
+}
+
+export function buildBowlGeometrySubpaths(bowlConfig, offset, arcResolutionDeg = PLAN_SEGMENT_ARC_RESOLUTION_DEG) {
+    return buildPlanSubpathsFromSegments(
+        buildBowlGeometrySegments(bowlConfig, offset),
+        arcResolutionDeg
+    );
+}
+
+export function buildBowlBandPolygons(bowlConfig, frontOffset, backOffset, arcResolutionDeg = PLAN_SEGMENT_ARC_RESOLUTION_DEG) {
+    const frontSubpaths = buildBowlGeometrySubpaths(bowlConfig, frontOffset, arcResolutionDeg);
+    const backSubpaths = buildBowlGeometrySubpaths(bowlConfig, backOffset, arcResolutionDeg);
+    const polygons = [];
+    const pathCount = Math.min(frontSubpaths.length, backSubpaths.length);
+
+    for (let pathIndex = 0; pathIndex < pathCount; pathIndex++) {
+        const frontPoints = Array.isArray(frontSubpaths[pathIndex]) ? frontSubpaths[pathIndex].slice() : [];
+        const backPoints = Array.isArray(backSubpaths[pathIndex]) ? backSubpaths[pathIndex].slice() : [];
+        if (frontPoints.length < 2 || backPoints.length < 2) continue;
+
+        // Preserve the explicit closure edge for closed contours. In a full bowl,
+        // that closing segment is the top run, so trimming the repeated endpoint
+        // drops the visible band across that edge.
+        const polygon = frontPoints.concat(backPoints.slice().reverse());
+        if (polygon.length < 4) continue;
+        polygons.push({
+            pathIndex,
+            points: polygon
+        });
+    }
+
+    return polygons;
 }
 
 function approximatePathSignedArea(path, samples = 160) {
@@ -315,6 +802,7 @@ export class FieldRenderer {
             getTierSectionMetricsOverlayData: this.getTierSectionMetricsOverlayData.bind(this),
             getTierAisleBandPolygons: this.getTierAisleBandPolygons.bind(this),
             getBowlGeometrySegments: this.getBowlGeometrySegments.bind(this),
+            getFieldGeometrySegments: this.getFieldGeometrySegments.bind(this),
             getOffsetCorrection: this.getOffsetCorrection.bind(this),
             getVisualFocalY: this.getVisualFocalY.bind(this),
             buildTierAisleLayouts: this.buildTierAisleLayouts.bind(this)
@@ -503,14 +991,7 @@ export class FieldRenderer {
         ctx.translate(tx, ty);
         ctx.scale(scale, -scale); // Flip Y so +Y is up
 
-        // Draw seating BEFORE runoff/field so field lines satisfy 'on top' if overlap?
-        // Actually, typically field is focus. Seating behind?
-        // Let's draw seating first.
-        // Let's draw seating first.
-        if (solvers && visibility && visibility.showSeating) {
-            this._drawSeating(ctx, solvers, template, visibility, scale, visualFocalX, bowlConfig, offsetCorrection, tierAisleLayouts);
-        }
-
+        // Draw field markings beneath seating geometry so tier outlines stay visually on top.
         // Draw runoff perimeter
         this._drawShape(ctx, template, runoff, {
             strokeStyle: BRAND_FIELD_COLORS.runoff,
@@ -524,6 +1005,10 @@ export class FieldRenderer {
             lineWidth: 2.5 / scale,
             lineDash: []
         });
+
+        if (solvers && visibility && visibility.showSeating) {
+            this._drawSeating(ctx, solvers, template, visibility, scale, visualFocalX, bowlConfig, offsetCorrection, tierAisleLayouts);
+        }
 
         // Draw focal point
         this._drawFocalPoint(ctx, template, scale, visualFocalX);
@@ -620,7 +1105,6 @@ export class FieldRenderer {
         // Bounds determine the visible area globally
 
         const targetPx = 80;
-        const ftPerPx = 1 / scale;
         let gridFt = 50;
         const candidates = [10, 25, 50, 100, 200, 500];
         for (const c of candidates) {
@@ -657,241 +1141,20 @@ export class FieldRenderer {
     }
 
 
-    /**
-     * Generate the path for a specific "buffer" (offset) from the focal center.
-     * @param {Object} bowlConfig - { width, length, cornerType, cornerRadius, type }
-     * @param {number} offset - Distance from the focal center line (row.x)
-     * @returns {BowlParams}
-     */
-    _getBowlParams(bowlConfig, offset) {
-        // Bowl Config Defaults
-        const W = (bowlConfig.width || 200) / 2;
-        let type = bowlConfig.type || 'Full';
-        const L = (type.includes('Side') && bowlConfig.sideLength) ? (bowlConfig.sideLength / 2) : (bowlConfig.length || 300) / 2;
-        let corner = bowlConfig.corner || 'Chamfer';
-        let r = bowlConfig.radius || 0;
-
-        const d = offset;
-
-        // 1. Define base rectangle corners (centered at 0,0)
-        const w_eff = W + d;
-        const l_eff = L + d;
-
-        // Fix: Match canvas X=Length, Y=Width field orientation
-        const right = l_eff;
-        const left = -l_eff;
-        const top = w_eff;
-        const bottom = -w_eff;
-
-        if (r < 1) {
-            corner = 'Square';
-            r = 0;
-        }
-
-        const r_eff = (corner === 'Radius') ? (r + d) : 0;
-        const chamfer_leg = (corner === 'Chamfer') ? (r + d * 0.5858) : 0;
-
-        const c_size = Math.max(r_eff, chamfer_leg);
-
-        const pts = {
-            tr_start: { x: right - c_size, y: top },
-            tr_end: { x: right, y: top - c_size },
-            tr_center: { x: right - r_eff, y: top - r_eff },
-
-            br_start: { x: right, y: bottom + c_size },
-            br_end: { x: right - c_size, y: bottom },
-            br_center: { x: right - r_eff, y: bottom + r_eff },
-
-            bl_start: { x: left + c_size, y: bottom },
-            bl_end: { x: left, y: bottom + c_size },
-            bl_center: { x: left + r_eff, y: bottom + r_eff },
-
-            tl_start: { x: left, y: top - c_size },
-            tl_end: { x: left + c_size, y: top },
-            tl_center: { x: left + r_eff, y: top - r_eff },
-
-            fixed_right: L,
-            fixed_left: -L,
-            fixed_top: W,
-            fixed_bottom: -W,
-
-            left, right, top, bottom
-        };
-
-        return { pts, type, corner, r_eff };
-    }
-
     _getBowlGeometry(bowlConfig, offset) {
-        if (bowlConfig.shape === 'arc') {
-            const r = (bowlConfig.radius_arc || 325) + offset;
-            const halfAngle = ((bowlConfig.arc_angle || 90) / 2) * Math.PI / 180;
-            const startAngle = Math.PI / 2 - halfAngle;
-            const endAngle = Math.PI / 2 + halfAngle;
-
-            const segments = [];
-            const addLine = (x, y) => segments.push({ cmd: 'lineTo', x, y });
-            const addMove = (x, y) => segments.push({ cmd: 'moveTo', x, y });
-            const addArc = (x, y, rad, sa, ea, ccw) => segments.push({ cmd: 'arc', x, y, r: rad, sa, ea, ccw });
-            const addClose = () => segments.push({ cmd: 'closePath' });
-
-            let type = bowlConfig.type || 'Full';
-            const dx1 = r * Math.cos(startAngle);
-            const dy1 = r * Math.sin(startAngle);
-            const dx2 = r * Math.cos(endAngle);
-            const dy2 = r * Math.sin(endAngle);
-
-            const dBack = offset; // behind home plate depth
-            const hx = 0; const hy = -dBack;
-
-            if (type === 'Sides') {
-                addMove(dx1, dy1);
-                addLine(hx, hy);
-                addMove(hx, hy);
-                addLine(dx2, dy2);
-            } else if (type === 'U-End1' || type === 'U-Shape (End 1)') {
-                // Outfield arc + foul lines
-                addMove(dx1, dy1);
-                addArc(0, 0, r, startAngle, endAngle, false);
-                addLine(hx, hy);
-                addLine(dx1, dy1);
-            } else {
-                // Full wrap around home plate
-                addMove(dx2, dy2);
-                addLine(hx, hy);
-                addLine(dx1, dy1);
-                addArc(0, 0, r, startAngle, endAngle, false);
-                addClose();
-            }
-
-            return segments;
-        }
-
-        const { pts, type, corner, r_eff } = this._getBowlParams(bowlConfig, offset);
-        const segments = [];
-
-        const addLine = (x, y) => segments.push({ cmd: 'lineTo', x, y });
-        const addMove = (x, y) => segments.push({ cmd: 'moveTo', x, y });
-        const addArc = (x, y, rad, sa, ea, ccw) => segments.push({ cmd: 'arc', x, y, r: rad, sa, ea, ccw });
-        const addClose = () => segments.push({ cmd: 'closePath' });
-
-        if (type === 'Sides') {
-            addMove(pts.fixed_left, pts.bottom);
-            addLine(pts.fixed_right, pts.bottom);
-
-            addMove(pts.fixed_left, pts.top);
-            addLine(pts.fixed_right, pts.top);
-
-        } else if (type === 'Side1') {
-            addMove(pts.fixed_left, pts.bottom);
-            addLine(pts.fixed_right, pts.bottom);
-
-        } else if (type === 'Side2') {
-            addMove(pts.fixed_left, pts.top);
-            addLine(pts.fixed_right, pts.top);
-
-        } else if (type === 'U-Shape (End 1)' || type === 'U-End1') {
-            addMove(pts.fixed_right, pts.top);
-            addLine(pts.tl_end.x, pts.top);
-
-            if (corner === 'Radius') addArc(pts.tl_center.x, pts.tl_center.y, r_eff, 0.5 * Math.PI, 1.0 * Math.PI, false);
-            else if (corner === 'Chamfer') addLine(pts.tl_start.x, pts.tl_start.y);
-            else addLine(pts.left, pts.top);
-
-            addLine(pts.left, pts.bl_end.y);
-
-            if (corner === 'Radius') addArc(pts.bl_center.x, pts.bl_center.y, r_eff, 1.0 * Math.PI, 1.5 * Math.PI, false);
-            else if (corner === 'Chamfer') addLine(pts.bl_start.x, pts.bl_start.y);
-            else addLine(pts.left, pts.bottom);
-
-            addLine(pts.fixed_right, pts.bottom);
-
-        } else if (type === 'U-Shape (End 2)' || type === 'U-End2') {
-            addMove(pts.right, pts.fixed_top);
-            addLine(pts.right, pts.br_start.y);
-
-            if (corner === 'Radius') addArc(pts.br_center.x, pts.br_center.y, r_eff, 0, 1.5 * Math.PI, true);
-            else if (corner === 'Chamfer') addLine(pts.br_end.x, pts.br_end.y);
-            else addLine(pts.right, pts.bottom);
-
-            addLine(pts.bl_start.x, pts.bottom);
-
-            if (corner === 'Radius') addArc(pts.bl_center.x, pts.bl_center.y, r_eff, 1.5 * Math.PI, 1.0 * Math.PI, true);
-            else if (corner === 'Chamfer') addLine(pts.bl_end.x, pts.bl_end.y);
-            else addLine(pts.left, pts.bottom);
-
-            addLine(pts.left, pts.fixed_top);
-
-        } else { // Full Bowl
-            addMove(pts.tr_start.x, pts.top);
-
-            if (corner === 'Radius') addArc(pts.tr_center.x, pts.tr_center.y, r_eff, 0.5 * Math.PI, 0, true);
-            else if (corner === 'Chamfer') addLine(pts.tr_end.x, pts.tr_end.y);
-            else addLine(pts.right, pts.top);
-
-            addLine(pts.right, pts.br_start.y);
-
-            if (corner === 'Radius') addArc(pts.br_center.x, pts.br_center.y, r_eff, 0, 1.5 * Math.PI, true);
-            else if (corner === 'Chamfer') addLine(pts.br_end.x, pts.br_end.y);
-            else addLine(pts.right, pts.bottom);
-
-            addLine(pts.bl_start.x, pts.bottom);
-
-            if (corner === 'Radius') addArc(pts.bl_center.x, pts.bl_center.y, r_eff, 1.5 * Math.PI, 1.0 * Math.PI, true);
-            else if (corner === 'Chamfer') addLine(pts.bl_end.x, pts.bl_end.y);
-            else addLine(pts.left, pts.bottom);
-
-            addLine(pts.left, pts.tl_start.y);
-
-            if (corner === 'Radius') addArc(pts.tl_center.x, pts.tl_center.y, r_eff, 1.0 * Math.PI, 0.5 * Math.PI, true);
-            else if (corner === 'Chamfer') addLine(pts.tl_end.x, pts.tl_end.y);
-            else addLine(pts.left, pts.top);
-
-            addClose();
-        }
-
-        return segments;
+        return buildBowlGeometrySegments(bowlConfig, offset);
     }
 
     getBowlGeometrySegments(bowlConfig, offset) {
-        return this._getBowlGeometry(bowlConfig, offset);
+        return buildBowlGeometrySegments(bowlConfig, offset);
+    }
+
+    getFieldGeometrySegments(template, extraRunoff = 0) {
+        return buildFieldGeometrySegments(template, extraRunoff);
     }
 
     calculateRowLength(bowlConfig, offset) {
-        const segments = this._getBowlGeometry(bowlConfig, offset);
-        let totalLength = 0;
-        let lastX = 0, lastY = 0;
-        let startX = 0, startY = 0;
-
-        segments.forEach(s => {
-            if (s.cmd === 'moveTo') {
-                lastX = s.x;
-                lastY = s.y;
-                startX = s.x;
-                startY = s.y;
-            } else if (s.cmd === 'lineTo') {
-                totalLength += Math.hypot(s.x - lastX, s.y - lastY);
-                lastX = s.x;
-                lastY = s.y;
-            } else if (s.cmd === 'arc') {
-                let angle = s.ea - s.sa;
-                if (s.ccw) {
-                    while (angle > 0) angle -= 2 * Math.PI;
-                    while (angle <= -2 * Math.PI) angle += 2 * Math.PI;
-                } else {
-                    while (angle < 0) angle += 2 * Math.PI;
-                    while (angle >= 2 * Math.PI) angle -= 2 * Math.PI;
-                }
-                totalLength += s.r * Math.abs(angle);
-                lastX = s.x + s.r * Math.cos(s.ea);
-                lastY = s.y + s.r * Math.sin(s.ea);
-            } else if (s.cmd === 'closePath') {
-                totalLength += Math.hypot(startX - lastX, startY - lastY);
-                lastX = startX;
-                lastY = startY;
-            }
-        });
-
-        return totalLength;
+        return calculateSegmentLength(this._getBowlGeometry(bowlConfig, offset));
     }
 
     getOffsetCorrection(bowlConfig, sportName) {
@@ -928,62 +1191,27 @@ export class FieldRenderer {
     }
 
     _computeBowlBounds(bowlConfig, offset) {
-        return this._computeSegmentBounds(this._getBowlGeometry(bowlConfig, offset) || []);
+        return computeSegmentBounds(buildBowlGeometrySegments(bowlConfig, offset) || []);
     }
 
     _computeSegmentBounds(segments) {
-        if (!segments.length) return null;
-
-        let minX = Infinity;
-        let minY = Infinity;
-        let maxX = -Infinity;
-        let maxY = -Infinity;
-        const addPoint = (x, y) => {
-            if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-            if (x < minX) minX = x;
-            if (x > maxX) maxX = x;
-            if (y < minY) minY = y;
-            if (y > maxY) maxY = y;
-        };
-
-        segments.forEach((segment) => {
-            if (segment.cmd === 'moveTo' || segment.cmd === 'lineTo') {
-                addPoint(segment.x, segment.y);
-                return;
-            }
-
-            if (segment.cmd === 'arc') {
-                const steps = 96;
-                for (let i = 0; i <= steps; i++) {
-                    const t = i / steps;
-                    const angle = segment.sa + ((segment.ea - segment.sa) * t);
-                    addPoint(
-                        segment.x + (segment.r * Math.cos(angle)),
-                        segment.y + (segment.r * Math.sin(angle))
-                    );
-                }
-            }
-        });
-
-        if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
-            return null;
-        }
-
-        return { minX, minY, maxX, maxY };
+        return computeSegmentBounds(segments);
     }
 
     _generateBufferPath(bowlConfig, offset) {
         const segments = this._getBowlGeometry(bowlConfig, offset);
-        const path = new Path2D();
+        return buildPath2DFromSegments(segments);
+    }
 
-        segments.forEach(s => {
-            if (s.cmd === 'moveTo') path.moveTo(s.x, s.y);
-            else if (s.cmd === 'lineTo') path.lineTo(s.x, s.y);
-            else if (s.cmd === 'arc') path.arc(s.x, s.y, s.r, s.sa, s.ea, s.ccw);
-            else if (s.cmd === 'closePath') path.closePath();
-        });
-
-        return path;
+    _fillPolygon(ctx, points) {
+        if (!Array.isArray(points) || points.length < 3) return;
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+            ctx.lineTo(points[i].x, points[i].y);
+        }
+        ctx.closePath();
+        ctx.fill();
     }
 
     generateTierAisleLayout(solver, bowlConfig, tierMetrics, offsetCorrection = 0, egressParams = null) {
@@ -996,7 +1224,7 @@ export class FieldRenderer {
             bowlConfig,
             offsetCorrection,
             egressParams,
-            getPathsForOffset: (offset) => buildGeometryPaths(this._getBowlGeometry(bowlConfig, offset)),
+            getPathsForOffset: (offset) => buildGeometryPaths(buildBowlGeometrySegments(bowlConfig, offset)),
             getRowLengthFt: (offset) => this.calculateRowLength(bowlConfig, offset)
         });
     }
@@ -1014,7 +1242,8 @@ export class FieldRenderer {
             paddingY = 2,
             offsetXPx = 0,
             offsetYPx = 0,
-            rotationRad = 0
+            rotationRad = 0,
+            arrow = null
         } = options;
 
         ctx.save();
@@ -1037,8 +1266,10 @@ export class FieldRenderer {
         const rx = -width / 2;
         const ry = -height / 2;
 
-        ctx.fillStyle = bgColor;
-        ctx.fillRect(rx, ry, width, height);
+        if (bgColor) {
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(rx, ry, width, height);
+        }
         if (borderColor) {
             ctx.strokeStyle = borderColor;
             ctx.lineWidth = 1;
@@ -1047,6 +1278,24 @@ export class FieldRenderer {
 
         ctx.fillStyle = textColor;
         ctx.fillText(String(text), 0, 0);
+        const arrowDirection = Math.sign(Number(arrow?.direction) || 0);
+        if (arrowDirection) {
+            const gapPx = Math.max(0, Number(arrow?.gapPx) || 5);
+            const lengthPx = Math.max(0, Number(arrow?.lengthPx) || 11);
+            const headPx = Math.max(0, Number(arrow?.headPx) || 4);
+            const startX = arrowDirection * ((width * 0.5) + gapPx);
+            const endX = startX + (arrowDirection * lengthPx);
+            ctx.beginPath();
+            ctx.moveTo(startX, 0);
+            ctx.lineTo(endX, 0);
+            ctx.moveTo(endX, 0);
+            ctx.lineTo(endX - (arrowDirection * headPx), -headPx * 0.7);
+            ctx.moveTo(endX, 0);
+            ctx.lineTo(endX - (arrowDirection * headPx), headPx * 0.7);
+            ctx.strokeStyle = arrow?.color || textColor;
+            ctx.lineWidth = Math.max(1, Number(arrow?.strokeWidth) || 1.25);
+            ctx.stroke();
+        }
         ctx.restore();
     }
 
@@ -1068,14 +1317,15 @@ export class FieldRenderer {
         });
     }
 
-    _resolveTierAisleStationRatios(pathFront, pathBack, aisle, aisleIndex, chamferCache, aisleReferenceMap = null) {
+    _resolveTierAisleStationRatios(pathFront, pathBack, aisle, aisleIndex, tierLayout, chamferCache, aisleReferenceMap = null) {
         return resolveTierAisleStationRatios(
             pathFront,
             pathBack,
             aisle,
             aisleIndex,
             chamferCache,
-            aisleReferenceMap
+            aisleReferenceMap,
+            tierLayout
         );
     }
 
@@ -1230,9 +1480,12 @@ export class FieldRenderer {
 
         const effectiveScale = Math.max(0, Number(scale) || 0);
         const showRowSeatCounts = effectiveScale >= ROW_SEATCOUNT_MIN_SCALE;
+        const showSectionOccupancy = effectiveScale >= SECTION_OCC_MIN_SCALE;
+        const showAisleOccupancy = effectiveScale >= AISLE_OCC_MIN_SCALE;
+        const showAisleWidth = effectiveScale >= AISLE_WIDTH_MIN_SCALE;
         // Section labels should remain visible at close zoom; only row seat counts are zoom-gated.
         const showSectionLabels = effectiveScale >= SECTION_LABEL_MIN_SCALE;
-        if (!showSectionLabels && !showRowSeatCounts) return;
+        if (!showSectionLabels && !showRowSeatCounts && !showSectionOccupancy && !showAisleOccupancy && !showAisleWidth) return;
 
         const overlayData = this.getTierSectionMetricsOverlayData(
             solver,
@@ -1253,10 +1506,11 @@ export class FieldRenderer {
                     fontPx: ROW_SEATCOUNT_LABEL_FONT_PX,
                     fontWeight: 700,
                     textColor: '#1f2937',
-                    bgColor: 'rgba(255,255,255,0.88)',
-                    borderColor: 'rgba(148, 163, 184, 0.35)',
+                    bgColor: null,
+                    borderColor: null,
                     paddingX: 4,
-                    paddingY: 1.5
+                    paddingY: 1.5,
+                    rotationRad: label.rotationRad
                 });
             });
         }
@@ -1265,8 +1519,8 @@ export class FieldRenderer {
             sectionLabels.forEach((label) => {
                 if (!Number.isFinite(label?.x) || !Number.isFinite(label?.y) || !label?.text) return;
 
-                const hasOccLine = showRowSeatCounts && !!label.occText;
-                const useCloseZoomSectionLabelSize = showRowSeatCounts;
+                const hasOccLine = showSectionOccupancy && !!label.occText;
+                const useCloseZoomSectionLabelSize = showRowSeatCounts || showSectionOccupancy;
                 this._drawWorldTextLabel(ctx, scale, label.x, label.y, label.text, {
                     fontPx: hasOccLine
                         ? SECTION_LABEL_STACKED_FONT_PX
@@ -1295,7 +1549,7 @@ export class FieldRenderer {
             });
         }
 
-        if (showSectionLabels) {
+        if (showAisleOccupancy || showAisleWidth) {
             const aisleMetricLabels = this._getTierAisleMetricLabelData(
                 solver,
                 bowlConfig,
@@ -1305,29 +1559,35 @@ export class FieldRenderer {
 
             ctx.save();
             ctx.translate(fx, fy);
-            aisleMetricLabels.occupancyLabels.forEach((label) => {
-                this._drawWorldTextLabel(ctx, scale, label.x, label.y, label.text, {
-                    fontPx: AISLE_OCC_LABEL_FONT_PX,
-                    fontWeight: 700,
-                    textColor: '#0f172a',
-                    bgColor: 'rgba(255,255,255,0.95)',
-                    borderColor: 'rgba(15, 23, 42, 0.18)',
-                    paddingX: 4.5,
-                    paddingY: 1.8,
-                    rotationRad: label.rotationRad
+            if (showAisleOccupancy) {
+                aisleMetricLabels.occupancyLabels.forEach((label) => {
+                    this._drawWorldTextLabel(ctx, scale, label.x, label.y, label.text, {
+                        fontPx: AISLE_OCC_LABEL_FONT_PX,
+                        fontWeight: 700,
+                        textColor: '#0f172a',
+                        bgColor: null,
+                        borderColor: null,
+                        paddingX: 4.5,
+                        paddingY: 1.8,
+                        rotationRad: label.rotationRad,
+                        arrow: label.arrow
+                    });
                 });
-            });
-            aisleMetricLabels.widthLabels.forEach((label) => {
-                this._drawWorldTextLabel(ctx, scale, label.x, label.y, label.text, {
-                    fontPx: AISLE_WIDTH_LABEL_FONT_PX,
-                    fontWeight: 700,
-                    textColor: '#334155',
-                    bgColor: 'rgba(255,255,255,0.93)',
-                    borderColor: 'rgba(148, 163, 184, 0.34)',
-                    paddingX: 4,
-                    paddingY: 1.6
+            }
+            if (showAisleWidth) {
+                aisleMetricLabels.widthLabels.forEach((label) => {
+                    this._drawWorldTextLabel(ctx, scale, label.x, label.y, label.text, {
+                        fontPx: AISLE_WIDTH_LABEL_FONT_PX,
+                        fontWeight: 700,
+                        textColor: '#334155',
+                        bgColor: null,
+                        borderColor: null,
+                        paddingX: 4,
+                        paddingY: 1.6,
+                        rotationRad: label.rotationRad
+                    });
                 });
-            });
+            }
             ctx.restore();
         }
 
@@ -1343,7 +1603,7 @@ export class FieldRenderer {
         const getPathsForOffset = (offset) => {
             const key = offset.toFixed(6);
             if (!pathCache.has(key)) {
-                pathCache.set(key, buildGeometryPaths(this._getBowlGeometry(bowlConfig, offset)));
+                pathCache.set(key, buildGeometryPaths(buildBowlGeometrySegments(bowlConfig, offset)));
             }
             return pathCache.get(key);
         };
@@ -1378,6 +1638,7 @@ export class FieldRenderer {
                     pathBack,
                     aisle,
                     i,
+                    tierLayout,
                     chamferCache,
                     aisleReferenceMap
                 );
@@ -1429,7 +1690,7 @@ export class FieldRenderer {
         const getPathsForOffset = (offset) => {
             const key = offset.toFixed(6);
             if (!pathCache.has(key)) {
-                pathCache.set(key, buildGeometryPaths(this._getBowlGeometry(bowlConfig, offset)));
+                pathCache.set(key, buildGeometryPaths(buildBowlGeometrySegments(bowlConfig, offset)));
             }
             return pathCache.get(key);
         };
@@ -1499,17 +1760,18 @@ export class FieldRenderer {
                     );
                     if (!Number.isFinite(uA) || !Number.isFinite(uB)) continue;
 
-                    const ptA = samplePathPointByRatio(path, uA);
-                    const ptB = samplePathPointByRatio(path, uB);
-                    const hasAisleA = Number.isFinite(Number(slot.aisleIndexA));
-                    const hasAisleB = Number.isFinite(Number(slot.aisleIndexB));
-                    const rightIsA = (ptA.x > ptB.x + 1e-6) || (Math.abs(ptA.x - ptB.x) <= 1e-6 && ptA.y >= ptB.y);
+                    const startAisleIndex = slot.startBoundaryKind === 'aisle'
+                        ? getFiniteAisleIndex(slot.aisleIndexA)
+                        : null;
+                    const endAisleIndex = slot.endBoundaryKind === 'aisle'
+                        ? getFiniteAisleIndex(slot.aisleIndexB)
+                        : null;
+                    const preferredAisleIndex = startAisleIndex
+                        ?? endAisleIndex
+                        ?? getFiniteAisleIndex(slot.aisleIndexA)
+                        ?? getFiniteAisleIndex(slot.aisleIndexB);
                     const centerGapFt = sectionDistanceOnPath(path, uA, uB);
-                    const preferredAisleIndex = hasAisleA && !hasAisleB
-                        ? slot.aisleIndexA
-                        : ((!hasAisleA && hasAisleB)
-                            ? slot.aisleIndexB
-                            : (rightIsA ? slot.aisleIndexA : slot.aisleIndexB));
+                    if (!Number.isFinite(Number(preferredAisleIndex))) continue;
                     const adjacentAisleWidthFt = Number.isFinite(Number(preferredAisleIndex))
                         ? getTierRenderedAisleWidthFt(tierLayout, preferredAisleIndex)
                         : 0;
@@ -1524,6 +1786,9 @@ export class FieldRenderer {
                         ? interpolatePathSectionU(path, uA, uB, edgeInsetT)
                         : interpolatePathSectionU(path, uA, uB, 1 - edgeInsetT);
                     const labelPt = samplePathPointByRatio(path, labelU);
+                    const rotationRad = normalizeReadableLabelAngle(
+                        computeScreenAngleFromWorldVector(labelPt.tx, labelPt.ty)
+                    );
 
                     rowSeatLabels.push({
                         tierIndex: tierIdx,
@@ -1534,7 +1799,8 @@ export class FieldRenderer {
                         x: labelPt.x,
                         y: labelPt.y,
                         seatCount,
-                        text: String(seatCount)
+                        text: String(seatCount),
+                        rotationRad
                     });
                 }
             });
@@ -1666,7 +1932,7 @@ export class FieldRenderer {
         const getPathsForOffset = (offset) => {
             const key = offset.toFixed(6);
             if (!pathCache.has(key)) {
-                pathCache.set(key, buildGeometryPaths(this._getBowlGeometry(bowlConfig, offset)));
+                pathCache.set(key, buildGeometryPaths(buildBowlGeometrySegments(bowlConfig, offset)));
             }
             return pathCache.get(key);
         };
@@ -1708,19 +1974,28 @@ export class FieldRenderer {
                     occupancyBackPath,
                     aisle,
                     aisleIndex,
+                    tierLayout,
                     chamferCache,
                     aisleReferenceMap
                 );
                 if (occupancyRatios) {
                     const frontPoint = samplePathPointByRatio(occupancyFrontPath, occupancyRatios.uFront);
                     const backPoint = samplePathPointByRatio(occupancyBackPath, occupancyRatios.uBack);
+                    const rawRotationRad = computeScreenAngleFromWorldVector(
+                        backPoint.x - frontPoint.x,
+                        backPoint.y - frontPoint.y
+                    );
+                    const rotationRad = normalizeReadableLabelAngle(rawRotationRad);
                     occupancyLabels.push({
                         aisleIndex,
                         pathIndex,
                         x: (frontPoint.x + backPoint.x) * 0.5,
                         y: (frontPoint.y + backPoint.y) * 0.5,
                         text: `${formatComputedLabelNumber(aisleSummary.tributaryOccupancy)}occ`,
-                        rotationRad: -Math.atan2(backPoint.y - frontPoint.y, backPoint.x - frontPoint.x)
+                        rotationRad,
+                        arrow: {
+                            direction: isAngleForward(rotationRad, rawRotationRad) ? 1 : -1
+                        }
                     });
                 }
             }
@@ -1733,18 +2008,24 @@ export class FieldRenderer {
                     widthBackPath,
                     aisle,
                     aisleIndex,
+                    tierLayout,
                     chamferCache,
                     aisleReferenceMap
                 );
                 if (widthRatios) {
                     const frontPoint = samplePathPointByRatio(widthFrontPath, widthRatios.uFront);
                     const backPoint = samplePathPointByRatio(widthBackPath, widthRatios.uBack);
+                    const aisleRotationRad = computeScreenAngleFromWorldVector(
+                        backPoint.x - frontPoint.x,
+                        backPoint.y - frontPoint.y
+                    );
                     widthLabels.push({
                         aisleIndex,
                         pathIndex,
                         x: (frontPoint.x + backPoint.x) * 0.5,
                         y: (frontPoint.y + backPoint.y) * 0.5,
-                        text: formatAisleWidthLabel(displayWidthIn)
+                        text: formatAisleWidthLabel(displayWidthIn),
+                        rotationRad: normalizeReadableLabelAngle(aisleRotationRad + (Math.PI * 0.5))
                     });
                 }
             }
@@ -1764,7 +2045,7 @@ export class FieldRenderer {
         const getPathsForOffset = (offset) => {
             const key = offset.toFixed(6);
             if (!pathCache.has(key)) {
-                pathCache.set(key, buildGeometryPaths(this._getBowlGeometry(bowlConfig, offset)));
+                pathCache.set(key, buildGeometryPaths(buildBowlGeometrySegments(bowlConfig, offset)));
             }
             return pathCache.get(key);
         };
@@ -1805,6 +2086,7 @@ export class FieldRenderer {
                     pathBack,
                     aisle,
                     i,
+                    tierLayout,
                     chamferCache,
                     aisleReferenceMap
                 );
@@ -1859,7 +2141,6 @@ export class FieldRenderer {
 
         solvers.forEach((solver, idx) => {
             const tIdx = solver.tierIndex !== undefined ? solver.tierIndex : idx;
-            const tierColors = getTierPlanColors(tIdx);
             if (tIdx === 0 && !visibility.t1) return;
             if (tIdx === 1 && !visibility.t2) return;
             if (tIdx === 2 && !visibility.t3) return;
@@ -1911,6 +2192,9 @@ export class FieldRenderer {
 
             solver.rows.forEach((row, rowIdx) => {
                 const rowStrokeColor = getRowStrokeColorForTheme(row, tierColors, colorByCValue);
+                const frontOffset = (row.x - row.tread_depth) - offsetCorrection;
+                const backOffset = row.x - offsetCorrection;
+                const rowBandPolygons = buildBowlBandPolygons(bowlConfig, frontOffset, backOffset);
 
                 // Per-row shadow: larger on first row of tier
                 if (rowIdx === 0) {
@@ -1923,15 +2207,20 @@ export class FieldRenderer {
                     ctx.shadowOffsetY = 1.5 / scale;
                 }
 
-                ctx.strokeStyle = rowStrokeColor;
-                ctx.lineWidth = Math.max(1 / scale, row.tread_depth * 1.05);
-
-                const offset = (row.x - row.tread_depth) - offsetCorrection;
-                const path = this._generateBufferPath(bowlConfig, offset);
-
                 ctx.save();
                 ctx.translate(fx, fy);
-                ctx.stroke(path);
+                ctx.fillStyle = rowStrokeColor;
+                rowBandPolygons.forEach((polygon) => {
+                    if (!Array.isArray(polygon?.points) || polygon.points.length < 3) return;
+                    const points = polygon.points;
+                    ctx.beginPath();
+                    ctx.moveTo(points[0].x, points[0].y);
+                    for (let i = 1; i < points.length; i++) {
+                        ctx.lineTo(points[i].x, points[i].y);
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                });
                 ctx.restore();
 
                 // Clear shadow
@@ -1949,7 +2238,7 @@ export class FieldRenderer {
             }
 
             // Third pass: draw row outlines (thin) for each row
-            solver.rows.forEach((row, rowIdx) => {
+            solver.rows.forEach((row) => {
                 const offset = (row.x - row.tread_depth) - offsetCorrection;
                 const path = this._generateBufferPath(bowlConfig, offset);
 
@@ -2003,82 +2292,21 @@ export class FieldRenderer {
     }
 
     _drawShape(ctx, template, extraRunoff, style) {
-        const shape = template.shape;
         ctx.save();
         ctx.strokeStyle = style.strokeStyle;
         ctx.lineWidth = style.lineWidth;
         ctx.setLineDash(style.lineDash);
         ctx.fillStyle = 'transparent';
-
-        if (shape === 'rectangle') {
-            const halfL = (template.field_length) / 2 + extraRunoff;
-            const halfW = (template.field_width) / 2 + extraRunoff;
-            ctx.beginPath();
-            ctx.rect(-halfL, -halfW, halfL * 2, halfW * 2);
-            ctx.stroke();
-
-        } else if (shape === 'rounded_rect') {
-            const halfL = (template.field_length) / 2 + extraRunoff;
-            const halfW = (template.field_width) / 2 + extraRunoff;
-            const r = (template.corner_radius || 0) + extraRunoff;
-            this._roundedRect(ctx, -halfL, -halfW, halfL * 2, halfW * 2, r);
-            ctx.stroke();
-
-        } else if (shape === 'oval') {
-            const halfStraight = (template.straight_length) / 2 - (template.corner_radius || 0) + extraRunoff;
-            const halfW = (template.field_width) / 2 + extraRunoff;
-
-            ctx.beginPath();
-            // Top straight
-            ctx.moveTo(-halfStraight, halfW);
-            ctx.lineTo(halfStraight, halfW);
-            // Right semicircle
-            ctx.arc(halfStraight, 0, halfW, Math.PI / 2, -Math.PI / 2, true);
-            // Bottom straight
-            ctx.lineTo(-halfStraight, -halfW);
-            // Left semicircle
-            ctx.arc(-halfStraight, 0, halfW, -Math.PI / 2, Math.PI / 2, true);
-            ctx.closePath();
-            ctx.stroke();
-
-        } else if (shape === 'arc') {
-            const radius = (template.field_radius || 0) + extraRunoff;
-            const halfAngle = ((template.arc_angle || 90) / 2) * Math.PI / 180;
-            const startAngle = Math.PI / 2 - halfAngle;
-            const endAngle = Math.PI / 2 + halfAngle;
-
-            ctx.beginPath();
-            ctx.moveTo(0, 0);
-            ctx.lineTo(
-                radius * Math.cos(startAngle),
-                radius * Math.sin(startAngle)
-            );
-            ctx.arc(0, 0, radius, startAngle, endAngle);
-            ctx.lineTo(0, 0);
-            ctx.stroke();
+        const segments = buildFieldGeometrySegments(template, extraRunoff);
+        if (segments.length > 0) {
+            ctx.stroke(buildPath2DFromSegments(segments));
         }
 
         ctx.restore();
     }
 
-
-    _roundedRect(ctx, x, y, width, height, radius) {
-        const r = Math.min(radius, width / 2, height / 2);
-        ctx.beginPath();
-        ctx.moveTo(x + r, y);
-        ctx.lineTo(x + width - r, y);
-        ctx.arc(x + width - r, y + r, r, -Math.PI / 2, 0);
-        ctx.lineTo(x + width, y + height - r);
-        ctx.arc(x + width - r, y + height - r, r, 0, Math.PI / 2);
-        ctx.lineTo(x + r, y + height);
-        ctx.arc(x + r, y + height - r, r, Math.PI / 2, Math.PI);
-        ctx.lineTo(x, y + r);
-        ctx.arc(x + r, y + r, r, Math.PI, 3 * Math.PI / 2);
-        ctx.closePath();
-    }
-
     _drawFocalPoint(ctx, template, scale, visualFocalX) {
-        const fx = template.focal_x || 0;
+        const fx = 0;
         const fy = visualFocalX !== undefined ? visualFocalX : (template.focal_y || 0);
         const size = 8 / scale;
 

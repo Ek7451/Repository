@@ -276,6 +276,7 @@ describe('AppState', () => {
             type: 'Side1',
             corner: 'Chamfer',
             radius: 24,
+            chamferReferenceOffset: 0,
             sideLength: 280,
             structuralDepth: 18,
             structuralProfileMode: 'sloped',
@@ -357,6 +358,7 @@ describe('AppState', () => {
             type: undefined,
             corner: 'Chamfer',
             radius: undefined,
+            chamferReferenceOffset: 0,
             sideLength: undefined,
             structuralDepth: 0,
             structuralProfileMode: 'stepped',
@@ -376,6 +378,24 @@ describe('AppState', () => {
             showSeatCubes: false,
             seatWidthIn: 0
         });
+    });
+
+    test('anchors chamfer reference offset to the first enabled tier front edge', () => {
+        const state = createDefaultAppStateData();
+        const template = {
+            field_width: 160,
+            field_length: 360,
+            shape: 'rectangle'
+        };
+
+        state.tiers[0].enabled = false;
+        state.tiers[1].enabled = true;
+        state.tiers[1].firstRowDist = 40;
+        state.tiers[1].treadDepth = 30;
+
+        const bowlConfig = buildBowlConfig(state, template);
+
+        expect(bowlConfig.chamferReferenceOffset).toBeCloseTo(37.5);
     });
 
     test('round-trips structural profile and aisle modes through canonical state serialization', () => {

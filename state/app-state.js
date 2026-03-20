@@ -522,6 +522,20 @@ function getPrimaryTier(state) {
         : {};
 }
 
+function getFirstEnabledTier(state) {
+    const tiers = Array.isArray(state?.tiers) ? state.tiers : [];
+    return tiers.find((tier) => tier && typeof tier === 'object' && tier.enabled) || getPrimaryTier(state);
+}
+
+function buildChamferReferenceOffset(state) {
+    const tier = getFirstEnabledTier(state);
+    const firstRowDistance = Number(tier?.firstRowDist);
+    const treadDepthIn = Number(tier?.treadDepth);
+    if (!Number.isFinite(firstRowDistance) || !Number.isFinite(treadDepthIn)) return 0;
+
+    return Math.max(0, firstRowDistance - (treadDepthIn / 12));
+}
+
 function tierMatchesDefaultState(tierState, defaultTierState) {
     if (!tierState || typeof tierState !== 'object') return false;
     if (!defaultTierState || typeof defaultTierState !== 'object') return false;
@@ -612,6 +626,7 @@ export function buildBowlConfig(state, template) {
         type: bowl.type,
         corner: 'Chamfer',
         radius: bowl.cornerRad,
+        chamferReferenceOffset: buildChamferReferenceOffset(state),
         sideLength: bowl.sideLength,
         structuralDepth: bowl.structuralDepth || 0,
         structuralProfileMode: normalizeStructuralProfileMode(bowl.structuralProfileMode),

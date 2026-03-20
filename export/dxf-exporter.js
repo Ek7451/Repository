@@ -232,54 +232,8 @@ function appendPlanSegments(writer, layer, segments = []) {
     });
 }
 
-function addDxfShape(writer, template, runoff, layer) {
-    const shape = template?.shape || 'rectangle';
-    const addLine = (x1, y1, x2, y2) => appendDxfLine(writer, layer, x1 * 12, y1 * 12, x2 * 12, y2 * 12);
-    const addArc = (x, y, r, sa, ea) => {
-        if (!isFiniteNumber(x) || !isFiniteNumber(y) || !isFiniteNumber(r) || Number(r) <= 0) return;
-
-        const degSa = ((sa * 180 / Math.PI) % 360 + 360) % 360;
-        const degEa = ((ea * 180 / Math.PI) % 360 + 360) % 360;
-        writer.addArc(layer, x * 12, y * 12, r * 12, degSa, degEa);
-    };
-
-    if (shape === 'rectangle') {
-        const halfL = ((template.field_length || 0) / 2) + runoff;
-        const halfW = ((template.field_width || 0) / 2) + runoff;
-        addLine(-halfL, -halfW, halfL, -halfW);
-        addLine(halfL, -halfW, halfL, halfW);
-        addLine(halfL, halfW, -halfL, halfW);
-        addLine(-halfL, halfW, -halfL, -halfW);
-    } else if (shape === 'rounded_rect') {
-        const halfL = ((template.field_length || 0) / 2) + runoff;
-        const halfW = ((template.field_width || 0) / 2) + runoff;
-        const r = (template.corner_radius || 0) + runoff;
-        const rx = halfL - r;
-        const ry = halfW - r;
-        addLine(-rx, -halfW, rx, -halfW);
-        addArc(rx, -ry, r, -Math.PI / 2, 0);
-        addLine(halfL, -ry, halfL, ry);
-        addArc(rx, ry, r, 0, Math.PI / 2);
-        addLine(rx, halfW, -rx, halfW);
-        addArc(-rx, ry, r, Math.PI / 2, Math.PI);
-        addLine(-halfL, ry, -halfL, -ry);
-        addArc(-rx, -ry, r, Math.PI, 3 * Math.PI / 2);
-    } else if (shape === 'oval') {
-        const halfStraight = ((template.straight_length || 0) / 2) - (template.corner_radius || 0) + runoff;
-        const halfW = ((template.field_width || 0) / 2) + runoff;
-        addLine(-halfStraight, halfW, halfStraight, halfW);
-        addArc(halfStraight, 0, halfW, -Math.PI / 2, Math.PI / 2);
-        addLine(halfStraight, -halfW, -halfStraight, -halfW);
-        addArc(-halfStraight, 0, halfW, Math.PI / 2, 3 * Math.PI / 2);
-    } else if (shape === 'arc') {
-        const radius = (template.field_radius || 0) + runoff;
-        const halfAngle = ((template.arc_angle || 90) / 2) * Math.PI / 180;
-        const startAngle = Math.PI / 2 - halfAngle;
-        const endAngle = Math.PI / 2 + halfAngle;
-        addLine(0, 0, radius * Math.cos(startAngle), radius * Math.sin(startAngle));
-        addArc(0, 0, radius, startAngle, endAngle);
-        addLine(radius * Math.cos(endAngle), radius * Math.sin(endAngle), 0, 0);
-    }
+function addDxfShape(writer, layer, segments = []) {
+    appendPlanSegments(writer, layer, Array.isArray(segments) ? segments : []);
 }
 
 export function buildProfileDxf({
@@ -408,11 +362,18 @@ export function buildProfileDxfExportDescriptor({
     };
 }
 
-export function buildPlanDxf({ template, runoffFt = 0, visualFocalXFt, tierPlanArtifacts = [] }) {
+export function buildPlanDxf({
+    template,
+    runoffFt: _runoffFt = 0,
+    visualFocalXFt,
+    tierPlanArtifacts = [],
+    fieldEdgeSegments = [],
+    runoffSegments = []
+}) {
     const writer = createDxfWriter();
 
-    addDxfShape(writer, template, 0, 'Field_Edge');
-    addDxfShape(writer, template, runoffFt, 'Runoff');
+    addDxfShape(writer, 'Field_Edge', fieldEdgeSegments);
+    addDxfShape(writer, 'Runoff', runoffSegments);
 
     const fpX = (template?.focal_x || 0) * 12;
     const fpY = resolvePlanFocalYFt(template, visualFocalXFt) * 12;
@@ -467,6 +428,8 @@ export function buildPlanDxfExportDescriptor({
     runoffFt = 0,
     visualFocalXFt = undefined,
     tierPlanArtifacts = [],
+    fieldEdgeSegments = [],
+    runoffSegments = [],
     sportName = ''
 } = {}) {
     if (!template || !Array.isArray(tierPlanArtifacts) || tierPlanArtifacts.length === 0) {
@@ -480,7 +443,9 @@ export function buildPlanDxfExportDescriptor({
             template,
             runoffFt,
             visualFocalXFt,
-            tierPlanArtifacts
+            tierPlanArtifacts,
+            fieldEdgeSegments,
+            runoffSegments
         }),
         type: 'text/plain'
     };

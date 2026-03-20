@@ -16,6 +16,11 @@ import {
 import { buildStructuralProfileGeometry } from '../core/profile-solver.js';
 import { intervalLengthToSeatCount } from '../core/seat-math.js';
 import { resolvePlanFocalYFt } from '../core/sports-templates.js';
+import {
+    buildBowlGeometrySegments,
+    buildBowlGeometrySubpaths,
+    buildFieldGeometrySegments
+} from './field-renderer.js';
 
 const SCENE_THEME_COLORS = {
     light: {
@@ -65,6 +70,19 @@ const MIDDLE_CLICK_DRAG_PX = 6;
 function syncSceneThemeColors(theme = 'light') {
     theme = normalizeThemeName(theme);
     BRAND_COLORS = SCENE_THEME_COLORS[theme] || SCENE_THEME_COLORS.light;
+}
+
+function buildThreeShapeFromSegments(THREERef, segments = []) {
+    if (!THREERef || !Array.isArray(segments) || segments.length === 0) return null;
+    const shape = new THREERef.Shape();
+    segments.forEach((segment) => {
+        if (!segment || typeof segment !== 'object') return;
+        if (segment.cmd === 'moveTo') shape.moveTo(segment.x, segment.y);
+        else if (segment.cmd === 'lineTo') shape.lineTo(segment.x, segment.y);
+        else if (segment.cmd === 'arc') shape.absarc(segment.x, segment.y, segment.r, segment.sa, segment.ea, segment.ccw);
+        else if (segment.cmd === 'closePath') shape.closePath();
+    });
+    return shape;
 }
 
 export class Scene3D {
@@ -330,10 +348,9 @@ export class Scene3D {
         if (!template) return;
 
         const runoff = customRunoff != null ? customRunoff : template.runoff;
-        const shape = template.shape;
 
         // Field surface (green)
-        const fieldShape = this._createFieldShape(template, 0);
+        const fieldShape = buildThreeShapeFromSegments(THREE, buildFieldGeometrySegments(template, 0));
         if (fieldShape) {
             const fieldGeo = new THREE.ShapeGeometry(fieldShape);
             const fieldMat = new THREE.MeshStandardMaterial({
@@ -349,7 +366,7 @@ export class Scene3D {
         }
 
         // Runoff perimeter line
-        const runoffShape = this._createFieldShape(template, runoff);
+        const runoffShape = buildThreeShapeFromSegments(THREE, buildFieldGeometrySegments(template, runoff));
         if (runoffShape) {
             const runoffPoints = runoffShape.getPoints(64);
             const runoffGeo = new THREE.BufferGeometry().setFromPoints(
@@ -367,7 +384,7 @@ export class Scene3D {
         }
 
         // Focal point marker
-        const fx = template.focal_x || 0;
+        const fx = 0;
         const fy = resolvePlanFocalYFt(template, focalX);
         const markerGeo = new THREE.SphereGeometry(2, 16, 16);
         const markerMat = new THREE.MeshStandardMaterial({
@@ -379,67 +396,6 @@ export class Scene3D {
         const focalElev = Number.isFinite(Number(focalZ)) ? Number(focalZ) : 0;
         marker.position.set(fx, focalElev, -fy);
         this.fieldGroup.add(marker);
-    }
-
-    _createFieldShape(template, extra) {
-        const THREE = this.THREE;
-        const shape = new THREE.Shape();
-
-        if (template.shape === 'rectangle') {
-            const halfL = template.field_length / 2 + extra;
-            const halfW = template.field_width / 2 + extra;
-            shape.moveTo(-halfL, -halfW);
-            shape.lineTo(halfL, -halfW);
-            shape.lineTo(halfL, halfW);
-            shape.lineTo(-halfL, halfW);
-            shape.closePath();
-
-        } else if (template.shape === 'rounded_rect') {
-            const halfL = template.field_length / 2 + extra;
-            const halfW = template.field_width / 2 + extra;
-            const r = Math.min((template.corner_radius || 0) + extra, halfL, halfW);
-
-            shape.moveTo(-halfL + r, -halfW);
-            shape.lineTo(halfL - r, -halfW);
-            shape.quadraticCurveTo(halfL, -halfW, halfL, -halfW + r);
-            shape.lineTo(halfL, halfW - r);
-            shape.quadraticCurveTo(halfL, halfW, halfL - r, halfW);
-            shape.lineTo(-halfL + r, halfW);
-            shape.quadraticCurveTo(-halfL, halfW, -halfL, halfW - r);
-            shape.lineTo(-halfL, -halfW + r);
-            shape.quadraticCurveTo(-halfL, -halfW, -halfL + r, -halfW);
-
-        } else if (template.shape === 'oval') {
-            const halfW = template.field_width / 2 + extra;
-            const halfStraight = template.straight_length / 2 - (template.corner_radius || 0) + extra;
-
-            // Top line
-            shape.moveTo(-halfStraight, halfW);
-            shape.lineTo(halfStraight, halfW);
-            // Right arc
-            shape.absarc(halfStraight, 0, halfW, Math.PI / 2, -Math.PI / 2, true);
-            // Bottom line
-            shape.lineTo(-halfStraight, -halfW);
-            // Left arc
-            shape.absarc(-halfStraight, 0, halfW, -Math.PI / 2, Math.PI / 2, true);
-
-        } else if (template.shape === 'arc') {
-            const radius = (template.field_radius || 0) + extra;
-            const halfAngle = ((template.arc_angle || 90) / 2) * Math.PI / 180;
-
-            shape.moveTo(0, 0);
-            shape.lineTo(
-                radius * Math.cos(Math.PI / 2 - halfAngle),
-                radius * Math.sin(Math.PI / 2 - halfAngle)
-            );
-            shape.absarc(0, 0, radius, Math.PI / 2 - halfAngle, Math.PI / 2 + halfAngle, false);
-            shape.lineTo(0, 0);
-
-        } else {
-            return null;
-        }
-
-        return shape;
     }
 
     /**
@@ -610,6 +566,9 @@ export class Scene3D {
             if (thickGeometry) return thickGeometry;
         }
 
+        const getPlanSubpathsForOffset = (offset) => buildBowlGeometrySubpaths(config, offset)
+            .map((subpath) => subpath.map((point) => ({ x: point.x, z: -point.y })));
+
         // We accumulate vertices for the whole tier to single mesh
         let baseIndex = 0;
 
@@ -622,8 +581,8 @@ export class Scene3D {
             const xBack = row.x - offsetCorrection;
 
             // Generate paths (now array of subpaths)
-            const pathsFront = this._getBowlPoints(config, xFront);
-            const pathsBack = this._getBowlPoints(config, xBack);
+            const pathsFront = getPlanSubpathsForOffset(xFront);
+            const pathsBack = getPlanSubpathsForOffset(xBack);
 
             // Check valid arrays existence
             if (!pathsFront || !pathsBack || pathsFront.length === 0) return;
@@ -714,8 +673,7 @@ export class Scene3D {
         const getPathsForOffset = (offset) => {
             const key = offset.toFixed(6);
             if (!pathCache.has(key)) {
-                const segments = this._getBowlGeometrySegments(bowlConfig, offset);
-                pathCache.set(key, buildGeometryPaths(segments));
+                pathCache.set(key, buildGeometryPaths(buildBowlGeometrySegments(bowlConfig, offset)));
             }
             return pathCache.get(key);
         };
@@ -748,6 +706,7 @@ export class Scene3D {
                     pathBack,
                     aisle,
                     aisleIndex,
+                    tierAisleLayout,
                     chamferCache,
                     aisleReferenceMap
                 );
@@ -798,14 +757,15 @@ export class Scene3D {
         });
     }
 
-    _resolveTierAisleStationRatios(pathFront, pathBack, aisle, aisleIndex, chamferCache, aisleReferenceMap = null) {
+    _resolveTierAisleStationRatios(pathFront, pathBack, aisle, aisleIndex, tierAisleLayout, chamferCache, aisleReferenceMap = null) {
         return resolveTierAisleStationRatios(
             pathFront,
             pathBack,
             aisle,
             aisleIndex,
             chamferCache,
-            aisleReferenceMap
+            aisleReferenceMap,
+            tierAisleLayout
         );
     }
 
@@ -832,8 +792,7 @@ export class Scene3D {
         const getPathsForOffset = (offset) => {
             const key = offset.toFixed(6);
             if (!pathCache.has(key)) {
-                const segments = this._getBowlGeometrySegments(bowlConfig, offset);
-                pathCache.set(key, buildGeometryPaths(segments));
+                pathCache.set(key, buildGeometryPaths(buildBowlGeometrySegments(bowlConfig, offset)));
             }
             return pathCache.get(key);
         };
@@ -864,6 +823,7 @@ export class Scene3D {
                         path,
                         aisle,
                         i,
+                        tierAisleLayout,
                         chamferCache,
                         aisleReferenceMap
                     );
@@ -1047,7 +1007,8 @@ export class Scene3D {
         const getPathsForOffset = (offset) => {
             const key = offset.toFixed(6);
             if (!pathCache.has(key)) {
-                pathCache.set(key, this._getBowlPoints(bowlConfig, offset));
+                pathCache.set(key, buildBowlGeometrySubpaths(bowlConfig, offset)
+                    .map((subpath) => subpath.map((point) => ({ x: point.x, z: -point.y }))));
             }
             return pathCache.get(key);
         };
@@ -1243,248 +1204,8 @@ export class Scene3D {
         this.controls.update();
     }
 
-    _getBowlPoints(bowlConfig, offset) {
-        const segments = this._getBowlGeometrySegments(bowlConfig, offset);
-        const subpaths = [];
-        let currentPoints = null;
-
-        const add = (x, y) => {
-            if (!currentPoints) {
-                currentPoints = [];
-                subpaths.push(currentPoints);
-            }
-            currentPoints.push({ x: x, z: -y });
-        };
-
-        const resolution = 5; // Degrees per segment for arcs
-
-        segments.forEach(s => {
-            if (s.cmd === 'moveTo') {
-                currentPoints = [];
-                subpaths.push(currentPoints);
-                add(s.x, s.y);
-            } else if (s.cmd === 'lineTo') {
-                add(s.x, s.y);
-            } else if (s.cmd === 'arc') {
-                // Approximate arc
-                let start = s.sa;
-                let end = s.ea;
-                const r = s.r;
-                const cx = s.x;
-                const cy = s.y;
-                const ccw = s.ccw;
-
-                // Normalize angles
-                if (ccw) {
-                    while (end < start) end += Math.PI * 2;
-                } else {
-                    while (end > start) end -= Math.PI * 2;
-                }
-
-                const totalAngle = Math.abs(end - start);
-                const steps = Math.max(1, Math.ceil(totalAngle * (180 / Math.PI) / resolution));
-
-                for (let i = 1; i <= steps; i++) {
-                    const t = i / steps;
-                    const a = start + (end - start) * t;
-                    const px = cx + r * Math.cos(a);
-                    const py = cy + r * Math.sin(a);
-                    add(px, py);
-                }
-            } else if (s.cmd === 'closePath') {
-                if (currentPoints && currentPoints.length > 0) {
-                    currentPoints.push({ x: currentPoints[0].x, z: currentPoints[0].z });
-                }
-            }
-        });
-
-        return subpaths.filter(p => p.length > 0);
-    }
-
     getBowlGeometrySegments(bowlConfig, offset) {
-        return this._getBowlGeometrySegments(bowlConfig, offset);
-    }
-
-    _getBowlGeometrySegments(bowlConfig, offset) {
-        if (bowlConfig.shape === 'arc') {
-            const r = (bowlConfig.radius_arc || 325) + offset;
-            const halfAngle = ((bowlConfig.arc_angle || 90) / 2) * Math.PI / 180;
-            const startAngle = Math.PI / 2 - halfAngle;
-            const endAngle = Math.PI / 2 + halfAngle;
-
-            const segments = [];
-            const addLine = (x, y) => segments.push({ cmd: 'lineTo', x, y });
-            const addMove = (x, y) => segments.push({ cmd: 'moveTo', x, y });
-            const addArc = (x, y, rad, sa, ea, ccw) => segments.push({ cmd: 'arc', x, y, r: rad, sa, ea, ccw });
-            const addClose = () => segments.push({ cmd: 'closePath' });
-
-            // "Sides" -> Along foul lines
-            // "U-Shape" -> Foul lines + Outfield curve
-            // "Full" -> Wrap all the way around home plate
-
-            let type = bowlConfig.type || 'Full';
-            const dx1 = r * Math.cos(startAngle);
-            const dy1 = r * Math.sin(startAngle);
-            const dx2 = r * Math.cos(endAngle);
-            const dy2 = r * Math.sin(endAngle);
-
-            const dBack = offset; // behind home plate depth
-            const hx = 0; const hy = -dBack;
-
-            if (type === 'Sides') {
-                addMove(dx1, dy1);
-                addLine(hx, hy);
-                addMove(hx, hy);
-                addLine(dx2, dy2);
-            } else if (type === 'U-End1' || type === 'U-Shape (End 1)') {
-                // Outfield arc + foul lines
-                addMove(dx1, dy1);
-                addArc(0, 0, r, startAngle, endAngle, false);
-                addLine(hx, hy);
-                addLine(dx1, dy1);
-            } else {
-                // Full wrap around home plate
-                addMove(dx2, dy2);
-                addLine(hx, hy);
-                addLine(dx1, dy1);
-                addArc(0, 0, r, startAngle, endAngle, false);
-                addClose();
-            }
-
-            return segments;
-        }
-
-        const W = (bowlConfig.width || 200) / 2;
-        let type = bowlConfig.type || 'Full';
-        const L = (type.includes('Side') && bowlConfig.sideLength) ? (bowlConfig.sideLength / 2) : (bowlConfig.length || 300) / 2;
-        let corner = bowlConfig.corner || 'Chamfer';
-        let r = bowlConfig.radius || 0;
-
-        const d = offset;
-
-        // Base rectangle corners
-        const w_eff = W + d;
-        const l_eff = L + d;
-
-        // Fix: Match canvas X=Length, Y=Width field orientation
-        const right = l_eff;
-        const left = -l_eff;
-        const top = w_eff;
-        const bottom = -w_eff;
-
-        if (r < 1) {
-            corner = 'Square';
-            r = 0;
-        }
-
-        const r_eff = (corner === 'Radius') ? (r + d) : 0;
-        const chamfer_leg = (corner === 'Chamfer') ? (r + d * 0.5858) : 0;
-        const c_size = Math.max(r_eff, chamfer_leg);
-
-        const pts = {
-            tr_start: { x: right - c_size, y: top },
-            tr_end: { x: right, y: top - c_size },
-            tr_center: { x: right - r_eff, y: top - r_eff },
-
-            br_start: { x: right, y: bottom + c_size },
-            br_end: { x: right - c_size, y: bottom },
-            br_center: { x: right - r_eff, y: bottom + r_eff },
-
-            bl_start: { x: left + c_size, y: bottom },
-            bl_end: { x: left, y: bottom + c_size },
-            bl_center: { x: left + r_eff, y: bottom + r_eff },
-
-            tl_start: { x: left, y: top - c_size },
-            tl_end: { x: left + c_size, y: top },
-            tl_center: { x: left + r_eff, y: top - r_eff },
-
-            fixed_right: L,
-            fixed_left: -L,
-            fixed_top: W,
-            fixed_bottom: -W,
-
-            left, right, top, bottom
-        };
-
-        const segments = [];
-        const addLine = (x, y) => segments.push({ cmd: 'lineTo', x, y });
-        const addMove = (x, y) => segments.push({ cmd: 'moveTo', x, y });
-        const addArc = (x, y, r, sa, ea, ccw) => segments.push({ cmd: 'arc', x, y, r, sa, ea, ccw });
-        const addClose = () => segments.push({ cmd: 'closePath' });
-
-        if (type === 'Sides') {
-            addMove(pts.fixed_left, pts.bottom);
-            addLine(pts.fixed_right, pts.bottom);
-            addMove(pts.fixed_left, pts.top);
-            addLine(pts.fixed_right, pts.top);
-        } else if (type === 'Side1') {
-            addMove(pts.fixed_left, pts.bottom);
-            addLine(pts.fixed_right, pts.bottom);
-        } else if (type === 'Side2') {
-            addMove(pts.fixed_left, pts.top);
-            addLine(pts.fixed_right, pts.top);
-
-        } else if (type === 'U-Shape (End 1)' || type === 'U-End1') {
-            addMove(pts.fixed_right, pts.top);
-            addLine(pts.tl_end.x, pts.top);
-
-            if (corner === 'Radius') addArc(pts.tl_center.x, pts.tl_center.y, r_eff, 0.5 * Math.PI, 1.0 * Math.PI, false);
-            else if (corner === 'Chamfer') addLine(pts.tl_start.x, pts.tl_start.y);
-            else addLine(pts.left, pts.top);
-
-            addLine(pts.left, pts.bl_end.y);
-
-            if (corner === 'Radius') addArc(pts.bl_center.x, pts.bl_center.y, r_eff, 1.0 * Math.PI, 1.5 * Math.PI, false);
-            else if (corner === 'Chamfer') addLine(pts.bl_start.x, pts.bl_start.y);
-            else addLine(pts.left, pts.bottom);
-
-            addLine(pts.fixed_right, pts.bottom);
-
-        } else if (type === 'U-Shape (End 2)' || type === 'U-End2') {
-            addMove(pts.right, pts.fixed_top);
-            addLine(pts.right, pts.br_start.y);
-
-            if (corner === 'Radius') addArc(pts.br_center.x, pts.br_center.y, r_eff, 0, 1.5 * Math.PI, true);
-            else if (corner === 'Chamfer') addLine(pts.br_end.x, pts.br_end.y);
-            else addLine(pts.right, pts.bottom);
-
-            addLine(pts.bl_start.x, pts.bottom);
-
-            if (corner === 'Radius') addArc(pts.bl_center.x, pts.bl_center.y, r_eff, 1.5 * Math.PI, 1.0 * Math.PI, true);
-            else if (corner === 'Chamfer') addLine(pts.bl_end.x, pts.bl_end.y);
-            else addLine(pts.left, pts.bottom);
-
-            addLine(pts.left, pts.fixed_top);
-
-        } else { // Full Bowl
-            addMove(pts.tr_start.x, pts.top);
-
-            if (corner === 'Radius') addArc(pts.tr_center.x, pts.tr_center.y, r_eff, 0.5 * Math.PI, 0, true);
-            else if (corner === 'Chamfer') addLine(pts.tr_end.x, pts.tr_end.y);
-            else addLine(pts.right, pts.top);
-
-            addLine(pts.right, pts.br_start.y);
-
-            if (corner === 'Radius') addArc(pts.br_center.x, pts.br_center.y, r_eff, 0, 1.5 * Math.PI, true);
-            else if (corner === 'Chamfer') addLine(pts.br_end.x, pts.br_end.y);
-            else addLine(pts.right, pts.bottom);
-
-            addLine(pts.bl_start.x, pts.bottom);
-
-            if (corner === 'Radius') addArc(pts.bl_center.x, pts.bl_center.y, r_eff, 1.5 * Math.PI, 1.0 * Math.PI, true);
-            else if (corner === 'Chamfer') addLine(pts.bl_end.x, pts.bl_end.y);
-            else addLine(pts.left, pts.bottom);
-
-            addLine(pts.left, pts.tl_start.y);
-
-            if (corner === 'Radius') addArc(pts.tl_center.x, pts.tl_center.y, r_eff, 1.0 * Math.PI, 0.5 * Math.PI, true);
-            else if (corner === 'Chamfer') addLine(pts.tl_end.x, pts.tl_end.y);
-            else addLine(pts.left, pts.top);
-
-            addClose();
-        }
-
-        return segments;
+        return buildBowlGeometrySegments(bowlConfig, offset);
     }
 
     forceResize() {

@@ -1701,7 +1701,6 @@ function buildForcedTransitionAisles(perimeterModel) {
 function buildOpenTerminalEdgeAisles(perimeterModel, bowlConfig, aisleWidthFt = 0) {
     const out = [];
     if (!perimeterModel || !Array.isArray(perimeterModel.paths)) return out;
-
     const widthFt = Math.max(0, Number(aisleWidthFt) || 0);
 
     for (let pathIndex = 0; pathIndex < perimeterModel.paths.length; pathIndex++) {
@@ -2782,8 +2781,49 @@ export function resolveTierAisleStationRatios(
     aisle,
     aisleIndex,
     chamferCache,
-    aisleReferenceMap = null
+    aisleReferenceMap = null,
+    tierLayout = null
 ) {
+    const renderedWidthFt = getTierRenderedAisleWidthFt(tierLayout, aisleIndex);
+    if (renderedWidthFt > 0) {
+        let edge = null;
+        if (aisle?.anchorType === 'open_edge_terminal') {
+            edge = String(aisle.edge || '').toLowerCase() === 'end' ? 'end' : 'start';
+        } else if (aisle?.anchorType === 'distributed_linear_even' && Array.isArray(tierLayout?.aisles)) {
+            const pathIndex = Math.max(0, Math.floor(Number(aisle?.pathIndex) || 0));
+            const samePathAisles = tierLayout.aisles
+                .map((candidate, index) => ({ candidate, index }))
+                .filter(({ candidate }) => Math.max(0, Math.floor(Number(candidate?.pathIndex) || 0)) === pathIndex)
+                .sort((left, right) => {
+                    const delta = (Number(left.candidate?.u) || 0) - (Number(right.candidate?.u) || 0);
+                    if (Math.abs(delta) > EPS) return delta;
+                    return left.index - right.index;
+                });
+
+            if (samePathAisles.length > 1) {
+                if (samePathAisles[0]?.index === aisleIndex) edge = 'start';
+                else if (samePathAisles[samePathAisles.length - 1]?.index === aisleIndex) edge = 'end';
+            }
+        }
+
+        if (edge) {
+            const resolveOpenTerminalU = (path) => {
+                if (!path || path.closed || !(path.length > EPS)) return NaN;
+                const edgeInsetU = Math.max(0, Math.min(0.5, (renderedWidthFt * 0.5) / path.length));
+                return edge === 'end'
+                    ? clamp01(1 - edgeInsetU)
+                    : clamp01(edgeInsetU);
+            };
+
+            return normalizeResolvedStationRatios(
+                pathFront,
+                pathBack,
+                resolveOpenTerminalU(pathFront),
+                resolveOpenTerminalU(pathBack)
+            );
+        }
+    }
+
     const stableReference = aisleReferenceMap?.get?.(aisleIndex) || null;
     if (stableReference?.referencePath && Number.isFinite(stableReference.referenceU)) {
         const resolvedFromReference = resolvePerpendicularAisleStationRatiosFromReference(
@@ -2817,7 +2857,8 @@ export function buildResolvedTierAisleRatioMap(pathA, pathB, tierLayout, chamfer
             aisle,
             i,
             chamferCache,
-            aisleReferenceMap
+            aisleReferenceMap,
+            tierLayout
         );
         if (!ratios || !Number.isFinite(ratios.uFront)) continue;
 
