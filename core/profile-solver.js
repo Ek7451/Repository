@@ -337,11 +337,7 @@ function toFixedString(value, digits = 1, fallback = '0.0') {
 }
 
 function getMirroredSideRunsFromSummary(summary) {
-    const rowSummaries = Array.isArray(summary?.rowSummaries) ? summary.rowSummaries : [];
-    const pathRunCount = rowSummaries.reduce((maxRuns, rowSummary) => (
-        Math.max(maxRuns, Array.isArray(rowSummary?.pathSeatCounts) ? rowSummary.pathSeatCounts.length : 0)
-    ), 0);
-    return Math.max(1, pathRunCount || 1);
+    return String(summary?.bowlType || '').toLowerCase() === 'sides' ? 2 : 1;
 }
 
 function stampSolverRowsFromSummary(solver, summary, mirrorRuns) {

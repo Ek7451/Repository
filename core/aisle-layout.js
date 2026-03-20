@@ -650,6 +650,224 @@ function buildSymmetryGroups(path, intervals, bowlConfig) {
     return list;
 }
 
+function resolveOpenPathAxis(path) {
+    if (!path || path.closed || path.length <= EPS) return null;
+    const firstPart = Array.isArray(path.parts) ? path.parts.find((part) => part && part.length > EPS) : null;
+    if (firstPart) {
+        const axis = classifyAxisDirection(
+            firstPart.type === 'line' ? lineDirection(firstPart) : partStartDirection(firstPart)
+        );
+        if (axis) return axis;
+    }
+
+    const dx = Number(path.endX) - Number(path.startX);
+    const dy = Number(path.endY) - Number(path.startY);
+    if (Math.abs(dx) > Math.abs(dy) + EPS) return 'horizontal';
+    if (Math.abs(dy) > Math.abs(dx) + EPS) return 'vertical';
+    return null;
+}
+
+function resolveOpenPathCenter(path) {
+    return {
+        x: (Number(path?.startX) + Number(path?.endX)) * 0.5,
+        y: (Number(path?.startY) + Number(path?.endY)) * 0.5
+    };
+}
+
+function sortOpenPathOwnershipMembers(entries, axis = null) {
+    const safeEntries = Array.isArray(entries) ? entries.slice() : [];
+    if (axis === 'horizontal') {
+        return safeEntries.sort((left, right) => (
+            (Number(right?.centerY) || 0) - (Number(left?.centerY) || 0)
+            || left.pathIndex - right.pathIndex
+        ));
+    }
+    if (axis === 'vertical') {
+        return safeEntries.sort((left, right) => (
+            (Number(left?.centerX) || 0) - (Number(right?.centerX) || 0)
+            || left.pathIndex - right.pathIndex
+        ));
+    }
+    return safeEntries.sort((left, right) => left.pathIndex - right.pathIndex);
+}
+
+function buildOpenPathTopologyEntry(path, pathIndex) {
+    const center = resolveOpenPathCenter(path);
+    const axis = resolveOpenPathAxis(path);
+    let spanStart = 0;
+    let spanEnd = 0;
+    let normalCoord = 0;
+
+    if (axis === 'horizontal') {
+        spanStart = Math.min(Number(path?.startX) || 0, Number(path?.endX) || 0);
+        spanEnd = Math.max(Number(path?.startX) || 0, Number(path?.endX) || 0);
+        normalCoord = center.y;
+    } else if (axis === 'vertical') {
+        spanStart = Math.min(Number(path?.startY) || 0, Number(path?.endY) || 0);
+        spanEnd = Math.max(Number(path?.startY) || 0, Number(path?.endY) || 0);
+        normalCoord = center.x;
+    } else {
+        spanEnd = Math.max(0, Number(path?.length) || 0);
+    }
+
+    return {
+        pathIndex,
+        path,
+        axis,
+        centerX: center.x,
+        centerY: center.y,
+        normalCoord,
+        spanStart,
+        spanEnd,
+        spanLength: Math.max(0, spanEnd - spanStart),
+        groupId: `path:${pathIndex}`,
+        normalizationScope: `path:${pathIndex}`,
+        owner: 'independent',
+        symmetryKey: `path:${pathIndex}`,
+        symmetryOrdinal: 0
+    };
+}
+
+function scoreMirroredOpenPathPair(left, right) {
+    if (!left || !right) return Number.NaN;
+    if (!left.path || !right.path) return Number.NaN;
+    if (left.axis !== right.axis || !left.axis) return Number.NaN;
+    if (Math.abs(left.normalCoord) <= EPS || Math.abs(right.normalCoord) <= EPS) return Number.NaN;
+    if (Math.sign(left.normalCoord) === Math.sign(right.normalCoord)) return Number.NaN;
+
+    const spanLengthDelta = Math.abs((left.spanLength || 0) - (right.spanLength || 0));
+    const spanStartDelta = Math.abs((left.spanStart || 0) - (right.spanStart || 0));
+    const spanEndDelta = Math.abs((left.spanEnd || 0) - (right.spanEnd || 0));
+    const normalMagnitudeDelta = Math.abs(Math.abs(left.normalCoord) - Math.abs(right.normalCoord));
+
+    return (normalMagnitudeDelta * 4.0) + spanLengthDelta + spanStartDelta + spanEndDelta;
+}
+
+function findBestMirroredOpenPathPair(entries, excludedPathIndices = new Set()) {
+    const safeEntries = Array.isArray(entries) ? entries : [];
+    let bestPair = [];
+    let bestScore = Number.POSITIVE_INFINITY;
+
+    for (let leftIndex = 0; leftIndex < safeEntries.length; leftIndex += 1) {
+        const left = safeEntries[leftIndex];
+        if (!left || excludedPathIndices.has(left.pathIndex)) continue;
+
+        for (let rightIndex = leftIndex + 1; rightIndex < safeEntries.length; rightIndex += 1) {
+            const right = safeEntries[rightIndex];
+            if (!right || excludedPathIndices.has(right.pathIndex)) continue;
+
+            const score = scoreMirroredOpenPathPair(left, right);
+            if (!Number.isFinite(score) || score >= bestScore) continue;
+
+            bestScore = score;
+            bestPair = [left.pathIndex, right.pathIndex];
+        }
+    }
+
+    return bestPair;
+}
+
+function buildOpenPathOwnershipModel(paths, bowlConfig) {
+    const bowlType = String(bowlConfig?.type || '').toLowerCase();
+    const pathEntries = (Array.isArray(paths) ? paths : []).map((path, pathIndex) => (
+        buildOpenPathTopologyEntry(path, pathIndex)
+    ));
+    const groups = [];
+    const assignedPathIndices = new Set();
+
+    const assignGroup = (indices, {
+        groupId = null,
+        normalizationScope = groupId,
+        owner = groupId,
+        axis = null
+    } = {}) => {
+        if (!groupId) return;
+        const members = sortOpenPathOwnershipMembers(
+            indices
+                .map((pathIndex) => pathEntries[pathIndex])
+                .filter((entry) => entry && entry.path && !entry.path.closed && entry.path.length > EPS),
+            axis
+        );
+        if (!members.length) return;
+
+        const symmetryKey = members.length > 1 ? `group:${groupId}` : `path:${members[0].pathIndex}`;
+        members.forEach((entry, memberIndex) => {
+            entry.groupId = groupId;
+            entry.normalizationScope = normalizationScope;
+            entry.owner = owner;
+            entry.symmetryKey = symmetryKey;
+            entry.symmetryOrdinal = memberIndex;
+            assignedPathIndices.add(entry.pathIndex);
+        });
+        groups.push({
+            groupId,
+            normalizationScope,
+            owner,
+            axis,
+            pathIndices: members.map((entry) => entry.pathIndex),
+            symmetryKey
+        });
+    };
+
+    if (bowlType === 'sides') {
+        const mirroredPair = findBestMirroredOpenPathPair(pathEntries);
+        assignGroup(mirroredPair.length === 2 ? mirroredPair : pathEntries.map((entry) => entry.pathIndex), {
+            groupId: 'side_length_12',
+            normalizationScope: 'side_length_12',
+            owner: 'side_length_12',
+            axis: mirroredPair.length === 2 ? pathEntries.find((entry) => entry.pathIndex === mirroredPair[0])?.axis : null
+        });
+    } else if (bowlType === 'sides3' || bowlType === 'sides4') {
+        const mirroredPairA = findBestMirroredOpenPathPair(pathEntries);
+        const excludedPathIndices = new Set(mirroredPairA);
+        const mirroredPairB = bowlType === 'sides4'
+            ? findBestMirroredOpenPathPair(pathEntries, excludedPathIndices)
+            : [];
+        const mirroredPairs = [mirroredPairA, mirroredPairB].filter((pair) => pair.length === 2);
+        const assignedSemanticGroups = new Set();
+
+        mirroredPairs.forEach((pair, pairIndex) => {
+            const pairAxis = pathEntries.find((entry) => entry.pathIndex === pair[0])?.axis || null;
+            let groupId = pairAxis === 'horizontal'
+                ? 'side_length_12'
+                : (pairAxis === 'vertical' ? 'side_length_34' : `open_pair_${pairIndex + 1}`);
+            if (assignedSemanticGroups.has(groupId)) groupId = `open_pair_${pairIndex + 1}`;
+            assignedSemanticGroups.add(groupId);
+            assignGroup(pair, {
+                groupId,
+                normalizationScope: groupId,
+                owner: groupId,
+                axis: pairAxis
+            });
+        });
+
+        if (bowlType === 'sides3') {
+            const remaining = pathEntries.filter((entry) => !assignedPathIndices.has(entry.pathIndex));
+            if (remaining.length === 1) {
+                assignGroup([remaining[0].pathIndex], {
+                    groupId: assignedSemanticGroups.has('side_length_34') ? `path:${remaining[0].pathIndex}` : 'side_length_34',
+                    normalizationScope: `path:${remaining[0].pathIndex}`,
+                    owner: 'side_length_34',
+                    axis: remaining[0].axis
+                });
+            }
+        }
+    }
+
+    pathEntries
+        .filter((entry) => entry.path && !entry.path.closed && entry.path.length > EPS && !assignedPathIndices.has(entry.pathIndex))
+        .forEach((entry) => {
+            assignGroup([entry.pathIndex], {
+                groupId: `path:${entry.pathIndex}`,
+                normalizationScope: `path:${entry.pathIndex}`,
+                owner: 'independent',
+                axis: entry.axis
+            });
+        });
+
+    return { pathEntries, groups };
+}
+
 function buildPerimeterModel(frontPaths, backPaths, bowlConfig) {
     const safeFrontPaths = Array.isArray(frontPaths) ? frontPaths : [];
     const safeBackPaths = (Array.isArray(backPaths) && backPaths.length)
@@ -657,6 +875,12 @@ function buildPerimeterModel(frontPaths, backPaths, bowlConfig) {
         : safeFrontPaths;
     const pathCount = Math.max(safeFrontPaths.length, safeBackPaths.length);
     const paths = new Array(pathCount).fill(null);
+    const ownershipModel = buildOpenPathOwnershipModel(
+        new Array(pathCount).fill(null).map((_, pathIndex) => (
+            safeFrontPaths[pathIndex] || safeBackPaths[pathIndex] || null
+        )),
+        bowlConfig
+    );
 
     for (let pathIndex = 0; pathIndex < pathCount; pathIndex++) {
         const frontPath = safeFrontPaths[pathIndex] || null;
@@ -681,14 +905,16 @@ function buildPerimeterModel(frontPaths, backPaths, bowlConfig) {
             closed: !!((frontPath && frontPath.closed) || (backPath && backPath.closed)),
             frontAnchors,
             backAnchors,
-            intervals
+            intervals,
+            openPathOwnership: ownershipModel.pathEntries[pathIndex] || null
         };
     }
 
     return {
         bowlType: String(bowlConfig && bowlConfig.type ? bowlConfig.type : ''),
         cornerType: String(bowlConfig && bowlConfig.corner ? bowlConfig.corner : ''),
-        paths
+        paths,
+        openPathGroups: ownershipModel.groups
     };
 }
 
@@ -1090,7 +1316,10 @@ function computeEvenAislesForOpenPaths(paths, targetAisles, aisleWidthFt = 0) {
     for (let pathIndex = 0; pathIndex < paths.length; pathIndex++) {
         const path = paths[pathIndex];
         if (!path || path.closed || path.length <= EPS) continue;
-        const local = computeEvenOpenPathAisleStations([path], targetAisles, aisleWidthFt);
+        const resolvedTargetAisles = Array.isArray(targetAisles)
+            ? targetAisles[pathIndex]
+            : targetAisles;
+        const local = computeEvenOpenPathAisleStations([path], resolvedTargetAisles, aisleWidthFt);
         for (let i = 0; i < local.length; i++) {
             out.push({
                 ...local[i],
@@ -2602,7 +2831,9 @@ function measureWorstSeatsForOpenAisleCount(path, aisleCount, aisleWidthFt, seat
     return worstSeatCount;
 }
 
-function resolveOpenPathTargetAisles(paths, options = {}) {
+function resolveOpenPathRequiredAisles(path, options = {}) {
+    if (!path || path.closed || path.length <= EPS) return 0;
+
     const maxSeatsBetweenAisles = Number(options?.maxSeatsBetweenAisles);
     const maxOccupantsPerAisle = resolveMaxOccupantsPerAisle(options);
     const rowCount = Math.max(1, Math.round(Number(options?.rowCount) || 1));
@@ -2612,33 +2843,183 @@ function resolveOpenPathTargetAisles(paths, options = {}) {
     const hasEgressCap = Number.isFinite(maxOccupantsPerAisle) && maxOccupantsPerAisle > 0;
     if (!hasSeatCap && !hasEgressCap) return 0;
 
-    return (paths || []).reduce((requiredTarget, path) => {
-        if (!path || path.closed || path.length <= EPS) return requiredTarget;
+    const measureWorstSeatsForCount = (count) => measureWorstSeatsForOpenAisleCount(
+        path,
+        Math.max(0, Math.floor(Number(count) || 0)) + 2,
+        aisleWidthFt,
+        seatWidthIn
+    );
+    const seatRequired = hasSeatCap
+        ? findRequiredIntervalAisleCount({
+            maxSeatsBetweenAisles,
+            maxCount: 500,
+            measureWorstSeatsForCount
+        }) + 2
+        : 0;
+    const egressRequired = hasEgressCap
+        ? findRequiredIntervalAisleCountForAisleLoad({
+            maxOccupantsPerAisle,
+            rowCount,
+            maxCount: 500,
+            measureWorstSeatsForCount
+        }) + 2
+        : 0;
 
-        const measureWorstSeatsForCount = (count) => measureWorstSeatsForOpenAisleCount(
-            path,
-            Math.max(0, Math.floor(Number(count) || 0)) + 2,
-            aisleWidthFt,
-            seatWidthIn
-        );
-        const seatRequired = hasSeatCap
-            ? findRequiredIntervalAisleCount({
-                maxSeatsBetweenAisles,
-                maxCount: 500,
-                measureWorstSeatsForCount
-            }) + 2
-            : 0;
-        const egressRequired = hasEgressCap
-            ? findRequiredIntervalAisleCountForAisleLoad({
-                maxOccupantsPerAisle,
-                rowCount,
-                maxCount: 500,
-                measureWorstSeatsForCount
-            }) + 2
-            : 0;
+    return Math.max(seatRequired, egressRequired);
+}
 
-        return Math.max(requiredTarget, seatRequired, egressRequired);
-    }, 0);
+function resolveOpenPathTargetAisles(paths, options = {}) {
+    return (paths || []).reduce((requiredTarget, path) => (
+        Math.max(requiredTarget, resolveOpenPathRequiredAisles(path, options))
+    ), 0);
+}
+
+function resolveGroupedOpenPathTargets(paths, perimeterModel, options = {}) {
+    const localTargets = (Array.isArray(paths) ? paths : []).map((path) => resolveOpenPathRequiredAisles(path, options));
+    const normalizedTargets = localTargets.slice();
+    const openPathGroups = Array.isArray(perimeterModel?.openPathGroups) ? perimeterModel.openPathGroups : [];
+
+    openPathGroups.forEach((group) => {
+        const pathIndices = Array.isArray(group?.pathIndices) ? group.pathIndices : [];
+        const groupTarget = pathIndices.reduce((maxTarget, pathIndex) => (
+            Math.max(maxTarget, Math.max(0, Math.round(Number(localTargets[pathIndex]) || 0)))
+        ), 0);
+        pathIndices.forEach((pathIndex) => {
+            normalizedTargets[pathIndex] = groupTarget;
+        });
+    });
+
+    return {
+        localTargets,
+        normalizedTargets
+    };
+}
+
+function normalizeRequestedOpenGroupTargets(requestedOpenGroupTargets = null) {
+    if (!requestedOpenGroupTargets || typeof requestedOpenGroupTargets !== 'object') return null;
+
+    const out = Object.entries(requestedOpenGroupTargets).reduce((next, [groupId, target]) => {
+        const safeTarget = Math.max(0, Math.round(Number(target) || 0));
+        if (safeTarget > 0) next[groupId] = safeTarget;
+        return next;
+    }, {});
+
+    return Object.keys(out).length ? out : null;
+}
+
+function applyRequestedOpenGroupTargets(pathTargets, perimeterModel, requestedOpenGroupTargets = null, fallbackTargetAisles = 0) {
+    const resolvedTargets = Array.isArray(pathTargets) ? pathTargets.slice() : [];
+    const openPathGroups = Array.isArray(perimeterModel?.openPathGroups) ? perimeterModel.openPathGroups : [];
+    const normalizedRequestedTargets = normalizeRequestedOpenGroupTargets(requestedOpenGroupTargets);
+
+    if (normalizedRequestedTargets) {
+        openPathGroups.forEach((group) => {
+            const requestedTarget = Math.max(0, Math.round(Number(normalizedRequestedTargets[group?.groupId]) || 0));
+            if (requestedTarget <= 0) return;
+
+            (Array.isArray(group?.pathIndices) ? group.pathIndices : []).forEach((pathIndex) => {
+                resolvedTargets[pathIndex] = Math.max(
+                    Math.max(0, Math.round(Number(resolvedTargets[pathIndex]) || 0)),
+                    requestedTarget
+                );
+            });
+        });
+        return resolvedTargets;
+    }
+
+    const hasLocalTargets = resolvedTargets.some((target) => Math.max(0, Math.round(Number(target) || 0)) > 0);
+    const safeFallbackTarget = Math.max(0, Math.round(Number(fallbackTargetAisles) || 0));
+    if (hasLocalTargets || safeFallbackTarget <= 0) return resolvedTargets;
+
+    return resolvedTargets.map(() => safeFallbackTarget);
+}
+
+function summarizeOpenPathGroupTargets(perimeterModel, pathTargets = []) {
+    const openPathGroups = Array.isArray(perimeterModel?.openPathGroups) ? perimeterModel.openPathGroups : [];
+    return openPathGroups.reduce((out, group) => {
+        const groupId = String(group?.groupId || '');
+        if (!groupId) return out;
+
+        out[groupId] = (Array.isArray(group?.pathIndices) ? group.pathIndices : []).reduce((maxTarget, pathIndex) => (
+            Math.max(maxTarget, Math.max(0, Math.round(Number(pathTargets[pathIndex]) || 0)))
+        ), 0);
+        return out;
+    }, {});
+}
+
+function countOpenPathAislesByPath(paths, aisles = []) {
+    const counts = new Array(Array.isArray(paths) ? paths.length : 0).fill(0);
+    (Array.isArray(aisles) ? aisles : []).forEach((aisle) => {
+        const pathIndex = Math.max(0, Math.floor(Number(aisle?.pathIndex) || 0));
+        if (pathIndex >= counts.length) return;
+        counts[pathIndex] += 1;
+    });
+    return counts;
+}
+
+function resolveOpenPathGroupId(perimeterModel, pathIndex) {
+    const pathRecord = getPerimeterPathRecord(perimeterModel, pathIndex);
+    return String(pathRecord?.openPathOwnership?.groupId || `path:${Math.max(0, Math.floor(Number(pathIndex) || 0))}`);
+}
+
+function buildGroupedOpenRetryTargetRefinement({
+    analysis = null,
+    perimeterModel = null,
+    frontPaths = [],
+    requestedOpenGroupTargets = null,
+    maxSeatsBetweenAisles = NaN
+} = {}) {
+    const normalizedRequestedTargets = normalizeRequestedOpenGroupTargets(requestedOpenGroupTargets) || {};
+    const currentPathTargets = Array.isArray(analysis?.openPathTargets) && analysis.openPathTargets.length
+        ? analysis.openPathTargets
+        : countOpenPathAislesByPath(frontPaths, analysis?.aisles);
+    const currentGroupTargets = summarizeOpenPathGroupTargets(perimeterModel, currentPathTargets);
+    const violatingGroupIds = new Set();
+    const seatLimit = Number(maxSeatsBetweenAisles);
+
+    if (
+        analysis?.sectionSummary?.compliance?.seatCapCompliant === false &&
+        Number.isFinite(seatLimit) &&
+        seatLimit > 0
+    ) {
+        (Array.isArray(analysis?.sectionSummary?.sections) ? analysis.sectionSummary.sections : []).forEach((section) => {
+            if ((Number(section?.maxSeatsPerRow) || 0) <= seatLimit + 1e-9) return;
+            violatingGroupIds.add(resolveOpenPathGroupId(perimeterModel, section?.pathIndex));
+        });
+    }
+
+    if (
+        analysis?.sectionSummary?.compliance?.egressCapCompliant === false ||
+        analysis?.sectionSummary?.compliance?.renderedWidthCompliant === false
+    ) {
+        (Array.isArray(analysis?.sectionSummary?.aisles) ? analysis.sectionSummary.aisles : []).forEach((aisle) => {
+            if (aisle?.withinMaxWidth !== false && aisle?.renderedWidthCompliant !== false) return;
+            violatingGroupIds.add(resolveOpenPathGroupId(perimeterModel, aisle?.pathIndex));
+        });
+    }
+
+    if (!violatingGroupIds.size) {
+        Object.keys(currentGroupTargets).forEach((groupId) => violatingGroupIds.add(groupId));
+    }
+
+    const nextTargets = { ...normalizedRequestedTargets };
+    let refined = false;
+
+    violatingGroupIds.forEach((groupId) => {
+        const currentTarget = Math.max(0, Math.round(Number(currentGroupTargets[groupId]) || 0));
+        const requestedTarget = Math.max(0, Math.round(Number(nextTargets[groupId]) || 0));
+        const nextTarget = Math.max(currentTarget, requestedTarget) + 1;
+        if (nextTarget <= requestedTarget) return;
+
+        nextTargets[groupId] = nextTarget;
+        refined = true;
+    });
+
+    return {
+        refined,
+        nextTargets: refined ? nextTargets : normalizedRequestedTargets,
+        violatingGroupIds: Array.from(violatingGroupIds.values())
+    };
 }
 
 function resolveClosedPathTargetAisles(path, options = {}) {
@@ -3648,6 +4029,7 @@ export function buildTierAisleLayoutSummary({
         : (!measurementValid ? (evaluated.failureReason || 'invalid_measurement') : null);
 
     return {
+        bowlType: String(bowlConfig?.type || ''),
         actualAisles: safeAisles.length,
         actualSections: sections.length,
         allSectionPathsClosed,
@@ -3702,7 +4084,8 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
         maxAisleWidthIn = NaN,
         egressFactor = NaN,
         rowCount = NaN,
-        requestedIntervalCounts = null
+        requestedIntervalCounts = null,
+        requestedOpenGroupTargets = null
     } = params;
 
     if (!Array.isArray(paths) || !paths.length) {
@@ -3739,6 +4122,8 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
         : [];
 
     let aisles = [];
+    let resolvedOpenPathTargets = null;
+    let resolvedOpenPathGroupTargets = null;
     const bowlType = String(bowlConfig && bowlConfig.type ? bowlConfig.type : '').toLowerCase();
     const useIndependentSidesOpenDistribution =
         ['sides', 'sides3', 'sides4'].includes(bowlType) &&
@@ -3762,15 +4147,23 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
 
     if (useIndependentSidesOpenDistribution) {
         allocationMode = 'independent_open';
+        const groupedTargets = resolveGroupedOpenPathTargets(paths, perimeterModel, {
+            maxSeatsBetweenAisles,
+            seatWidthIn,
+            aisleWidthFt: widthFt,
+            maxOccupantsPerAisle: legalMaxOccupantsPerAisle,
+            rowCount
+        });
+        resolvedOpenPathTargets = applyRequestedOpenGroupTargets(
+            groupedTargets.normalizedTargets,
+            perimeterModel,
+            requestedOpenGroupTargets,
+            safeTarget
+        );
+        resolvedOpenPathGroupTargets = summarizeOpenPathGroupTargets(perimeterModel, resolvedOpenPathTargets);
         aisles = computeEvenAislesForOpenPaths(
             paths,
-            Math.max(safeTarget, resolveOpenPathTargetAisles(paths, {
-                maxSeatsBetweenAisles,
-                seatWidthIn,
-                aisleWidthFt: widthFt,
-                maxOccupantsPerAisle: legalMaxOccupantsPerAisle,
-                rowCount
-            })),
+            resolvedOpenPathTargets,
             widthFt
         );
     } else if (useEvenOpenPathDistribution) {
@@ -3857,11 +4250,13 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
     return {
         aisles,
         aisleWidthFt: widthFt,
-        targetAisles: Math.max(safeTarget, aisles.length),
+        targetAisles: useIndependentSidesOpenDistribution ? aisles.length : Math.max(safeTarget, aisles.length),
         forcedCount: aisles.filter((aisle) => aisle.forced).length,
         sectionBoundaries: buildSectionBoundaries(paths, aisles),
         axisExclusionFt,
-        allocationMode
+        allocationMode,
+        openPathTargets: resolvedOpenPathTargets,
+        openPathGroupTargets: resolvedOpenPathGroupTargets
     };
 }
 
@@ -3881,6 +4276,7 @@ function buildTierAisleAnalysisCandidate({
     placementWidthFt = 0,
     targetAisles = 0,
     requestedIntervalCounts = null,
+    requestedOpenGroupTargets = null,
     getPathsForOffset = null,
     getRowLengthFt = null
 } = {}) {
@@ -3894,7 +4290,8 @@ function buildTierAisleAnalysisCandidate({
         maxAisleWidthIn,
         egressFactor,
         rowCount: safeRows.length,
-        requestedIntervalCounts
+        requestedIntervalCounts,
+        requestedOpenGroupTargets
     });
     const layoutForSummary = {
         ...layout,
@@ -3941,6 +4338,8 @@ function buildTierAisleAnalysisCandidate({
         sectionBoundaries: layout.sectionBoundaries || [],
         axisExclusionFt: layout.axisExclusionFt || 0,
         allocationMode: layout.allocationMode || 'none',
+        openPathTargets: layout.openPathTargets || null,
+        openPathGroupTargets: layout.openPathGroupTargets || null,
         failureReason: summary?.failureReason || null,
         sectionSummary: summary || null
     };
@@ -3976,6 +4375,7 @@ export function buildTierAisleAnalysis({
     const maxAttempts = Math.max(8, Math.min(128, safeRows.length * 6));
     const perimeterModel = buildPerimeterModel(frontPaths, backPaths, bowlConfig);
     let requestedTargetAisles = 0;
+    let requestedOpenGroupTargets = null;
     let requestedIntervalCounts = null;
     let lastAnalysis = null;
     let previousSeatPressureMetrics = null;
@@ -3998,6 +4398,7 @@ export function buildTierAisleAnalysis({
             placementWidthFt,
             targetAisles: requestedTargetAisles,
             requestedIntervalCounts,
+            requestedOpenGroupTargets,
             getPathsForOffset,
             getRowLengthFt
         });
@@ -4015,6 +4416,30 @@ export function buildTierAisleAnalysis({
         }
 
         if (analysis.sectionSummary?.compliance?.isCompliant) {
+            return analysis;
+        }
+
+        if (analysis.allocationMode === 'independent_open') {
+            const refinement = buildGroupedOpenRetryTargetRefinement({
+                analysis,
+                perimeterModel,
+                frontPaths,
+                requestedOpenGroupTargets,
+                maxSeatsBetweenAisles
+            });
+            if (refinement.refined) {
+                requestedOpenGroupTargets = refinement.nextTargets;
+                continue;
+            }
+
+            analysis.sectionSummary.layoutSolveConverged = false;
+            analysis.sectionSummary.converged = false;
+            analysis.sectionSummary.failureReason = 'grouped_open_stagnated';
+            analysis.sectionSummary.compliance = {
+                ...analysis.sectionSummary.compliance,
+                isCompliant: false
+            };
+            analysis.failureReason = 'grouped_open_stagnated';
             return analysis;
         }
 
@@ -4172,6 +4597,7 @@ export function buildConfigurationAisleSummary({ tierLayouts = [] } = {}) {
 
 export const __testHooks = {
     buildPerimeterModel,
+    buildOpenPathOwnershipModel,
     buildBoundaryPairKey,
     buildRowLocalBoundaryGapMap,
     buildMeasuredEgressCapIntervalPressures,

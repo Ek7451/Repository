@@ -246,6 +246,100 @@ describe('profile solver helper exports', () => {
         });
     });
 
+    it('does not treat Sides4 layout summaries as mirrored runs in legacy metrics', () => {
+        const solver = {
+            tierIndex: 0,
+            rows: [
+                { row_number: 1, x: 10, tread_depth: 2 },
+                { row_number: 2, x: 12, tread_depth: 2 }
+            ]
+        };
+
+        const tierMetricsByIndex = buildTierMetricsByIndexFromLayouts({
+            solvers: [solver],
+            egressParams: {
+                seatWidthIn: 19,
+                minAisleWidthIn: 48,
+                maxAisleWidthIn: 72,
+                seatsBetweenAisles: 30
+            },
+            tierLayouts: [{
+                tierIndex: 0,
+                sectionSummary: {
+                    bowlType: 'Sides4',
+                    actualAisles: 20,
+                    actualSections: 16,
+                    tierSeatCount: 2880,
+                    legalMaxOccupantsPerAisle: 360,
+                    backRowSectionSeatCounts: [180, 180, 180, 180, 180, 180, 180, 180, 180, 180, 180, 180, 180, 180, 180, 180],
+                    avgBackRowSeatsPerSection: 180,
+                    maxBackRowSeatsPerSection: 180,
+                    aisleOccupancyTotals: new Array(20).fill(144),
+                    largestSectionOccupancy: 360,
+                    maxRequiredAisleWidthIn: 28.8,
+                    maxGoverningAisleWidthIn: 48,
+                    maxRenderedAisleWidthIn: 48,
+                    converged: true,
+                    compliance: {
+                        seatCapCompliant: true,
+                        egressCapCompliant: true,
+                        renderedWidthCompliant: true
+                    },
+                    rowSummaries: [
+                        {
+                            rowIndex: 0,
+                            rowNumber: 1,
+                            seatCount: 1440,
+                            sectionCount: 8,
+                            maxContinuousSectionSeats: 180,
+                            pathSeatCounts: [
+                                { pathIndex: 0, seatCount: 360 },
+                                { pathIndex: 1, seatCount: 360 },
+                                { pathIndex: 2, seatCount: 360 },
+                                { pathIndex: 3, seatCount: 360 }
+                            ],
+                            linearLengthFt: 80,
+                            linearLengthPerRunFt: 80,
+                            seatCountPerRun: 1440,
+                            sectionCountPerRun: 8
+                        },
+                        {
+                            rowIndex: 1,
+                            rowNumber: 2,
+                            seatCount: 1440,
+                            sectionCount: 8,
+                            maxContinuousSectionSeats: 180,
+                            pathSeatCounts: [
+                                { pathIndex: 0, seatCount: 360 },
+                                { pathIndex: 1, seatCount: 360 },
+                                { pathIndex: 2, seatCount: 360 },
+                                { pathIndex: 3, seatCount: 360 }
+                            ],
+                            linearLengthFt: 82,
+                            linearLengthPerRunFt: 82,
+                            seatCountPerRun: 1440,
+                            sectionCountPerRun: 8
+                        }
+                    ],
+                    aisles: new Array(20).fill({ legalMaxOccupantsPerAisle: 360 })
+                }
+            }]
+        });
+
+        expect(tierMetricsByIndex.get(0)).toMatchObject({
+            mirroredSideRuns: 1,
+            numAisles: 20,
+            numSections: 16,
+            backRowSeatsPerRow: 2880,
+            seatsPerRow: 1440
+        });
+        expect(solver.rows[0]).toMatchObject({
+            computedSeats: 1440,
+            computedSeatsPerSide: 1440,
+            computedBlocks: 8
+        });
+    });
+
     it('preserves tier metrics seat and egress outputs for a representative tier', () => {
         const solver = new ProfileSolver({
             targetCValue: 4,

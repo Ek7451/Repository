@@ -255,6 +255,96 @@ function getWorstMeasuredSectionSeatCount(summary) {
     );
 }
 
+function countAislesByPath(tierLayout) {
+    return (Array.isArray(tierLayout?.aisles) ? tierLayout.aisles : []).reduce((counts, aisle) => {
+        const pathIndex = Math.max(0, Math.floor(Number(aisle?.pathIndex) || 0));
+        counts[pathIndex] = (counts[pathIndex] || 0) + 1;
+        return counts;
+    }, {});
+}
+
+function countSectionsByPath(summary) {
+    return (Array.isArray(summary?.sections) ? summary.sections : []).reduce((counts, section) => {
+        const pathIndex = Math.max(0, Math.floor(Number(section?.pathIndex) || 0));
+        counts[pathIndex] = (counts[pathIndex] || 0) + 1;
+        return counts;
+    }, {});
+}
+
+function buildGroupedOpenFixtureAnalysis({
+    type,
+    sideLength = 232,
+    endLength = 187,
+    seatsBetweenAisles = 30,
+    rowCount = 12
+}) {
+    const fixture = buildRendererBowlFixture(type, {
+        corner: 'None',
+        length: sideLength,
+        width: endLength,
+        sideLength,
+        endLength
+    });
+    const rows = buildTierRows({ count: rowCount, startX: 24, treadDepth: 3 });
+    const egressParams = {
+        seatWidthIn: 19,
+        minAisleWidthIn: 48,
+        maxAisleWidthIn: 72,
+        egressFactor: 0.2,
+        seatsBetweenAisles
+    };
+
+    return {
+        fixture,
+        rows,
+        egressParams,
+        analysis: buildTierAisleAnalysisForFixture({
+            fixture,
+            rows,
+            egressParams
+        })
+    };
+}
+
+function buildRetryGroupedOpenAnalysis({
+    type,
+    sideLength = 269,
+    endLength = 215,
+    seatsBetweenAisles = 28,
+    rowCount = 15
+}) {
+    const fixture = buildRendererBowlFixture(type, {
+        width: 85,
+        length: 200,
+        shape: 'rounded_rect',
+        corner: 'Chamfer',
+        radius: 16,
+        chamferReferenceOffset: 0,
+        sideLength,
+        endLength,
+        straightAisleMode: 'perpendicular',
+        chamferAisleMode: 'radial'
+    });
+    const rows = Array.from({ length: rowCount }, (_, index) => ({
+        row_number: index + 1,
+        x: 2.75 * (index + 1),
+        tread_depth: 2.75
+    }));
+    const egressParams = {
+        seatWidthIn: 19,
+        minAisleWidthIn: 48,
+        maxAisleWidthIn: 66,
+        egressFactor: 0.2,
+        seatsBetweenAisles
+    };
+
+    return buildTierAisleAnalysisForFixture({
+        fixture,
+        rows,
+        egressParams
+    });
+}
+
 function buildRowMatchedDeterministicBaseline({
     fixture,
     rows,
@@ -1015,6 +1105,174 @@ describe('aisle layout geometry seam', () => {
                 expect(aisleCount).toBeGreaterThan(0);
             });
         });
+    });
+
+    it('builds authoritative grouped ownership metadata for open multi-side bowls', () => {
+        const sides3Fixture = buildRendererBowlFixture('Sides3', {
+            corner: 'None',
+            length: 232,
+            width: 142,
+            sideLength: 232,
+            endLength: 142
+        });
+        const sides4Fixture = buildRendererBowlFixture('Sides4', {
+            corner: 'None',
+            length: 232,
+            width: 187,
+            sideLength: 232,
+            endLength: 187
+        });
+        const sides3Model = __testHooks.buildPerimeterModel(
+            sides3Fixture.frontPaths,
+            sides3Fixture.backPaths,
+            sides3Fixture.bowlConfig
+        );
+        const sides4Model = __testHooks.buildPerimeterModel(
+            sides4Fixture.frontPaths,
+            sides4Fixture.backPaths,
+            sides4Fixture.bowlConfig
+        );
+
+        expect(sides3Model.openPathGroups).toEqual([
+            expect.objectContaining({
+                groupId: 'side_length_12',
+                pathIndices: [0, 1],
+                axis: 'horizontal'
+            }),
+            expect.objectContaining({
+                groupId: 'side_length_34',
+                normalizationScope: 'path:2',
+                pathIndices: [2],
+                axis: 'vertical'
+            })
+        ]);
+        expect(sides4Model.openPathGroups).toEqual([
+            expect.objectContaining({
+                groupId: 'side_length_12',
+                pathIndices: [0, 1],
+                axis: 'horizontal'
+            }),
+            expect.objectContaining({
+                groupId: 'side_length_34',
+                pathIndices: [2, 3],
+                axis: 'vertical'
+            })
+        ]);
+        expect(sides4Model.paths.map((pathRecord) => pathRecord.openPathOwnership?.groupId)).toEqual([
+            'side_length_12',
+            'side_length_12',
+            'side_length_34',
+            'side_length_34'
+        ]);
+    });
+
+    it('isolates Sides4 side-length 3/4 changes to the owning vertical pair', () => {
+        const baseline = buildGroupedOpenFixtureAnalysis({
+            type: 'Sides4',
+            sideLength: 232,
+            endLength: 187,
+            seatsBetweenAisles: 30
+        });
+        const shortened = buildGroupedOpenFixtureAnalysis({
+            type: 'Sides4',
+            sideLength: 232,
+            endLength: 142,
+            seatsBetweenAisles: 30
+        });
+
+        expect(countAislesByPath(baseline.analysis)).toEqual({ 0: 6, 1: 6, 2: 5, 3: 5 });
+        expect(countAislesByPath(shortened.analysis)).toEqual({ 0: 6, 1: 6, 2: 4, 3: 4 });
+        expect(countSectionsByPath(baseline.analysis.sectionSummary)).toEqual({ 0: 5, 1: 5, 2: 4, 3: 4 });
+        expect(countSectionsByPath(shortened.analysis.sectionSummary)).toEqual({ 0: 5, 1: 5, 2: 3, 3: 3 });
+    });
+
+    it('isolates Sides4 side-length 1/2 changes to the owning horizontal pair', () => {
+        const baseline = buildGroupedOpenFixtureAnalysis({
+            type: 'Sides4',
+            sideLength: 232,
+            endLength: 187,
+            seatsBetweenAisles: 30
+        });
+        const shortened = buildGroupedOpenFixtureAnalysis({
+            type: 'Sides4',
+            sideLength: 142,
+            endLength: 187,
+            seatsBetweenAisles: 30
+        });
+
+        expect(countAislesByPath(baseline.analysis)).toEqual({ 0: 6, 1: 6, 2: 5, 3: 5 });
+        expect(countAislesByPath(shortened.analysis)).toEqual({ 0: 4, 1: 4, 2: 5, 3: 5 });
+        expect(countSectionsByPath(baseline.analysis.sectionSummary)).toEqual({ 0: 5, 1: 5, 2: 4, 3: 4 });
+        expect(countSectionsByPath(shortened.analysis.sectionSummary)).toEqual({ 0: 3, 1: 3, 2: 4, 3: 4 });
+    });
+
+    it('keeps Sides4 max-seat escalation scoped to each owning pair', () => {
+        const relaxed = buildGroupedOpenFixtureAnalysis({
+            type: 'Sides4',
+            sideLength: 232,
+            endLength: 142,
+            seatsBetweenAisles: 30
+        });
+        const strict = buildGroupedOpenFixtureAnalysis({
+            type: 'Sides4',
+            sideLength: 232,
+            endLength: 142,
+            seatsBetweenAisles: 18
+        });
+
+        expect(countAislesByPath(relaxed.analysis)).toEqual({ 0: 6, 1: 6, 2: 4, 3: 4 });
+        expect(countAislesByPath(strict.analysis)).toEqual({ 0: 8, 1: 8, 2: 5, 3: 5 });
+        expect(countSectionsByPath(strict.analysis.sectionSummary)).toEqual({ 0: 7, 1: 7, 2: 4, 3: 4 });
+    });
+
+    it('keeps Sides3 grouped-open normalization scoped to the owning pair plus single side', () => {
+        const grouped = buildGroupedOpenFixtureAnalysis({
+            type: 'Sides3',
+            sideLength: 232,
+            endLength: 142,
+            seatsBetweenAisles: 30
+        });
+
+        expect(countAislesByPath(grouped.analysis)).toEqual({ 0: 6, 1: 6, 2: 4 });
+        expect(countSectionsByPath(grouped.analysis.sectionSummary)).toEqual({ 0: 5, 1: 5, 2: 3 });
+    });
+
+    it('keeps Sides open bowls normalized as one owning pair', () => {
+        const grouped = buildGroupedOpenFixtureAnalysis({
+            type: 'Sides',
+            sideLength: 232,
+            endLength: 187,
+            seatsBetweenAisles: 30
+        });
+
+        expect(countAislesByPath(grouped.analysis)).toEqual({ 0: 6, 1: 6 });
+        expect(countSectionsByPath(grouped.analysis.sectionSummary)).toEqual({ 0: 5, 1: 5 });
+    });
+
+    it('keeps Sides3 retry convergence scoped to the paired sides versus the independent side', () => {
+        const analysis = buildRetryGroupedOpenAnalysis({
+            type: 'Sides3',
+            sideLength: 269,
+            endLength: 215,
+            seatsBetweenAisles: 28
+        });
+
+        expect(analysis.sectionSummary.compliance.isCompliant).toBe(true);
+        expect(countAislesByPath(analysis)).toEqual({ 0: 8, 1: 8, 2: 7 });
+        expect(countSectionsByPath(analysis.sectionSummary)).toEqual({ 0: 7, 1: 7, 2: 6 });
+    });
+
+    it('keeps Sides4 retry convergence scoped to the owning pair that needs another aisle', () => {
+        const analysis = buildRetryGroupedOpenAnalysis({
+            type: 'Sides4',
+            sideLength: 269,
+            endLength: 215,
+            seatsBetweenAisles: 28
+        });
+
+        expect(analysis.sectionSummary.compliance.isCompliant).toBe(true);
+        expect(countAislesByPath(analysis)).toEqual({ 0: 8, 1: 8, 2: 7, 3: 7 });
+        expect(countSectionsByPath(analysis.sectionSummary)).toEqual({ 0: 7, 1: 7, 2: 6, 3: 6 });
     });
 
     it('keeps 3-sided and 4-sided aisle analysis populated on every seating segment', () => {
