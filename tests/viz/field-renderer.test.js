@@ -217,17 +217,22 @@ describe('FieldRenderer helper delegation surface', () => {
             0,
             createEgressParams()
         );
+        const targetAisleIndex = tierLayout.sectionSummary.aisles.findIndex((aisle) => (
+            Number.isFinite(aisle?.tributaryOccupancy)
+        ));
+        tierLayout.sectionSummary.aisles[targetAisleIndex].tributaryOccupancy = 123.50000000000001;
+        tierLayout.sectionSummary.aisles[targetAisleIndex].governingWidthIn = 48.300000000000004;
 
         const overlay = renderer._getTierAisleMetricLabelData(solver, bowlConfig, tierLayout, 0);
 
         expect(overlay.occupancyLabels.length).toBeGreaterThan(0);
         expect(overlay.widthLabels).toHaveLength(tierLayout.aisles.length);
-        expect(overlay.occupancyLabels[0]).toEqual(expect.objectContaining({
-            text: expect.stringMatching(/occ$/),
+        expect(overlay.occupancyLabels[targetAisleIndex]).toEqual(expect.objectContaining({
+            text: '123.5occ',
             rotationRad: expect.any(Number)
         }));
-        expect(overlay.widthLabels[0]).toEqual(expect.objectContaining({
-            text: expect.stringMatching(/"$/)
+        expect(overlay.widthLabels[targetAisleIndex]).toEqual(expect.objectContaining({
+            text: '48.3"'
         }));
     });
 

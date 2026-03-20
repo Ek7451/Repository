@@ -250,8 +250,18 @@ function sectionDistanceOnPath(path, startU, endU) {
 }
 
 function formatAisleWidthLabel(widthIn) {
-    const rounded = Math.round((Math.max(0, Number(widthIn) || 0)) * 10) / 10;
-    return Number.isInteger(rounded) ? `${rounded}"` : `${rounded.toFixed(1)}"`;
+    return `${formatComputedLabelNumber(widthIn)}"`;
+}
+
+function formatComputedLabelNumber(value, maxDecimals = 12) {
+    const numericValue = Math.max(0, Number(value) || 0);
+    for (let decimals = 0; decimals <= maxDecimals; decimals++) {
+        const normalizedValue = Number(numericValue.toFixed(decimals));
+        if (Math.abs(numericValue - normalizedValue) <= 1e-9) {
+            return `${normalizedValue}`;
+        }
+    }
+    return `${numericValue}`;
 }
 
 function approximatePathSignedArea(path, samples = 160) {
@@ -1709,7 +1719,7 @@ export class FieldRenderer {
                         pathIndex,
                         x: (frontPoint.x + backPoint.x) * 0.5,
                         y: (frontPoint.y + backPoint.y) * 0.5,
-                        text: `${Math.round(Math.max(0, Number(aisleSummary.tributaryOccupancy) || 0))}occ`,
+                        text: `${formatComputedLabelNumber(aisleSummary.tributaryOccupancy)}occ`,
                         rotationRad: -Math.atan2(backPoint.y - frontPoint.y, backPoint.x - frontPoint.x)
                     });
                 }
