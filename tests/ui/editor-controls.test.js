@@ -46,7 +46,8 @@ function createElement({
     type = 'number',
     min = '',
     max = '',
-    step = ''
+    step = '',
+    hidden = false
 } = {}) {
     const listeners = new Map();
     const element = {
@@ -57,6 +58,7 @@ function createElement({
         min,
         max,
         step,
+        hidden,
         inputMode: '',
         autocomplete: '',
         spellcheck: true,
@@ -67,6 +69,12 @@ function createElement({
         children: [],
         appendChild: vi.fn((child) => {
             element.children.push(child);
+        }),
+        removeChild: vi.fn((child) => {
+            element.children = element.children.filter((entry) => entry !== child);
+        }),
+        replaceChildren: vi.fn((...children) => {
+            element.children = [...children];
         }),
         addEventListener: vi.fn((eventName, handler) => {
             const existing = listeners.get(eventName) || [];
@@ -212,6 +220,13 @@ describe('EditorControls', () => {
             enableTier2: createElement(),
             enableTier3: createElement(),
             sideLengthRow: createElement(),
+            sideLengthRowLabel: createElement(),
+            sideLength34Row: createElement(),
+            sideLength34RowLabel: createElement(),
+            bowlSideLengthInput: createElement(),
+            bowlSideLengthSlider: createElement(),
+            bowlEndLengthInput: createElement(),
+            bowlEndLengthSlider: createElement(),
             tier1Section: createElement(),
             tier2Section: createElement(),
             tier3Section: createElement()
@@ -221,6 +236,8 @@ describe('EditorControls', () => {
         state.setup.customRunoff = null;
         state.setup.focalX = -30.2;
         state.bowl.type = 'Side1';
+        state.bowl.sideLength = 280;
+        state.bowl.endLength = 340;
         state.bowl.straightAisleMode = 'perpendicular';
         state.bowl.chamferAisleMode = 'radial';
 
@@ -250,6 +267,10 @@ describe('EditorControls', () => {
         expect(elements.t3NumRowsSlider.max).toBe('60');
         expect(elements.straightAisleMode.value).toBe('perpendicular');
         expect(elements.chamferAisleMode.value).toBe('radial');
+        expect(elements.bowlSideLengthInput.value).toBe('280');
+        expect(elements.bowlEndLengthInput.value).toBe('340');
+        expect(elements.sideLengthRow.hidden).toBe(false);
+        expect(elements.sideLength34Row.hidden).toBe(true);
         expect(
             elements.sportSelect.children.find((option) => option.value === 'Football')?.textContent
         ).toContain('Football');
@@ -261,9 +282,72 @@ describe('EditorControls', () => {
             'Baseball',
             'Track'
         ]);
-        expect(elements.sideLengthRow.style.display).not.toBe('none');
         expect(elements.tier1Section.classList.contains('tier-disabled')).toBe(false);
         expect(elements.tier2Section.classList.contains('tier-disabled')).toBe(true);
+    });
+
+    test('repopulates bowl type options from real sport templates and switches visibility for the new bowl families', () => {
+        const elements = {
+            sportSelect: createElement(),
+            bowlType: createElement(),
+            sideLengthRow: createElement(),
+            sideLengthRowLabel: createElement(),
+            sideLength34Row: createElement(),
+            sideLength34RowLabel: createElement(),
+            bowlSideLengthInput: createElement(),
+            bowlSideLengthSlider: createElement(),
+            bowlEndLengthInput: createElement(),
+            bowlEndLengthSlider: createElement()
+        };
+        const state = createState();
+        state.sport = 'Football';
+        state.bowl.type = 'Sides3';
+        state.bowl.sideLength = 300;
+        state.bowl.endLength = 325;
+
+        vi.stubGlobal('document', createDocumentStub(elements));
+
+        const controls = new EditorControls({
+            state
+        });
+
+        controls.init();
+        controls.syncFromState();
+        controls._populateBowlTypes(getTemplate('Football'));
+
+        expect(elements.bowlType.children.map((option) => option.value)).toEqual([
+            'Full',
+            'U-End1',
+            'U-End2',
+            'Side1',
+            'Sides',
+            'Sides3',
+            'Sides4'
+        ]);
+        expect(elements.sideLengthRow.hidden).toBe(false);
+        expect(elements.sideLength34Row.hidden).toBe(false);
+        expect(elements.sideLengthRowLabel.textContent).toBe('Sides Length 1/2');
+        expect(elements.sideLength34RowLabel.textContent).toBe('Sides Length 3/4');
+
+        controls._populateBowlTypes(getTemplate('Track'));
+        expect(elements.bowlType.children.map((option) => option.value)).toEqual([
+            'Full',
+            'U-End1',
+            'U-End2',
+            'Side1',
+            'Sides',
+            'Sides3',
+            'Sides4'
+        ]);
+
+        controls._syncBowlLengthVisibility('U-End1');
+        expect(elements.sideLengthRow.hidden).toBe(true);
+        expect(elements.sideLength34Row.hidden).toBe(false);
+        expect(elements.sideLength34RowLabel.textContent).toBe('Open Ends Length');
+
+        controls._syncBowlLengthVisibility('Full');
+        expect(elements.sideLengthRow.hidden).toBe(true);
+        expect(elements.sideLength34Row.hidden).toBe(true);
     });
 
     test('owns control bindings while mutating only the single shared AppState object', () => {
@@ -273,6 +357,8 @@ describe('EditorControls', () => {
             customRunoffSlider: createElement({ value: '25' }),
             focalXInput: createElement({ value: '0' }),
             focalXSlider: createElement({ value: '0' }),
+            bowlEndLengthInput: createElement({ value: '300' }),
+            bowlEndLengthSlider: createElement({ value: '300' }),
             straightAisleMode: createElement({ value: 'radial' }),
             chamferAisleMode: createElement({ value: 'radial' }),
             enableTier2: createElement(),
@@ -355,6 +441,18 @@ describe('EditorControls', () => {
         expect(onChange).toHaveBeenCalledWith({
             reason: 'state',
             controlId: 'straightAisleMode'
+        });
+
+        onChange.mockClear();
+        elements.bowlEndLengthInput.value = '355';
+        elements.bowlEndLengthInput.dispatch('input');
+        expect(state.bowl.endLength).toBe(355);
+        expect(elements.bowlEndLengthSlider.value).toBe('355');
+        expect(onChange).not.toHaveBeenCalled();
+        elements.bowlEndLengthInput.dispatch('blur');
+        expect(onChange).toHaveBeenCalledWith({
+            reason: 'state',
+            controlId: 'bowlEndLengthInput'
         });
 
         onChange.mockClear();

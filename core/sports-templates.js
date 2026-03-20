@@ -4,6 +4,16 @@
  * Ported from sports_templates.py
  */
 
+const ALL_BOWL_TYPE_OPTIONS = [
+    { value: "Full", label: "Full Bowl" },
+    { value: "U-End1", label: "C-Shape" },
+    { value: "U-End2", label: "U-Shape" },
+    { value: "Side1", label: "1-Sided" },
+    { value: "Sides", label: "2-Sided" },
+    { value: "Sides3", label: "3-Sided" },
+    { value: "Sides4", label: "4-Sided" }
+];
+
 const SPORTS_TEMPLATES = {
     "Ice Hockey": {
         field_length: 200.0,
@@ -18,8 +28,10 @@ const SPORTS_TEMPLATES = {
             setup: { customRunoff: -10.0, focalZ: 2.5, focalX: -10.0 },
             bowl: {
                 type: "Full",
+                typeOptions: ALL_BOWL_TYPE_OPTIONS,
                 cornerRad: 16,
                 sideLength: 200,
+                endLength: 85,
                 structuralDepth: 6,
                 structuralProfileMode: "stepped",
                 straightAisleMode: "perpendicular",
@@ -58,8 +70,10 @@ const SPORTS_TEMPLATES = {
             setup: { customRunoff: 25.0, focalZ: 0.0, focalX: 0.0 },
             bowl: {
                 type: "Full",
+                typeOptions: ALL_BOWL_TYPE_OPTIONS,
                 cornerRad: 25,
                 sideLength: 360,
+                endLength: 160,
                 structuralDepth: 12,
                 structuralProfileMode: "stepped",
                 straightAisleMode: "perpendicular",
@@ -98,8 +112,10 @@ const SPORTS_TEMPLATES = {
             setup: { customRunoff: 20.0, focalZ: 0.0, focalX: 0.0 },
             bowl: {
                 type: "Full",
+                typeOptions: ALL_BOWL_TYPE_OPTIONS,
                 cornerRad: 20,
                 sideLength: 345,
+                endLength: 222,
                 structuralDepth: 12,
                 structuralProfileMode: "stepped",
                 straightAisleMode: "perpendicular",
@@ -138,8 +154,10 @@ const SPORTS_TEMPLATES = {
             setup: { customRunoff: 6.5, focalZ: 2.5, focalX: 0.0 },
             bowl: {
                 type: "Full",
+                typeOptions: ALL_BOWL_TYPE_OPTIONS,
                 cornerRad: 20,
                 sideLength: 94,
+                endLength: 50,
                 structuralDepth: 12,
                 structuralProfileMode: "stepped",
                 straightAisleMode: "perpendicular",
@@ -177,7 +195,9 @@ const SPORTS_TEMPLATES = {
             setup: { customRunoff: 60.0, focalZ: 0.0, focalX: 0.0 },
             bowl: {
                 type: "Full",
+                typeOptions: ALL_BOWL_TYPE_OPTIONS,
                 cornerRad: 0,
+                endLength: 325,
                 structuralDepth: 12,
                 structuralProfileMode: "stepped",
                 straightAisleMode: "perpendicular",
@@ -216,8 +236,10 @@ const SPORTS_TEMPLATES = {
             setup: { customRunoff: 10.0, focalZ: 0.0, focalX: 0.0 },
             bowl: {
                 type: "Sides",
+                typeOptions: ALL_BOWL_TYPE_OPTIONS,
                 cornerRad: 100,
                 sideLength: 580.5,
+                endLength: 303.6,
                 structuralDepth: 12,
                 structuralProfileMode: "stepped",
                 straightAisleMode: "perpendicular",
@@ -234,7 +256,7 @@ const SPORTS_TEMPLATES = {
             tier1: {
                 targetCValue: 3.0,
                 numRows: 20,
-                firstRowDist: 175.0,
+                firstRowDist: 23.2,
                 firstRowElev: 3.0,
                 treadDepth: 33,
                 riserHeight: 8,

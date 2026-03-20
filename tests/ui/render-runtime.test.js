@@ -291,4 +291,37 @@ describe('RenderRuntime', () => {
             riserHeight: 12
         }));
     });
+
+    test('hides baseball seating from plan and 3d display payloads without removing solver data elsewhere', () => {
+        const state = AppState.reset();
+        const runtime = new RenderRuntime();
+        const fieldGeometryPort = createFieldGeometryPort();
+
+        state.sport = 'Baseball';
+        state.tiers[1].enabled = true;
+
+        const snapshot = runtime.recompute({ state, fieldGeometryPort });
+
+        expect(snapshot.solvers).toHaveLength(2);
+        expect(snapshot.activeSolvers).toHaveLength(2);
+        expect(snapshot.visibility).toEqual(expect.objectContaining({
+            showSeating: false,
+            t1: true,
+            t2: true,
+            t3: false
+        }));
+        expect(snapshot.fieldRenderInput).toEqual(expect.objectContaining({
+            solvers: snapshot.solvers,
+            visibility: snapshot.visibility
+        }));
+        expect(snapshot.scene3DInput).toEqual(expect.objectContaining({
+            solvers: null,
+            tierAisleLayouts: []
+        }));
+        expect(snapshot.statsViewModel).toEqual(expect.objectContaining({
+            summary: expect.objectContaining({
+                totalRows: expect.any(Number)
+            })
+        }));
+    });
 });

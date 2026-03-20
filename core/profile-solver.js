@@ -197,7 +197,7 @@ export function buildStructuralProfileGeometry(
     };
 }
 
-export function buildActiveTierSolvers(tiers, focalPointFt) {
+export function buildActiveTierSolvers(tiers, focalPointFt, _options = {}) {
     const solvers = [];
 
     (tiers || []).forEach((tierState, tierIndex) => {

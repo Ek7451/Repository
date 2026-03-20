@@ -14,6 +14,7 @@ const NUMERIC_INPUT_STATE_PATHS = {
     focalZ: ['setup', 'focalZ'],
     bowlCornerRad: ['bowl', 'cornerRad'],
     bowlSideLength: ['bowl', 'sideLength'],
+    bowlEndLength: ['bowl', 'endLength'],
     structuralDepth: ['bowl', 'structuralDepth'],
     seatWidth: ['occupancy', 'seatWidth'],
     minAisle: ['occupancy', 'minAisle'],
@@ -72,6 +73,15 @@ const INTEGER_INPUT_IDS = new Set([
     'maxAisle',
     'seatsBetweenAisles'
 ]);
+const DEFAULT_BOWL_TYPE_OPTIONS = [
+    { value: 'Full', label: 'Full Bowl' },
+    { value: 'U-End1', label: 'C-Shape' },
+    { value: 'U-End2', label: 'U-Shape' },
+    { value: 'Side1', label: '1-Sided' },
+    { value: 'Sides', label: '2-Sided' },
+    { value: 'Sides3', label: '3-Sided' },
+    { value: 'Sides4', label: '4-Sided' }
+];
 const TIER_POSITION_CONTROL_IDS = [
     {
         distance: 'firstRowDist',
@@ -108,6 +118,117 @@ function formatSportOptionLabel(name, template) {
     }
 
     return name;
+}
+
+function normalizeBowlType(value) {
+    if (typeof value !== 'string' || !value.trim()) return 'Full';
+
+    const normalized = value.trim();
+    if (normalized === 'Side3') return 'Sides3';
+    if (normalized === 'Side4') return 'Sides4';
+    if (normalized === 'Side2') return 'Sides';
+    return normalized;
+}
+
+function formatBowlTypeLabel(value, fallbackLabel = null) {
+    const normalized = normalizeBowlType(value);
+    const fallback = typeof fallbackLabel === 'string' && fallbackLabel.trim()
+        ? fallbackLabel.trim()
+        : null;
+    const labelMap = {
+        Full: 'Full Bowl',
+        'U-End1': 'C-Shape',
+        'U-End2': 'U-Shape',
+        Side1: '1-Sided',
+        Side2: '2-Sided',
+        Sides: '2-Sided',
+        Sides3: '3-Sided',
+        Sides4: '4-Sided',
+        Side3: '3-Sided',
+        Side4: '4-Sided'
+    };
+
+    return fallback || labelMap[normalized] || normalized;
+}
+
+function normalizeBowlTypeOption(option) {
+    if (typeof option === 'string') {
+        const value = normalizeBowlType(option);
+        return { value, label: formatBowlTypeLabel(value) };
+    }
+
+    if (!option || typeof option !== 'object') return null;
+
+    const value = normalizeBowlType(option.value ?? option.id ?? option.name ?? option.type);
+    return {
+        value,
+        label: formatBowlTypeLabel(value, option.label ?? option.text ?? option.title),
+        hidden: !!option.hidden
+    };
+}
+
+function normalizeBowlTypeOptions(rawOptions) {
+    if (!Array.isArray(rawOptions) || rawOptions.length === 0) {
+        return DEFAULT_BOWL_TYPE_OPTIONS.slice();
+    }
+
+    const seen = new Set();
+    const normalized = [];
+    rawOptions.forEach((option) => {
+        const nextOption = normalizeBowlTypeOption(option);
+        if (!nextOption || seen.has(nextOption.value)) return;
+        seen.add(nextOption.value);
+        normalized.push(nextOption);
+    });
+
+    return normalized.length > 0 ? normalized : DEFAULT_BOWL_TYPE_OPTIONS.slice();
+}
+
+function resolveBowlTypeOptionsFromTemplate(template) {
+    const bowlDefaults = template?.defaults?.bowl && typeof template.defaults.bowl === 'object'
+        ? template.defaults.bowl
+        : {};
+    const rawOptions = bowlDefaults.typeOptions
+        ?? bowlDefaults.bowlTypeOptions
+        ?? bowlDefaults.types
+        ?? template?.bowlTypeOptions
+        ?? template?.bowlTypes
+        ?? template?.types
+        ?? null;
+    return normalizeBowlTypeOptions(rawOptions);
+}
+
+function shouldShowPrimarySideLengthRow(type) {
+    return ['Side1', 'Side2', 'Sides', 'Sides3', 'Sides4'].includes(normalizeBowlType(type));
+}
+
+function shouldShowSecondarySideLengthRow(type) {
+    return ['Sides3', 'Sides4', 'U-End1', 'U-End2', 'U-Shape', 'C-Shape'].includes(normalizeBowlType(type));
+}
+
+function resolveSideLengthRowLabels(type) {
+    const normalized = normalizeBowlType(type);
+    return {
+        primary: ['Sides3', 'Sides4'].includes(normalized) ? 'Sides Length 1/2' : 'Sides Length 1/2',
+        secondary: ['U-End1', 'U-End2', 'U-Shape', 'C-Shape'].includes(normalized)
+            ? 'Open Ends Length'
+            : 'Sides Length 3/4'
+    };
+}
+
+function clearSelectOptions(select) {
+    if (!select) return;
+    if (typeof select.replaceChildren === 'function') {
+        select.replaceChildren();
+        return;
+    }
+
+    if (Array.isArray(select.children)) {
+        select.children.length = 0;
+    }
+    if (typeof select.innerHTML === 'string') {
+        select.innerHTML = '';
+    }
 }
 
 function getValueAtPath(root, path) {
@@ -218,6 +339,10 @@ export class EditorControls {
     syncFromState() {
         const focalXControl = buildFocalXControlConfig(this.state);
         const tierRowCountControls = buildTierRowCountControlConfigs(this.state);
+        const template = resolveSportTemplate(this.state);
+        if (this.state?.bowl && typeof this.state.bowl === 'object') {
+            this.state.bowl.type = normalizeBowlType(this.state.bowl.type);
+        }
 
         const sportSelect = getSelectElement('sportSelect');
         if (sportSelect) {
@@ -236,6 +361,7 @@ export class EditorControls {
             runoffSlider.value = String(runoffValue);
         }
 
+        this._populateBowlTypes(template);
         this._syncFocalXControlBounds(focalXControl);
         this._syncTierRowCountControlBounds(tierRowCountControls);
 
@@ -253,9 +379,11 @@ export class EditorControls {
             if (!el) return;
             const value = getValueAtPath(this.state, path);
             if (value !== undefined && value !== null) {
-                el.value = value;
+                el.value = id === 'bowlType' ? normalizeBowlType(value) : value;
             }
         });
+
+        this._syncBowlLengthControls(template);
 
         Object.entries(CHECKBOX_STATE_PATHS).forEach(([id, path]) => {
             const el = getInputElement(id);
@@ -263,10 +391,7 @@ export class EditorControls {
             el.checked = !!getValueAtPath(this.state, path);
         });
 
-        const sideLengthRow = getHtmlElement('sideLengthRow');
-        if (sideLengthRow) {
-            sideLengthRow.hidden = !String(this.state.bowl?.type || '').includes('Side');
-        }
+        this._syncBowlLengthVisibility(this.state.bowl?.type);
 
         [1, 2, 3].forEach((tierNum) => {
             updateTierSectionState(
@@ -374,6 +499,79 @@ export class EditorControls {
         });
     }
 
+    _populateBowlTypes(template = resolveSportTemplate(this.state)) {
+        const select = getSelectElement('bowlType');
+        if (!select) return;
+
+        const options = resolveBowlTypeOptionsFromTemplate(template);
+        const currentValue = normalizeBowlType(this.state?.bowl?.type);
+        const nextValue = options.some((option) => option.value === currentValue)
+            ? currentValue
+            : (options[0]?.value || 'Full');
+
+        clearSelectOptions(select);
+        options.forEach((option) => {
+            const el = document.createElement('option');
+            el.value = option.value;
+            el.textContent = option.label;
+            if (option.hidden) {
+                el.hidden = true;
+            }
+            select.appendChild(el);
+        });
+
+        select.value = nextValue;
+    }
+
+    _syncBowlLengthControls(template = resolveSportTemplate(this.state)) {
+        const bowlDefaults = template?.defaults?.bowl && typeof template.defaults.bowl === 'object'
+            ? template.defaults.bowl
+            : {};
+        const primaryValue = this.state?.bowl?.sideLength
+            ?? bowlDefaults.sideLength
+            ?? bowlDefaults.sideLength12
+            ?? bowlDefaults.sideLength1
+            ?? bowlDefaults.sideLength2
+            ?? '';
+        const secondaryValue = this.state?.bowl?.endLength
+            ?? bowlDefaults.endLength
+            ?? bowlDefaults.sideLength34
+            ?? bowlDefaults.sideLength3
+            ?? bowlDefaults.sideLength4
+            ?? bowlDefaults.openEndLength
+            ?? bowlDefaults.sideLength
+            ?? primaryValue
+            ?? '';
+
+        this._setInputValue('bowlSideLength', primaryValue);
+        this._setInputValue('bowlEndLength', secondaryValue);
+        this._syncBowlLengthVisibility(this.state?.bowl?.type);
+    }
+
+    _syncBowlLengthVisibility(bowlType) {
+        const type = normalizeBowlType(bowlType);
+        const primaryRow = getHtmlElement('sideLengthRow');
+        const secondaryRow = getHtmlElement('sideLength34Row');
+        const labels = resolveSideLengthRowLabels(type);
+
+        if (primaryRow) {
+            primaryRow.hidden = !shouldShowPrimarySideLengthRow(type);
+        }
+        if (secondaryRow) {
+            secondaryRow.hidden = !shouldShowSecondarySideLengthRow(type);
+        }
+
+        const primaryLabel = getHtmlElement('sideLengthRowLabel');
+        if (primaryLabel) {
+            primaryLabel.textContent = labels.primary;
+        }
+
+        const secondaryLabel = getHtmlElement('sideLength34RowLabel');
+        if (secondaryLabel) {
+            secondaryLabel.textContent = labels.secondary;
+        }
+    }
+
     _wireEvents() {
         this._addListener(document, 'pointerdown', (event) => {
             this._handleDocumentPointerDown(event);
@@ -383,6 +581,8 @@ export class EditorControls {
         if (sportSelect) {
             this._addListener(sportSelect, 'change', () => {
                 this.state.sport = sportSelect.value;
+                this._populateBowlTypes();
+                this._syncBowlLengthControls();
                 this._emitChange('sport', 'sportSelect');
             });
         }
@@ -496,10 +696,9 @@ export class EditorControls {
         });
 
         this._bindSelectControl('bowlType', (value) => {
-            const sideRow = getHtmlElement('sideLengthRow');
-            if (sideRow) {
-                sideRow.hidden = !String(value || '').includes('Side');
-            }
+            this.state.bowl.type = normalizeBowlType(value);
+            this._syncBowlLengthVisibility(value);
+            this._syncBowlLengthControls();
         });
 
         this._bindCheckboxControl('showSeatCubes3D');

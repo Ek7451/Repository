@@ -43,6 +43,7 @@ const VALID_RESULTS_TABS = new Set(['statsTab', 'detailsTab']);
  *     type: string,
  *     cornerRad: number,
  *     sideLength: number,
+ *     endLength: number,
  *     structuralDepth: number,
  *     structuralProfileMode: string,
  *     straightAisleMode: string,
@@ -84,10 +85,14 @@ const VALID_RESULTS_TABS = new Set(['statsTab', 'detailsTab']);
  *         cornerRad?: number,
  *         radius?: number,
  *         sideLength?: number,
+ *         endLength?: number,
+ *         secondarySideLength?: number,
+ *         sideLength2?: number,
  *         structuralDepth?: number,
  *         structuralProfileMode?: string,
  *         straightAisleMode?: string,
- *         chamferAisleMode?: string
+ *         chamferAisleMode?: string,
+ *         typeOptions?: Array<string | { value?: string, label?: string }>
  *       },
  *       occupancy?: {
  *         seatWidth?: number,
@@ -157,6 +162,7 @@ function createBaseDefaultStateData() {
             type: 'Full',
             cornerRad: 10,
             sideLength: 300,
+            endLength: 300,
             structuralDepth: 12,
             structuralProfileMode: 'stepped',
             straightAisleMode: 'perpendicular',
@@ -208,6 +214,10 @@ function createDefaultStateData() {
         ?? state.bowl.cornerRad;
     state.bowl.sideLength = templateDefaults.bowl?.sideLength
         ?? (Number.isFinite(templateSideLength) ? templateSideLength : state.bowl.sideLength);
+    state.bowl.endLength = templateDefaults.bowl?.endLength
+        ?? templateDefaults.bowl?.secondarySideLength
+        ?? templateDefaults.bowl?.sideLength2
+        ?? (Number.isFinite(Number(template?.field_width)) ? Number(template.field_width) : state.bowl.sideLength);
     state.bowl.structuralDepth = templateDefaults.bowl?.structuralDepth ?? state.bowl.structuralDepth;
     state.bowl.structuralProfileMode = templateDefaults.bowl?.structuralProfileMode
         ?? state.bowl.structuralProfileMode;
@@ -259,6 +269,16 @@ const TIER_INITIALIZATION_KEYS = [
     'eyeSetback'
 ];
 
+const FALLBACK_BOWL_TYPE_OPTIONS = [
+    { value: 'Full', label: 'Full Bowl' },
+    { value: 'U-End1', label: 'C-Shape' },
+    { value: 'U-End2', label: 'U-Shape' },
+    { value: 'Side1', label: '1-Sided' },
+    { value: 'Sides', label: '2-Sided' },
+    { value: 'Sides3', label: '3-Sided' },
+    { value: 'Sides4', label: '4-Sided' }
+];
+
 const DEFAULT_TIER_STATE_TEMPLATE = createDefaultStateData().tiers;
 
 function parseNumber(value, fallback) {
@@ -283,7 +303,30 @@ function parseString(value, fallback) {
 
 function normalizeBowlType(value, fallback) {
     const nextValue = parseString(value, fallback);
-    return nextValue === 'Side2' ? 'Side1' : nextValue;
+    if (nextValue === 'Side2') return 'Side1';
+    if (nextValue === 'Side3') return 'Sides3';
+    if (nextValue === 'Side4') return 'Sides4';
+    if (nextValue === 'C-Shape') return 'U-End1';
+    if (nextValue === 'U-Shape') return 'U-End2';
+    return nextValue;
+}
+
+function normalizeBowlTypeOption(option) {
+    if (typeof option === 'string') {
+        const value = option.trim();
+        return value ? { value, label: value } : null;
+    }
+
+    if (!option || typeof option !== 'object') return null;
+
+    const value = parseString(option.value ?? option.id ?? option.name, '');
+    if (!value) return null;
+
+    return {
+        ...option,
+        value,
+        label: parseString(option.label ?? option.text ?? option.name, value)
+    };
 }
 
 function normalizeStructuralProfileMode(value, fallback = 'stepped') {
@@ -423,6 +466,10 @@ function normalizeAppState(rawState = {}, fallbackState = createDefaultStateData
                 fallback.bowl.cornerRad
             ),
             sideLength: parseNumber(state.bowl?.sideLength, fallback.bowl.sideLength),
+            endLength: parseNumber(
+                state.bowl?.endLength ?? state.bowl?.sideLength2,
+                fallback.bowl.endLength ?? fallback.bowl.sideLength
+            ),
             structuralDepth: parseNumber(
                 state.bowl?.structuralDepth,
                 fallback.bowl.structuralDepth
@@ -566,6 +613,28 @@ export function resolveSportTemplate(stateOrSport) {
     return getTemplate(nextSport);
 }
 
+export function resolveSportBowlTypeOptions(template) {
+    const rawOptions = template?.defaults?.bowl?.typeOptions
+        ?? template?.defaults?.bowl?.types
+        ?? template?.bowlTypes
+        ?? template?.supportedBowlTypes
+        ?? null;
+
+    const options = Array.isArray(rawOptions) && rawOptions.length
+        ? rawOptions
+            .map((option) => normalizeBowlTypeOption(option))
+            .filter((option) => option && typeof option.value === 'string')
+        : FALLBACK_BOWL_TYPE_OPTIONS;
+
+    const seen = new Set();
+    return options.filter((option) => {
+        const key = option.value;
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
 export function buildFocalXControlConfig(state) {
     const template = resolveSportTemplate(state);
     const bounds = resolveTemplateFocalXBoundsFt(template);
@@ -614,12 +683,27 @@ export function buildPrimaryTierParameters(state) {
     };
 }
 
+export function buildPrimaryTierSolverParameters(state) {
+    const primaryTier = getPrimaryTier(state);
+
+    return {
+        targetCValue: primaryTier.cValue ?? 0,
+        firstRowDistance: primaryTier.firstRowDist ?? 0,
+        firstRowElevation: primaryTier.firstRowElev ?? 0,
+        treadDepth: primaryTier.treadDepth ?? 0,
+        riserHeight: primaryTier.riserHeight ?? 0,
+        numRows: primaryTier.numRows ?? 0,
+        eyeHeight: primaryTier.eyeHeight ?? 0,
+        eyeSetback: primaryTier.eyeSetback ?? 0
+    };
+}
+
 export function buildBowlConfig(state, template) {
     const bowl = getStateBowl(state);
 
     return {
         width: template?.field_width,
-        length: template?.field_length,
+        length: template?.field_length ?? template?.straight_length,
         shape: template?.shape,
         radius_arc: template?.field_radius,
         arc_angle: template?.arc_angle,
@@ -628,6 +712,7 @@ export function buildBowlConfig(state, template) {
         radius: bowl.cornerRad,
         chamferReferenceOffset: buildChamferReferenceOffset(state),
         sideLength: bowl.sideLength,
+        endLength: bowl.endLength ?? bowl.sideLength,
         structuralDepth: bowl.structuralDepth || 0,
         structuralProfileMode: normalizeStructuralProfileMode(bowl.structuralProfileMode),
         straightAisleMode: normalizeAisleMode(bowl.straightAisleMode),
@@ -638,9 +723,10 @@ export function buildBowlConfig(state, template) {
 export function buildFieldVisibility(state) {
     const setup = getStateSetup(state);
     const tiers = Array.isArray(state?.tiers) ? state.tiers : [];
+    const sportName = resolveSportName(state);
 
     return {
-        showSeating: true,
+        showSeating: sportName !== 'Baseball',
         t1: !!tiers[0]?.enabled,
         t2: !!tiers[1]?.enabled,
         t3: !!tiers[2]?.enabled,
@@ -751,6 +837,12 @@ const appStateMethods = {
                 type: templateDefaults.bowl?.type,
                 cornerRad: templateDefaults.bowl?.cornerRad ?? templateDefaults.bowl?.radius,
                 sideLength: templateDefaults.bowl?.sideLength ?? getTemplateSideLength(template, this.bowl.sideLength),
+                endLength: templateDefaults.bowl?.endLength
+                    ?? templateDefaults.bowl?.secondarySideLength
+                    ?? templateDefaults.bowl?.sideLength2
+                    ?? (Number.isFinite(Number(template?.field_width))
+                        ? Number(template.field_width)
+                        : (this.bowl.endLength ?? this.bowl.sideLength)),
                 structuralDepth: templateDefaults.bowl?.structuralDepth,
                 structuralProfileMode: templateDefaults.bowl?.structuralProfileMode,
                 straightAisleMode: templateDefaults.bowl?.straightAisleMode,

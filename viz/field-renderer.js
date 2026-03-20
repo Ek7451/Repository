@@ -118,7 +118,7 @@ const FIELD_QUALITY_COLORS_DARK = {
     Poor: 'rgba(181, 74, 71, 0.86)'
 };
 
-const EDGE_SPORTS = ['Ice Hockey', 'Football', 'Soccer', 'Basketball'];
+const EDGE_SPORTS = ['Ice Hockey', 'Football', 'Soccer', 'Basketball', 'Track'];
 
 /**
  * @typedef {Object} BowlCornerPoints
@@ -446,6 +446,134 @@ function buildBowlParams(bowlConfig, offset) {
     return { pts, type, corner, r_eff };
 }
 
+function normalizeBowlType(type) {
+    if (type === 'U-Shape (End 1)' || type === 'C-Shape') return 'U-End1';
+    if (type === 'U-Shape (End 2)' || type === 'U-Shape') return 'U-End2';
+    return String(type || 'Full');
+}
+
+function resolveExplicitBowlBaseDimensions(bowlConfig) {
+    const baseLength = Math.max(
+        0,
+        Number(
+            bowlConfig?.length
+            ?? bowlConfig?.sideLength
+            ?? 300
+        ) || 0
+    );
+    const baseWidth = Math.max(
+        0,
+        Number(
+            bowlConfig?.width
+            ?? bowlConfig?.endLength
+            ?? 200
+        ) || 0
+    );
+
+    return {
+        halfLength: baseLength / 2,
+        halfWidth: baseWidth / 2,
+        sideLength: Math.max(0, Number(bowlConfig?.sideLength ?? baseLength) || 0),
+        endLength: Math.max(0, Number(bowlConfig?.endLength ?? baseWidth) || 0)
+    };
+}
+
+function pushPolylineSegments(segments, points = [], { close = false } = {}) {
+    const safePoints = (points || []).filter((point) => (
+        point &&
+        Number.isFinite(Number(point.x)) &&
+        Number.isFinite(Number(point.y))
+    ));
+    if (safePoints.length < 2) return;
+
+    segments.push({ cmd: 'moveTo', x: safePoints[0].x, y: safePoints[0].y });
+    for (let index = 1; index < safePoints.length; index += 1) {
+        segments.push({ cmd: 'lineTo', x: safePoints[index].x, y: safePoints[index].y });
+    }
+    if (close) {
+        segments.push({ cmd: 'closePath' });
+    }
+}
+
+function buildExplicitBowlSegments(bowlConfig, offset) {
+    const type = normalizeBowlType(bowlConfig?.type);
+    if (!['Sides3', 'Sides4'].includes(type)) {
+        return null;
+    }
+
+    const {
+        halfLength,
+        halfWidth,
+        sideLength,
+        endLength
+    } = resolveExplicitBowlBaseDimensions(bowlConfig);
+    const offsetFt = Math.max(0, Number(offset) || 0);
+    const leftX = -(halfLength + offsetFt);
+    const rightX = halfLength + offsetFt;
+    const topY = halfWidth + offsetFt;
+    const bottomY = -(halfWidth + offsetFt);
+    const centeredSideHalf = sideLength / 2;
+    const centeredTopLeftX = -centeredSideHalf;
+    const centeredTopRightX = centeredSideHalf;
+    const centeredEndHalf = endLength / 2;
+    const centeredLeftBottomY = -centeredEndHalf;
+    const centeredLeftTopY = centeredEndHalf;
+    const segments = [];
+
+    if (type === 'Sides3') {
+        pushPolylineSegments(segments, [
+            { x: centeredTopLeftX, y: topY },
+            { x: centeredTopRightX, y: topY }
+        ]);
+        pushPolylineSegments(segments, [
+            { x: centeredTopLeftX, y: bottomY },
+            { x: centeredTopRightX, y: bottomY }
+        ]);
+        pushPolylineSegments(segments, [
+            { x: leftX, y: centeredLeftBottomY },
+            { x: leftX, y: centeredLeftTopY }
+        ]);
+        return segments;
+    }
+
+    pushPolylineSegments(segments, [
+        { x: centeredTopLeftX, y: topY },
+        { x: centeredTopRightX, y: topY }
+    ]);
+    pushPolylineSegments(segments, [
+        { x: centeredTopLeftX, y: bottomY },
+        { x: centeredTopRightX, y: bottomY }
+    ]);
+    pushPolylineSegments(segments, [
+        { x: leftX, y: centeredLeftBottomY },
+        { x: leftX, y: centeredLeftTopY }
+    ]);
+    pushPolylineSegments(segments, [
+        { x: rightX, y: centeredLeftBottomY },
+        { x: rightX, y: centeredLeftTopY }
+    ]);
+    return segments;
+}
+
+function resolveUOpenTerminal(bowlConfig, normalizedType, pts) {
+    const numericEndLength = Number(bowlConfig?.endLength);
+    if (!Number.isFinite(numericEndLength)) {
+        return normalizedType === 'U-End1' ? pts.fixed_right : pts.fixed_top;
+    }
+
+    const safeEndLength = Math.max(0, numericEndLength);
+    const { pts: basePts } = buildBowlParams(
+        { ...bowlConfig, type: normalizedType },
+        0
+    );
+
+    if (normalizedType === 'U-End1') {
+        return basePts.tl_end.x + safeEndLength;
+    }
+
+    return basePts.br_start.y + safeEndLength;
+}
+
 export function buildBowlGeometrySegments(bowlConfig, offset) {
     if (bowlConfig.shape === 'arc') {
         const r = (bowlConfig.radius_arc || 325) + offset;
@@ -490,7 +618,13 @@ export function buildBowlGeometrySegments(bowlConfig, offset) {
         return segments;
     }
 
+    const explicitSegments = buildExplicitBowlSegments(bowlConfig, offset);
+    if (Array.isArray(explicitSegments) && explicitSegments.length > 0) {
+        return explicitSegments;
+    }
+
     const { pts, type, corner, r_eff } = buildBowlParams(bowlConfig, offset);
+    const normalizedType = normalizeBowlType(type);
     const segments = [];
 
     const addLine = (x, y) => segments.push({ cmd: 'lineTo', x, y });
@@ -498,19 +632,20 @@ export function buildBowlGeometrySegments(bowlConfig, offset) {
     const addArc = (x, y, r, sa, ea, ccw) => segments.push({ cmd: 'arc', x, y, r, sa, ea, ccw });
     const addClose = () => segments.push({ cmd: 'closePath' });
 
-    if (type === 'Sides') {
+    if (normalizedType === 'Sides') {
         addMove(pts.fixed_left, pts.bottom);
         addLine(pts.fixed_right, pts.bottom);
         addMove(pts.fixed_left, pts.top);
         addLine(pts.fixed_right, pts.top);
-    } else if (type === 'Side1') {
+    } else if (normalizedType === 'Side1') {
         addMove(pts.fixed_left, pts.bottom);
         addLine(pts.fixed_right, pts.bottom);
-    } else if (type === 'Side2') {
+    } else if (normalizedType === 'Side2') {
         addMove(pts.fixed_left, pts.top);
         addLine(pts.fixed_right, pts.top);
-    } else if (type === 'U-Shape (End 1)' || type === 'U-End1' || type === 'C-Shape') {
-        addMove(pts.fixed_right, pts.top);
+    } else if (normalizedType === 'U-End1') {
+        const fixedRight = resolveUOpenTerminal(bowlConfig, normalizedType, pts);
+        addMove(fixedRight, pts.top);
         addLine(pts.tl_end.x, pts.top);
 
         if (corner === 'Radius') addArc(pts.tl_center.x, pts.tl_center.y, r_eff, 0.5 * Math.PI, 1.0 * Math.PI, false);
@@ -523,9 +658,10 @@ export function buildBowlGeometrySegments(bowlConfig, offset) {
         else if (corner === 'Chamfer') addLine(pts.bl_start.x, pts.bl_start.y);
         else addLine(pts.left, pts.bottom);
 
-        addLine(pts.fixed_right, pts.bottom);
-    } else if (type === 'U-Shape (End 2)' || type === 'U-End2' || type === 'U-Shape') {
-        addMove(pts.right, pts.fixed_top);
+        addLine(fixedRight, pts.bottom);
+    } else if (normalizedType === 'U-End2') {
+        const fixedTop = resolveUOpenTerminal(bowlConfig, normalizedType, pts);
+        addMove(pts.right, fixedTop);
         addLine(pts.right, pts.br_start.y);
 
         if (corner === 'Radius') addArc(pts.br_center.x, pts.br_center.y, r_eff, 0, 1.5 * Math.PI, true);
@@ -538,7 +674,7 @@ export function buildBowlGeometrySegments(bowlConfig, offset) {
         else if (corner === 'Chamfer') addLine(pts.bl_end.x, pts.bl_end.y);
         else addLine(pts.left, pts.bottom);
 
-        addLine(pts.left, pts.fixed_top);
+        addLine(pts.left, fixedTop);
     } else {
         addMove(pts.tr_start.x, pts.top);
 
@@ -1068,9 +1204,10 @@ export class FieldRenderer {
                     if (bottomY < bounds.minY) bounds.minY = bottomY;
                     const topY = fy + maxDist;
                     if (topY > bounds.maxY) bounds.maxY = topY;
-                    const leftX = -((template.field_length || 0) / 2 + maxDist);
+                    const baseFieldLength = Number(template.field_length || template.straight_length || 0);
+                    const leftX = -((baseFieldLength / 2) + maxDist);
                     if (leftX < bounds.minX) bounds.minX = leftX;
-                    const rightX = (template.field_length || 0) / 2 + maxDist;
+                    const rightX = (baseFieldLength / 2) + maxDist;
                     if (rightX > bounds.maxX) bounds.maxX = rightX;
                 }
 

@@ -445,6 +445,8 @@ describe('aisle layout geometry seam', () => {
             { type: 'Full', pathCount: 1, closed: [true], parts: [8] },
             { type: 'U-End1', pathCount: 1, closed: [false], parts: [5] },
             { type: 'U-End2', pathCount: 1, closed: [false], parts: [5] },
+            { type: 'Sides3', pathCount: 3, closed: [false, false, false], parts: [1, 1, 1] },
+            { type: 'Sides4', pathCount: 4, closed: [false, false, false, false], parts: [1, 1, 1, 1] },
             { type: 'Sides', pathCount: 2, closed: [false, false], parts: [1, 1] },
             { type: 'Side1', pathCount: 1, closed: [false], parts: [1] }
         ];
@@ -982,6 +984,68 @@ describe('aisle layout geometry seam', () => {
         expect(bottomRun.map((aisle) => aisle.u)).toEqual([0.1, 0.5, 0.9]);
         expect(layout.aisles.every((aisle) => aisle.anchorType === 'distributed_linear_even')).toBe(true);
         expect(layout.aisles.every((aisle) => aisle.alignmentMode === 'radial')).toBe(true);
+    });
+
+    it('allocates aisles across every independent 3-sided and 4-sided renderer path', () => {
+        [
+            { type: 'Sides3', expectedPaths: 3 },
+            { type: 'Sides4', expectedPaths: 4 }
+        ].forEach(({ type, expectedPaths }) => {
+            const fixture = buildRendererBowlFixture(type);
+            const layout = buildTierAisleLayout({
+                frontSegments: fixture.frontSegments,
+                backSegments: fixture.backSegments,
+                targetAisles: 3,
+                aisleWidthFt: 4,
+                bowlConfig: fixture.bowlConfig
+            });
+            const aislesByPath = layout.aisles.reduce((counts, aisle) => {
+                const pathIndex = Math.max(0, Math.floor(Number(aisle.pathIndex) || 0));
+                counts.set(pathIndex, (counts.get(pathIndex) || 0) + 1);
+                return counts;
+            }, new Map());
+
+            expect(layout.forcedCount).toBe(0);
+            expect(layout.aisles.length).toBeGreaterThan(0);
+            expect(layout.sectionBoundaries).toHaveLength(expectedPaths);
+            expect(layout.aisles.every((aisle) => aisle.anchorType === 'distributed_linear_even')).toBe(true);
+            expect(layout.aisles.every((aisle) => aisle.alignmentMode === 'radial')).toBe(true);
+            expect(aislesByPath.size).toBe(expectedPaths);
+            aislesByPath.forEach((aisleCount) => {
+                expect(aisleCount).toBeGreaterThan(0);
+            });
+        });
+    });
+
+    it('keeps 3-sided and 4-sided aisle analysis populated on every seating segment', () => {
+        [
+            { type: 'Sides3', expectedPaths: 3 },
+            { type: 'Sides4', expectedPaths: 4 }
+        ].forEach(({ type, expectedPaths }) => {
+            const fixture = buildRendererBowlFixture(type);
+            const tierLayout = buildTierAisleAnalysisForFixture({
+                fixture,
+                rows: buildTierRows(),
+                egressParams: {
+                    seatWidthIn: 20,
+                    minAisleWidthIn: 48,
+                    maxAisleWidthIn: 72,
+                    egressFactor: 0.2,
+                    seatsBetweenAisles: 24
+                }
+            });
+            const aislesByPath = tierLayout.aisles.reduce((counts, aisle) => {
+                const pathIndex = Math.max(0, Math.floor(Number(aisle.pathIndex) || 0));
+                counts.set(pathIndex, (counts.get(pathIndex) || 0) + 1);
+                return counts;
+            }, new Map());
+
+            expect(tierLayout.sectionSummary.actualAisles).toBeGreaterThan(0);
+            expect(aislesByPath.size).toBe(expectedPaths);
+            aislesByPath.forEach((aisleCount) => {
+                expect(aisleCount).toBeGreaterThan(0);
+            });
+        });
     });
 
     it('resolves side-run terminal aisles from rendered widths so edge bands stay flush', () => {

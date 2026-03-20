@@ -163,6 +163,8 @@
                                     <option value="U-End2">U-Shape</option>
                                     <option value="Side1">1-Sided</option>
                                     <option value="Sides">2-Sided</option>
+                                    <option value="Sides3">3-Sided</option>
+                                    <option value="Sides4">4-Sided</option>
                                 </select>
                             </div>
 
@@ -176,10 +178,18 @@
 
                             </div>
                             <div class="control-row" id="sideLengthRow" hidden>
-                                <label>Sides Length</label>
+                                <label id="sideLengthRowLabel">Sides Length 1/2</label>
                                 <input type="range" id="bowlSideLengthSlider" min="50" max="600" step="1" value="300">
                                 <input type="number" id="bowlSideLengthInput" min="50" max="600" step="1" value="300">
                                 <span class="unit">ft</span>
+                            </div>
+                            <div class="control-row" id="sideLength34Row" hidden>
+                                <label id="sideLength34RowLabel">Sides Length 3/4</label>
+                                <input type="range" id="bowlEndLengthSlider" min="50" max="600" step="1" value="300">
+                                <input type="number" id="bowlEndLengthInput" min="50" max="600" step="1" value="300">
+                                <span class="unit">ft</span>
+                                <span class="info-icon"
+                                    data-tooltip="Length for the alternate side pair or open-end configuration, measured from the front edge of the straight seating segment to the open end.">ⓘ</span>
                             </div>
 
                             <div class="control-row">
@@ -259,7 +269,7 @@
                             <input type="number" id="firstRowDistInput" min="0" max="200" step="1" value="50">
                             <span class="unit">ft</span>
                             <span class="info-icon"
-                                data-tooltip="Distance from focal point. 30–50 ft premium, 50–80 ft standard, 100+ ft upper">ⓘ</span>
+                                data-tooltip="Distance from field edge. 30–50 ft premium, 50–80 ft standard, 100+ ft upper">ⓘ</span>
                         </div>
 
                         <div class="control-row">
@@ -350,7 +360,7 @@
                             <input type="number" id="t2FirstRowDistInput" min="-50" max="300" step="1" value="80">
                             <span class="unit">ft</span>
                             <span class="info-icon"
-                                data-tooltip="Distance from focal point. Negative overlaps toward field">ⓘ</span>
+                                data-tooltip="Distance from field edge. Negative overlaps toward field">ⓘ</span>
                         </div>
 
                         <div class="control-row">
@@ -436,7 +446,7 @@
                             <input type="number" id="t3FirstRowDistInput" min="-50" max="300" step="1" value="120">
                             <span class="unit">ft</span>
                             <span class="info-icon"
-                                data-tooltip="Distance from focal point. Negative overlaps toward field">ⓘ</span>
+                                data-tooltip="Distance from field edge. Negative overlaps toward field">ⓘ</span>
                         </div>
 
                         <div class="control-row">

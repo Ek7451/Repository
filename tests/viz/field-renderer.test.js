@@ -131,6 +131,7 @@ describe('FieldRenderer helper delegation surface', () => {
         const renderer = Object.create(FieldRenderer.prototype);
 
         expect(renderer.getOffsetCorrection({ width: 120 }, 'Football')).toBe(0);
+        expect(renderer.getOffsetCorrection({ width: 303.6 }, 'Track')).toBe(0);
         expect(renderer.getOffsetCorrection({ width: 120 }, 'Baseball')).toBe(60);
         expect(renderer.getOffsetCorrection({}, 'Baseball')).toBe(0);
     });
@@ -293,6 +294,36 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(outerSegments[1].y).toBeCloseTo(outerHalfWidth - expectedOuterLeg);
     });
 
+    it('preserves legacy chamfer growth for U and C bowls while the open-end slider only moves the terminal face', () => {
+        const cShapeConfig = createFullChamferBowlConfig({
+            type: 'U-End1',
+            radius: 5,
+            chamferReferenceOffset: 30,
+            endLength: 60
+        });
+        const uShapeConfig = createFullChamferBowlConfig({
+            type: 'U-End2',
+            radius: 5,
+            chamferReferenceOffset: 30,
+            endLength: 60
+        });
+        const outerHalfWidth = (cShapeConfig.width / 2) + 42;
+        const outerHalfLength = (cShapeConfig.length / 2) + 42;
+        const expectedOuterLeg = 5 + ((42 - 30) * 0.5858);
+        const cSegments = buildBowlGeometrySegments(cShapeConfig, 42);
+        const uSegments = buildBowlGeometrySegments(uShapeConfig, 42);
+
+        expect(cSegments[1].x).toBeCloseTo(-outerHalfLength + expectedOuterLeg);
+        expect(cSegments[1].y).toBeCloseTo(outerHalfWidth);
+        expect(cSegments[2].x).toBeCloseTo(-outerHalfLength);
+        expect(cSegments[2].y).toBeCloseTo(outerHalfWidth - expectedOuterLeg);
+
+        expect(uSegments[1].x).toBeCloseTo(outerHalfLength);
+        expect(uSegments[1].y).toBeCloseTo(-outerHalfWidth + expectedOuterLeg);
+        expect(uSegments[2].x).toBeCloseTo(outerHalfLength - expectedOuterLeg);
+        expect(uSegments[2].y).toBeCloseTo(-outerHalfWidth);
+    });
+
     it('accepts the renamed human-readable bowl type aliases without changing geometry output', () => {
         const cShapeConfig = createFullChamferBowlConfig({ type: 'C-Shape', corner: 'Chamfer', radius: 18 });
         const uShapeConfig = createFullChamferBowlConfig({ type: 'U-Shape', corner: 'Radius', radius: 18 });
@@ -302,6 +333,66 @@ describe('FieldRenderer helper delegation surface', () => {
         );
         expect(buildBowlGeometrySegments(uShapeConfig, 6)).toEqual(
             buildBowlGeometrySegments(createFullChamferBowlConfig({ type: 'U-End2', corner: 'Radius', radius: 18 }), 6)
+        );
+    });
+
+    it('builds explicit 3-sided and 4-sided bowl families for shared renderer consumers', () => {
+        const threeSideSubpaths = buildBowlGeometrySubpaths(
+            createFullChamferBowlConfig({ type: 'Sides3', sideLength: 140, endLength: 70 }),
+            6
+        );
+        const fourSideSubpaths = buildBowlGeometrySubpaths(
+            createFullChamferBowlConfig({ type: 'Sides4', sideLength: 140, endLength: 70 }),
+            6
+        );
+
+        expect(threeSideSubpaths).toHaveLength(3);
+        expect(threeSideSubpaths.every((subpath) => !subpathIsClosed(subpath))).toBe(true);
+        expect(fourSideSubpaths).toHaveLength(4);
+        expect(fourSideSubpaths.every((subpath) => !subpathIsClosed(subpath))).toBe(true);
+    });
+
+    it('lets U and C bowls use the open-end length control while keeping the open-end terminal faces straight', () => {
+        const cShapeShortFront = buildBowlGeometrySubpaths(
+            createFullChamferBowlConfig({ type: 'U-End1', sideLength: 180, endLength: 60 }),
+            0
+        );
+        const cShapeShortBack = buildBowlGeometrySubpaths(
+            createFullChamferBowlConfig({ type: 'U-End1', sideLength: 180, endLength: 60 }),
+            12
+        );
+        const cShapeLongFront = buildBowlGeometrySubpaths(
+            createFullChamferBowlConfig({ type: 'U-End1', sideLength: 180, endLength: 110 }),
+            0
+        );
+        const uShapeShortFront = buildBowlGeometrySubpaths(
+            createFullChamferBowlConfig({ type: 'U-End2', sideLength: 180, endLength: 60 }),
+            0
+        );
+        const uShapeShortBack = buildBowlGeometrySubpaths(
+            createFullChamferBowlConfig({ type: 'U-End2', sideLength: 180, endLength: 60 }),
+            12
+        );
+        const uShapeLongFront = buildBowlGeometrySubpaths(
+            createFullChamferBowlConfig({ type: 'U-End2', sideLength: 180, endLength: 110 }),
+            0
+        );
+
+        expect(Math.max(...cShapeLongFront[0].map((point) => point.x))).toBeGreaterThan(
+            Math.max(...cShapeShortFront[0].map((point) => point.x))
+        );
+        expect(Math.max(...uShapeLongFront[0].map((point) => point.y))).toBeGreaterThan(
+            Math.max(...uShapeShortFront[0].map((point) => point.y))
+        );
+        expect(cShapeShortFront[0][0].x).toBeCloseTo(cShapeShortBack[0][0].x);
+        expect(cShapeShortFront[0].slice(1, 5)).toEqual(cShapeLongFront[0].slice(1, 5));
+        expect(cShapeShortFront[0][cShapeShortFront[0].length - 1].x).toBeCloseTo(
+            cShapeShortBack[0][cShapeShortBack[0].length - 1].x
+        );
+        expect(uShapeShortFront[0][0].y).toBeCloseTo(uShapeShortBack[0][0].y);
+        expect(uShapeShortFront[0].slice(1, 5)).toEqual(uShapeLongFront[0].slice(1, 5));
+        expect(uShapeShortFront[0][uShapeShortFront[0].length - 1].y).toBeCloseTo(
+            uShapeShortBack[0][uShapeShortBack[0].length - 1].y
         );
     });
 

@@ -9,12 +9,14 @@ import {
     buildFocalPointFt,
     buildProfileRenderOptions,
     buildPrimaryTierParameters,
+    buildPrimaryTierSolverParameters,
     buildSceneSeatPreviewOptions,
     buildTierInitializationFlags,
     buildTierRowCountControlConfigs,
     createDefaultAppStateData,
     getCustomRunoff,
-    getRunoffDistance
+    getRunoffDistance,
+    resolveSportBowlTypeOptions
 } from '../../state/app-state.js';
 
 describe('AppState', () => {
@@ -142,6 +144,35 @@ describe('AppState', () => {
         expect(AppState.tiers[1].numRows).toBe(18);
     });
 
+    test('resolves bowl type options from sport-owned template metadata with fallback normalization', () => {
+        expect(resolveSportBowlTypeOptions({
+            defaults: {
+                bowl: {
+                    typeOptions: [
+                        'Full',
+                        { value: 'Sides3', label: '3-Sided Preset' },
+                        { id: 'Sides4', text: '4-Sided Preset' },
+                        { value: '', label: 'Skip me' }
+                    ]
+                }
+            }
+        })).toEqual([
+            { value: 'Full', label: 'Full' },
+            { value: 'Sides3', label: '3-Sided Preset' },
+            { id: 'Sides4', text: '4-Sided Preset', value: 'Sides4', label: '4-Sided Preset' }
+        ]);
+
+        expect(resolveSportBowlTypeOptions(null)).toEqual([
+            { value: 'Full', label: 'Full Bowl' },
+            { value: 'U-End1', label: 'C-Shape' },
+            { value: 'U-End2', label: 'U-Shape' },
+            { value: 'Side1', label: '1-Sided' },
+            { value: 'Sides', label: '2-Sided' },
+            { value: 'Sides3', label: '3-Sided' },
+            { value: 'Sides4', label: '4-Sided' }
+        ]);
+    });
+
     test('creates a fresh default app state payload for project creation flows', () => {
         const first = createDefaultAppStateData();
         const second = createDefaultAppStateData();
@@ -155,6 +186,7 @@ describe('AppState', () => {
         expect(first.setup.focalZ).toBe(2.5);
         expect(first.bowl.cornerRad).toBe(16);
         expect(first.bowl.sideLength).toBe(200);
+        expect(first.bowl.endLength).toBe(85);
         expect(first.bowl.structuralDepth).toBe(6);
         expect(first.bowl.structuralProfileMode).toBe('stepped');
         expect(first.bowl.straightAisleMode).toBe('perpendicular');
@@ -227,6 +259,7 @@ describe('AppState', () => {
         state.bowl.type = 'Side1';
         state.bowl.cornerRad = 24;
         state.bowl.sideLength = 280;
+        state.bowl.endLength = 280;
         state.bowl.structuralDepth = 18;
         state.bowl.structuralProfileMode = 'sloped';
         state.bowl.straightAisleMode = 'perpendicular';
@@ -266,6 +299,16 @@ describe('AppState', () => {
             eyeHeight: 3.75,
             eyeSetback: 6
         });
+        expect(buildPrimaryTierSolverParameters(state)).toEqual({
+            targetCValue: 3.5,
+            firstRowDistance: 0,
+            firstRowElevation: 2,
+            treadDepth: 33,
+            riserHeight: 12,
+            numRows: 15,
+            eyeHeight: 3.75,
+            eyeSetback: 6
+        });
         const bowlConfig = buildBowlConfig(state, template);
         expect(bowlConfig).toEqual({
             width: 160,
@@ -278,6 +321,7 @@ describe('AppState', () => {
             radius: 24,
             chamferReferenceOffset: 0,
             sideLength: 280,
+            endLength: 280,
             structuralDepth: 18,
             structuralProfileMode: 'sloped',
             straightAisleMode: 'perpendicular',
@@ -348,6 +392,16 @@ describe('AppState', () => {
             eyeHeight: 0,
             eyeSetback: 0
         });
+        expect(buildPrimaryTierSolverParameters(partialState)).toEqual({
+            targetCValue: 0,
+            firstRowDistance: 0,
+            firstRowElevation: 0,
+            treadDepth: 0,
+            riserHeight: 0,
+            numRows: 0,
+            eyeHeight: 0,
+            eyeSetback: 0
+        });
         const bowlConfig = buildBowlConfig(partialState, null);
         expect(bowlConfig).toEqual({
             width: undefined,
@@ -360,6 +414,7 @@ describe('AppState', () => {
             radius: undefined,
             chamferReferenceOffset: 0,
             sideLength: undefined,
+            endLength: undefined,
             structuralDepth: 0,
             structuralProfileMode: 'stepped',
             straightAisleMode: 'radial',
@@ -377,6 +432,21 @@ describe('AppState', () => {
         expect(buildSceneSeatPreviewOptions(partialState)).toEqual({
             showSeatCubes: false,
             seatWidthIn: 0
+        });
+    });
+
+    test('suppresses baseball seating display while leaving canonical state selectors pure', () => {
+        const state = createDefaultAppStateData();
+        state.sport = 'Baseball';
+        state.tiers[1].enabled = true;
+
+        expect(buildFieldVisibility(state)).toEqual({
+            showSeating: false,
+            t1: true,
+            t2: true,
+            t3: false,
+            colorByCValue: true,
+            showSectionMetrics: false
         });
     });
 

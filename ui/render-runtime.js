@@ -102,6 +102,8 @@ export class RenderRuntime {
 
         this._solvers = solvers;
         this._tierAisleLayouts = tierAisleLayouts;
+        const scene3DSolvers = visibility.showSeating ? solvers : null;
+        const scene3DTierAisleLayouts = visibility.showSeating ? tierAisleLayouts : [];
         this._snapshot = {
             template,
             customRunoff,
@@ -138,10 +140,10 @@ export class RenderRuntime {
                 customRunoff,
                 focalPointFt,
                 focalZ: focalPointFt.z,
-                solvers,
+                solvers: scene3DSolvers,
                 bowlConfig,
                 offsetCorrection,
-                tierAisleLayouts,
+                tierAisleLayouts: scene3DTierAisleLayouts,
                 seatPreviewOptions
             },
             statsViewModel: buildStatsViewModel({

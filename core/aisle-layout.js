@@ -3741,7 +3741,7 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
     let aisles = [];
     const bowlType = String(bowlConfig && bowlConfig.type ? bowlConfig.type : '').toLowerCase();
     const useIndependentSidesOpenDistribution =
-        bowlType === 'sides' &&
+        ['sides', 'sides3', 'sides4'].includes(bowlType) &&
         paths.length >= 2 &&
         paths.every((path) => path && !path.closed && path.length > EPS) &&
         forcedAisles.length === 0;
