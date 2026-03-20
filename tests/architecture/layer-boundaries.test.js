@@ -404,18 +404,60 @@ describe('entry routing and bootstrap', () => {
 
         expect(authService.getSession).toHaveBeenCalledTimes(1);
         expect(authService.signInWithMicrosoft).not.toHaveBeenCalled();
+        expect(projectApi.getProject).toHaveBeenCalledWith('project-1');
+        expect(projectApi.getProject.mock.invocationCallOrder[0]).toBeLessThan(appFactory.mock.invocationCallOrder[0]);
         expect(appFactory).toHaveBeenCalledTimes(1);
         expect(appFactory).toHaveBeenCalledWith(expect.objectContaining({
             projectActions: expect.any(Object),
-            document
+            document,
+            initialProject: project
         }));
-        expect(document.getElementById).not.toHaveBeenCalled();
         expect(app.setSession).toHaveBeenCalledWith(session);
         expect(app.init).toHaveBeenCalledTimes(1);
-        expect(app.setProjectStatus).toHaveBeenCalledWith('Loading project...', 'pending');
-        expect(projectApi.getProject).toHaveBeenCalledWith('project-1');
-        expect(app.loadProject).toHaveBeenCalledWith(project);
+        expect(app.loadProject).not.toHaveBeenCalled();
         expect(location.replace).not.toHaveBeenCalled();
+    });
+
+    it('redirects without creating the app when the initial project preload fails', async () => {
+        const document = createRouteDocument('configurator');
+        const location = createLocation(
+            'http://localhost/pages/configurator/index.html?project=project-1&devBackend=local'
+        );
+        const session = {
+            userId: 'pat@example.com',
+            displayName: 'Pat Example',
+            email: 'pat@example.com',
+            jobTitle: 'Design Technology Specialist II'
+        };
+        const authService = {
+            getSession: vi.fn().mockResolvedValue(session),
+            signInWithMicrosoft: vi.fn()
+        };
+        const projectApi = {
+            getProject: vi.fn().mockRejectedValue(new Error('Missing project'))
+        };
+        const appFactory = vi.fn();
+        const setTimeoutFn = vi.fn((callback) => {
+            callback();
+            return 1;
+        });
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        await bootAppShell({
+            document,
+            location,
+            runtimeConfig: { devBackend: 'local' },
+            authService,
+            projectApi,
+            appFactory,
+            setTimeoutFn
+        });
+
+        expect(errorSpy).toHaveBeenCalledWith('Project load failed:', expect.any(Error));
+        expect(appFactory).not.toHaveBeenCalled();
+        expect(location.assign).toHaveBeenCalledWith(
+            buildConfiguratorUrl(null, { devBackend: 'local' })
+        );
     });
 
     it('keeps import and export owned by the configurator toolbar instead of the legacy left rail', () => {
@@ -435,6 +477,15 @@ describe('entry routing and bootstrap', () => {
         expect(editorShellSource).not.toContain('loadConfigBtn');
         expect(editorShellSource).not.toContain('.export-menu-panel');
         expect(editorShellSource).not.toContain('.export-menu-header');
+    });
+
+    it('starts the configurator sidebar in its minimized-slider state to avoid first-paint slider flicker', () => {
+        const configuratorMarkup = fs.readFileSync(
+            path.join(repoRoot, 'pages/configurator/index.html'),
+            'utf8'
+        );
+
+        expect(configuratorMarkup).toContain('class="sidebar left-sidebar slider-minimized"');
     });
 
     it('exposes every supported rectangular bowl family in the configurator bowl type picker', () => {
@@ -816,16 +867,10 @@ describe('entry routing and bootstrap', () => {
             1,
             null,
             '',
-            buildConfiguratorUrl('project-1', { devBackend: 'local' })
-        );
-        expect(history.replaceState).toHaveBeenNthCalledWith(
-            2,
-            null,
-            '',
             buildConfiguratorUrl('project-2', { devBackend: 'local' })
         );
         expect(history.replaceState).toHaveBeenNthCalledWith(
-            3,
+            2,
             null,
             '',
             buildConfiguratorUrl('project-3', { devBackend: 'local' })

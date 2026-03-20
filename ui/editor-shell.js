@@ -85,8 +85,8 @@ export class EditorShell {
         return this._workspaceShell.connectViewCanvases(options);
     }
 
-    applyUrlViewOverride() {
-        this._workspaceShell.applyUrlViewOverride();
+    applyUrlViewOverride(options = {}) {
+        return this._workspaceShell.applyUrlViewOverride(options);
     }
 
     setViewTab(tab, options = {}) {

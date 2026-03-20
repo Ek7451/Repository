@@ -48,6 +48,112 @@ function createTierLayout(tierIndex = 0) {
     };
 }
 
+function createInitialProject({
+    id = 'project-1',
+    name = 'Arena Study',
+    sport = 'Soccer',
+    customRunoff = 14,
+    focalX = 6,
+    focalZ = 7,
+    activeViewTab = 'field',
+    activeResultsTab = 'detailsTab',
+    numRows = 18,
+    firstRowDist = 28,
+    firstRowElev = 4
+} = {}) {
+    return {
+        id,
+        name,
+        createdAt: '2026-03-15T10:00:00.000Z',
+        updatedAt: '2026-03-15T10:05:00.000Z',
+        state: {
+            _projectVersion: 'dashboard-cutover-v1',
+            sport,
+            activeOptionId: 'option-1',
+            options: [
+                {
+                    id: 'option-1',
+                    name: 'Option 1',
+                    color: '#7aae1a',
+                    createdAt: '2026-03-15T10:00:00.000Z',
+                    updatedAt: '2026-03-15T10:05:00.000Z',
+                    state: {
+                        _version: 'phase6-app-state',
+                        sport,
+                        setup: {
+                            customRunoff,
+                            focalX,
+                            focalZ,
+                            sightlineVisuals: true,
+                            sectionMetrics: false
+                        },
+                        bowl: {
+                            type: 'Full',
+                            cornerRad: 10,
+                            sideLength: 300,
+                            structuralDepth: 12,
+                            structuralProfileMode: 'stepped',
+                            straightAisleMode: 'perpendicular',
+                            chamferAisleMode: 'radial'
+                        },
+                        occupancy: {
+                            seatWidth: 20,
+                            minAisle: 48,
+                            maxAisle: 72,
+                            seatsBetweenAisles: 20,
+                            egressFactor: 0.2,
+                            showSeatCubes3D: false
+                        },
+                        ui: {
+                            activeViewTab,
+                            activeResultsTab
+                        },
+                        tiers: [
+                            {
+                                enabled: true,
+                                profileType: 'Parabolic',
+                                cValue: 4,
+                                numRows,
+                                firstRowDist,
+                                firstRowElev,
+                                treadDepth: 33,
+                                riserHeight: 10,
+                                eyeHeight: 3.75,
+                                eyeSetback: 6
+                            },
+                            {
+                                enabled: false,
+                                profileType: 'Parabolic',
+                                cValue: 4,
+                                numRows: 10,
+                                firstRowDist: 10,
+                                firstRowElev: 0,
+                                treadDepth: 33,
+                                riserHeight: 10,
+                                eyeHeight: 3.75,
+                                eyeSetback: 6
+                            },
+                            {
+                                enabled: false,
+                                profileType: 'Parabolic',
+                                cValue: 4,
+                                numRows: 10,
+                                firstRowDist: 10,
+                                firstRowElev: 0,
+                                treadDepth: 33,
+                                riserHeight: 10,
+                                eyeHeight: 3.75,
+                                eyeSetback: 6
+                            }
+                        ],
+                        bookmarks: []
+                    }
+                }
+            ]
+        }
+    };
+}
+
 afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
@@ -154,6 +260,82 @@ describe('SeatingBowlApp runtime seams', () => {
             message: 'Loaded Arena Study',
             tone: 'success'
         });
+    });
+
+    test('primes constructor state from the initial project so the first update uses the saved study', () => {
+        const app = new SeatingBowlApp({
+            initialProject: createInitialProject()
+        });
+        const renderField = vi.fn();
+        const renderProfile = vi.fn();
+        const updateStats = vi.fn();
+        const geometryPort = {
+            getOffsetCorrection: vi.fn(() => 3),
+            getVisualFocalY: vi.fn(() => 21),
+            buildTierAisleLayouts: vi.fn(() => []),
+            calculateRowLength: vi.fn(() => 100)
+        };
+
+        app.fieldRenderer = /** @type {any} */ ({
+            ...geometryPort,
+            getGeometryPort: vi.fn(() => geometryPort),
+            render: renderField
+        });
+        app.profileRenderer = /** @type {any} */ ({
+            renderMulti: renderProfile
+        });
+        app.statsPanel = /** @type {any} */ ({
+            update: updateStats
+        });
+        app.editorShell = /** @type {any} */ ({
+            isScene3DActive: vi.fn(() => false),
+            ensure3DContainerSize: vi.fn()
+        });
+        app.scene3DController = /** @type {any} */ ({
+            update: vi.fn()
+        });
+
+        app.update();
+
+        const snapshot = app.renderRuntime.getSnapshot();
+
+        expect(app.getProjectMetadata()).toMatchObject({
+            id: 'project-1',
+            name: 'Arena Study'
+        });
+        expect(app.state.sport).toBe('Soccer');
+        expect(app.state.ui).toEqual({
+            activeViewTab: 'field',
+            activeResultsTab: 'detailsTab'
+        });
+        expect(snapshot?.template).toBe(getTemplate('Soccer'));
+        expect(snapshot?.focalPointFt).toEqual({ x: 6, z: 7 });
+        expect(renderField).toHaveBeenCalledWith(
+            snapshot?.template,
+            14,
+            snapshot?.solvers,
+            expect.objectContaining({
+                t1: true,
+                t2: false,
+                t3: false
+            }),
+            21,
+            expect.objectContaining({
+                straightAisleMode: 'perpendicular',
+                chamferAisleMode: 'radial'
+            }),
+            3,
+            []
+        );
+        expect(renderProfile).toHaveBeenCalledWith(
+            snapshot?.solvers,
+            6,
+            7,
+            expect.objectContaining({
+                showSightlines: true
+            })
+        );
+        expect(updateStats).toHaveBeenCalledWith(snapshot?.statsViewModel);
     });
 
     test('assembles the current runtime snapshot for field, profile, stats, and 3d updates', () => {

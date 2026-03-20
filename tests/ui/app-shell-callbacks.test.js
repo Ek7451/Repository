@@ -11,6 +11,40 @@ afterEach(() => {
     vi.unstubAllGlobals();
 });
 
+function createInitialProject({
+    sport = 'Football',
+    activeViewTab = 'profile',
+    activeResultsTab = 'statsTab'
+} = {}) {
+    return {
+        id: 'project-1',
+        name: 'Arena Study',
+        createdAt: '2026-03-15T00:00:00.000Z',
+        updatedAt: '2026-03-15T01:00:00.000Z',
+        state: {
+            _projectVersion: 'dashboard-cutover-v1',
+            sport,
+            activeOptionId: 'option-1',
+            options: [
+                {
+                    id: 'option-1',
+                    name: 'Option 1',
+                    color: '#7aae1a',
+                    createdAt: '2026-03-15T00:00:00.000Z',
+                    updatedAt: '2026-03-15T01:00:00.000Z',
+                    state: {
+                        sport,
+                        ui: {
+                            activeViewTab,
+                            activeResultsTab
+                        }
+                    }
+                }
+            ]
+        }
+    };
+}
+
 describe('SeatingBowlApp shell callbacks', () => {
     it('emits project chrome updates as plain data', () => {
         const chromeUpdates = [];
@@ -197,10 +231,6 @@ describe('SeatingBowlApp shell callbacks', () => {
             destroy: vi.fn()
         }));
         vi.spyOn(statsPanelModule, 'StatsPanel').mockImplementation(() => /** @type {any} */ ({ update: vi.fn() }));
-        vi.stubGlobal('requestAnimationFrame', (callback) => {
-            callback();
-            return 1;
-        });
 
         const app = new SeatingBowlApp({ projectActions });
         app.editorControls = /** @type {any} */ ({
@@ -215,6 +245,7 @@ describe('SeatingBowlApp shell callbacks', () => {
         expect(editorShellModule.EditorShell).toHaveBeenCalledWith(expect.objectContaining({
             projectActions
         }));
+        expect(mockShell.applyUrlViewOverride).toHaveBeenCalledWith({ notify: false });
     });
 
     it('replays pre-init session chrome into the editor shell during init', async () => {
@@ -247,10 +278,6 @@ describe('SeatingBowlApp shell callbacks', () => {
         vi.spyOn(profileRendererModule, 'ProfileRenderer').mockImplementation(() => /** @type {any} */ ({}));
         vi.spyOn(scene3DControllerModule, 'Scene3DController').mockImplementation(() => /** @type {any} */ (mockScene3DController));
         vi.spyOn(statsPanelModule, 'StatsPanel').mockImplementation(() => /** @type {any} */ ({ update: vi.fn() }));
-        vi.stubGlobal('requestAnimationFrame', (callback) => {
-            callback();
-            return 1;
-        });
 
         const app = new SeatingBowlApp();
         app.editorControls = /** @type {any} */ ({
@@ -281,6 +308,82 @@ describe('SeatingBowlApp shell callbacks', () => {
         expect(renderProjectStatus).toHaveBeenCalledWith({
             message: 'Project persistence ready',
             tone: 'default'
+        });
+        expect(mockShell.applyUrlViewOverride).toHaveBeenCalledWith({ notify: false });
+    });
+
+    it('awaits the initial 3d activation when a preloaded project restores directly to scene3d', async () => {
+        const activateCalls = [];
+        /** @type {((value?: unknown) => void) | null} */
+        let resolveActivate = null;
+        const activate = vi.fn(() => new Promise((resolve) => {
+            resolveActivate = resolve;
+            activateCalls.push('pending');
+        }));
+        const mockShell = {
+            init: vi.fn(),
+            connectViewCanvases: vi.fn(() => ({
+                fieldCanvas: { id: 'fieldCanvas' },
+                profileCanvas: { id: 'profileCanvas' }
+            })),
+            getTheme: vi.fn(() => 'light'),
+            syncFromState: vi.fn(),
+            renderProjectChrome: vi.fn(),
+            renderOptionChrome: vi.fn(),
+            renderProjectStatus: vi.fn(),
+            applyUrlViewOverride: vi.fn(() => null),
+            ensure3DContainerSize: vi.fn(),
+            isScene3DActive: vi.fn(() => false)
+        };
+        const mockScene3DController = {
+            activate,
+            renderBookmarks: vi.fn(),
+            applyTheme: vi.fn(),
+            update: vi.fn(),
+            destroy: vi.fn()
+        };
+
+        vi.spyOn(editorShellModule, 'EditorShell').mockImplementation(() => /** @type {any} */ (mockShell));
+        vi.spyOn(fieldRendererModule, 'FieldRenderer').mockImplementation(() => /** @type {any} */ ({}));
+        vi.spyOn(profileRendererModule, 'ProfileRenderer').mockImplementation(() => /** @type {any} */ ({}));
+        vi.spyOn(scene3DControllerModule, 'Scene3DController').mockImplementation(() => /** @type {any} */ (mockScene3DController));
+        vi.spyOn(statsPanelModule, 'StatsPanel').mockImplementation(() => /** @type {any} */ ({ update: vi.fn() }));
+
+        const app = new SeatingBowlApp({
+            initialProject: createInitialProject({
+                activeViewTab: 'scene3d'
+            })
+        });
+        app.editorControls = /** @type {any} */ ({
+            init: vi.fn(),
+            syncFromState: vi.fn(),
+            destroy: vi.fn()
+        });
+        vi.spyOn(app, 'update').mockImplementation(() => {});
+
+        let initResolved = false;
+        const initPromise = app.init().then(() => {
+            initResolved = true;
+        });
+
+        await Promise.resolve();
+
+        expect(mockShell.applyUrlViewOverride).toHaveBeenCalledWith({ notify: false });
+        expect(mockShell.ensure3DContainerSize).toHaveBeenCalledTimes(1);
+        expect(activate).toHaveBeenCalledTimes(1);
+        expect(initResolved).toBe(false);
+
+        if (!resolveActivate) {
+            throw new Error('Initial scene3d activation was not captured');
+        }
+        resolveActivate();
+        await initPromise;
+
+        expect(initResolved).toBe(true);
+        expect(activateCalls).toEqual(['pending']);
+        expect(mockShell.renderProjectStatus).toHaveBeenCalledWith({
+            message: 'Loaded Arena Study',
+            tone: 'success'
         });
     });
 

@@ -182,14 +182,17 @@ export class WorkspaceShell {
         };
     }
 
-    applyUrlViewOverride() {
+    applyUrlViewOverride({ notify = true } = {}) {
         try {
             const params = new URLSearchParams(window.location.search);
             const view = params.get('view');
-            if (!view) return;
-            this.setViewTab(view, { notify: true });
+            if (!view) return null;
+            const nextView = normalizeViewTab(view);
+            this.setViewTab(nextView, { notify });
+            return nextView;
         } catch {
             // Ignore malformed URLs.
+            return null;
         }
     }
 

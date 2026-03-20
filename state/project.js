@@ -487,6 +487,14 @@ export function normalizeProjectEnvelope(project = null, fallbackState = null) {
     };
 }
 
+export function buildProjectLoadSnapshot(project = null, fallbackState = null) {
+    const normalizedProject = normalizeProjectEnvelope(project, fallbackState);
+    return {
+        normalizedProject,
+        activeStateSnapshot: getActiveProjectStateSnapshot(normalizedProject.state, fallbackState)
+    };
+}
+
 export function buildProjectSaveRequest({ name = '', state = {} } = {}) {
     return {
         name: normalizeProjectName(name),

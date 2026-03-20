@@ -459,6 +459,17 @@ export async function bootConfiguratorPage(runtimeConfig, authService, projectAp
         return;
     }
 
+    let initialProject = null;
+    try {
+        initialProject = await projectApi.getProject(projectId);
+    } catch (error) {
+        console.error('Project load failed:', error);
+        setTimeoutFn(() => {
+            location.assign(buildConfiguratorUrl(null, runtimeConfig));
+        }, 900);
+        return;
+    }
+
     let app = null;
     const projectActions = createProjectActionPort({
         getApp: () => app,
@@ -468,30 +479,9 @@ export async function bootConfiguratorPage(runtimeConfig, authService, projectAp
         location,
         history
     });
-    app = appFactory({ projectActions, document: doc });
+    app = appFactory({ projectActions, document: doc, initialProject });
     app.setSession(session);
     await app.init();
-
-    try {
-        await loadProjectIntoApp({
-            app,
-            projectApi,
-            projectId,
-            runtimeConfig,
-            location,
-            history
-        });
-    } catch (error) {
-        console.error('Project load failed:', error);
-        app.setProjectStatus(
-            error instanceof Error ? error.message : 'Project load failed.',
-            'error'
-        );
-        setTimeoutFn(() => {
-            app.destroy?.();
-            location.assign(buildConfiguratorUrl(null, runtimeConfig));
-        }, 900);
-    }
 }
 
 export async function bootAppShell(options = {}) {

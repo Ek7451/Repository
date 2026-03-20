@@ -7,8 +7,7 @@ import { FieldRenderer } from '../viz/field-renderer.js';
 import { ProfileRenderer } from '../viz/profile-renderer.js';
 import { createAppState, resolveSportName, resolveSportTemplate } from '../state/app-state.js';
 import {
-    getActiveProjectStateSnapshot,
-    normalizeProjectEnvelope
+    buildProjectLoadSnapshot
 } from '../state/project.js';
 import { EditorControls } from './editor-controls.js';
 import { EditorExportController } from './editor-export-controller.js';
@@ -28,7 +27,8 @@ export class SeatingBowlApp {
                 canSave: boolean
             }) => void),
             onStatusChanged?: ((status: { message: string, tone: string }) => void),
-            projectActions?: object | null
+            projectActions?: object | null,
+            initialProject?: object | null
         }} */ (options && typeof options === 'object' ? options : {});
         this.state = createAppState();
         this.fieldRenderer = null;
@@ -36,6 +36,7 @@ export class SeatingBowlApp {
         this.scene3DController = null;
         this._debounceTimer = null;
         this._projectSaveBusy = false;
+        this._bootStartsWithPreloadedProject = false;
         this.renderRuntime = new RenderRuntime();
         this.statsPanel = null;
         this.editorControls = new EditorControls({
@@ -69,6 +70,7 @@ export class SeatingBowlApp {
                 callbacks.onStatusChanged?.(status);
             }
         });
+        this._primeInitialProject(callbacks.initialProject ?? null);
     }
 
     async init() {
@@ -106,16 +108,35 @@ export class SeatingBowlApp {
             });
             this.statsPanel = new StatsPanel();
 
-            this.syncShellFromState();
+            this.editorControls?.syncFromState();
+            this.editorShell?.syncFromState({
+                activeViewTab: this.state.ui?.activeViewTab,
+                activeResultsTab: this.state.ui?.activeResultsTab
+            });
             this.scene3DController?.renderBookmarks();
             this.projectShell.refreshProjectChrome();
-            this.setProjectStatus('Project persistence ready');
+            if (this._bootStartsWithPreloadedProject) {
+                this.setProjectStatus(`Loaded ${this.getProjectChrome().name}`, 'success');
+            } else {
+                this.setProjectStatus('Project persistence ready');
+            }
 
             // Initial render
             this.update();
 
-            // Set initial view state (hides Field Setup on Profile tab)
-            requestAnimationFrame(() => this.editorShell?.applyUrlViewOverride());
+            const viewOverride = this.editorShell?.applyUrlViewOverride?.({ notify: false }) ?? null;
+            if (viewOverride) {
+                this.state.ui.activeViewTab = viewOverride;
+                this.editorShell?.syncFromState({
+                    activeViewTab: viewOverride,
+                    activeResultsTab: this.state.ui?.activeResultsTab
+                });
+            }
+
+            if (this.state.ui?.activeViewTab === 'scene3d') {
+                this.editorShell?.ensure3DContainerSize();
+                await this.scene3DController?.activate();
+            }
 
             // 3D scene is initialized lazily when user clicks the 3D tab
 
@@ -193,17 +214,34 @@ export class SeatingBowlApp {
 
     loadProject(project) {
         if (!project || typeof project !== 'object') return;
-        const normalizedProject = normalizeProjectEnvelope(project, this.captureStateSnapshot());
+        const { normalizedProject, activeStateSnapshot } = buildProjectLoadSnapshot(
+            project,
+            this.captureStateSnapshot()
+        );
         this.setProjectMetadata(normalizedProject);
         this.setProjectStateDocument(normalizedProject.state);
         this.replaceLiveState(
-            getActiveProjectStateSnapshot(normalizedProject.state, this.captureStateSnapshot()),
+            activeStateSnapshot,
             { logSuccess: true }
         );
         this.setProjectStatus(
             `Loaded ${this.getProjectChrome().name}`,
             'success'
         );
+    }
+
+    _primeInitialProject(project) {
+        if (!project || typeof project !== 'object') return;
+        const { normalizedProject, activeStateSnapshot } = buildProjectLoadSnapshot(
+            project,
+            this.captureStateSnapshot()
+        );
+
+        this.projectShell.setProjectMetadata(normalizedProject);
+        this.projectShell.setProjectStateDocument(normalizedProject.state);
+        this.state.fromJSON(activeStateSnapshot);
+        this.editorControls?.applyImportedConfig?.(activeStateSnapshot);
+        this._bootStartsWithPreloadedProject = true;
     }
 
     _initEditorShell() {

@@ -91,18 +91,6 @@ body.jlg-shell {
     border: 0;
 }
 
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(4px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
 @keyframes spin {
     to {
         transform: rotate(360deg);
@@ -431,8 +419,6 @@ body.jlg-shell {
 
 /* Left Panel: Control Sections */
 .jlg-shell .control-section {
-    animation: fadeIn 0.3s ease forwards;
-    animation-duration: 0.18s;
     background: #ffffff;
     border: 1px solid #e4e4e7;
     border-left-width: 1px;
@@ -441,22 +427,6 @@ body.jlg-shell {
     margin-bottom: 14px;
     overflow: hidden;
     padding-left: 0;
-}
-
-.jlg-shell .control-section:nth-child(2) {
-    animation-delay: 0.05s;
-}
-
-.jlg-shell .control-section:nth-child(3) {
-    animation-delay: 0.1s;
-}
-
-.jlg-shell .control-section:nth-child(4) {
-    animation-delay: 0.15s;
-}
-
-.jlg-shell .control-section:nth-child(5) {
-    animation-delay: 0.2s;
 }
 
 .jlg-shell .control-group {
