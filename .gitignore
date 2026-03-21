@@ -1,5 +1,6 @@
-node_modules/
-dist/
-coverage/
-.playwright-cli/
-.playwright-mcp/
+node_modules
+dist
+coverage
+.playwright-cli
+.playwright-mcp
+output

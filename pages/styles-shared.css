@@ -60,3 +60,10 @@ body {
     opacity: 0.6;
     transform: none;
 }
+
+html[data-theme="dark"] .dashboard-secondary-btn,
+html[data-theme="dark"] .editor-route-btn-secondary {
+    background: var(--bg-input);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}

@@ -44,7 +44,9 @@ export class Scene3DController {
         }} */ (options && typeof options === 'object' ? options : {});
 
         this.containerEl = settings.containerEl ?? getDefaultElement('scene3dContainer');
-        this.bookmarksBarEl = settings.bookmarksBarEl ?? getDefaultElement('cameraBookmarksBar');
+        this.bookmarksBarEl = settings.bookmarksBarEl
+            ?? getDefaultElement('workspaceBottomDock')
+            ?? getDefaultElement('cameraBookmarksBar');
         this.bookmarksListEl = settings.bookmarksListEl ?? getDefaultElement('cameraBookmarksList');
         this.saveBookmarkBtnEl = settings.saveBookmarkBtnEl ?? getDefaultElement('saveCameraViewBtn');
         this.toggleBookmarksBtnEl = settings.toggleBookmarksBtnEl ?? getDefaultElement('toggleBookmarksBtn');

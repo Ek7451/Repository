@@ -35,6 +35,36 @@ function normalizeResultsTab(targetId) {
     return targetId === 'detailsTab' ? 'detailsTab' : 'statsTab';
 }
 
+function normalizeThemePreference(theme) {
+    return theme === 'dark' || theme === 'system' ? theme : 'light';
+}
+
+function getNextThemePreference(theme) {
+    if (theme === 'light') return 'dark';
+    if (theme === 'dark') return 'system';
+    return 'light';
+}
+
+function getSystemThemeMediaQuery() {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+        return null;
+    }
+
+    try {
+        return window.matchMedia('(prefers-color-scheme: dark)');
+    } catch {
+        return null;
+    }
+}
+
+function resolveEffectiveTheme(themePreference, mediaQueryList = getSystemThemeMediaQuery()) {
+    if (themePreference === 'system') {
+        return mediaQueryList?.matches ? 'dark' : 'light';
+    }
+
+    return themePreference === 'dark' ? 'dark' : 'light';
+}
+
 function isScene3DPanelActive() {
     return !!getHtmlElement('scene3dPanel')?.classList.contains('active');
 }
@@ -70,6 +100,28 @@ function resizeCanvasToParent(canvas) {
     }
 }
 
+function syncSharedDockState(activeView = 'profile') {
+    const nextView = normalizeViewTab(activeView);
+    const dock = typeof document?.getElementById === 'function'
+        ? /** @type {HTMLElement | null} */ (document.getElementById('workspaceBottomDock'))
+        : null;
+    if (dock) {
+        dock.dataset.activeView = nextView;
+        if (nextView !== 'scene3d') {
+            dock.classList?.add?.('collapsed');
+        }
+    }
+
+    if (typeof document?.querySelectorAll !== 'function') return;
+
+    document.querySelectorAll('[data-dock-view]').forEach((element) => {
+        const matches = element.getAttribute('data-dock-view') === nextView;
+        element.classList.toggle('active', matches);
+        /** @type {HTMLElement} */ (element).hidden = !matches;
+        element.setAttribute('aria-hidden', String(!matches));
+    });
+}
+
 export class WorkspaceShell {
     constructor(options = {}) {
         const settings = /** @type {{
@@ -99,6 +151,8 @@ export class WorkspaceShell {
         this._cleanup = [];
         this._initialized = false;
         this._theme = 'light';
+        this._themePreference = 'light';
+        this._systemThemeMediaQuery = null;
         this._feedbackBtnCopyFallbackTimer = null;
         this._feedbackBtnResetTimer = null;
         this._viewResizeObserver = null;
@@ -108,7 +162,8 @@ export class WorkspaceShell {
         if (this._initialized) return;
         this._initialized = true;
 
-        this.applyTheme(this._getSavedTheme(), { persist: false, rerender: false });
+        this._bindSystemThemePreferenceListener();
+        this.applyTheme(this._getSavedThemePreference(), { persist: false, rerender: false });
         this._bindThemeToggle();
         this._bindSidebarChrome();
         this._bindTabs();
@@ -116,6 +171,7 @@ export class WorkspaceShell {
         this._bindWindowResize();
         this._bindCollapsibleSections();
         this._initTooltips();
+        syncSharedDockState();
     }
 
     destroy() {
@@ -132,7 +188,9 @@ export class WorkspaceShell {
     }
 
     applyTheme(theme, { persist = true, rerender = true } = {}) {
-        const nextTheme = theme === 'dark' ? 'dark' : 'light';
+        const nextThemePreference = normalizeThemePreference(theme);
+        const nextTheme = resolveEffectiveTheme(nextThemePreference, this._systemThemeMediaQuery);
+        this._themePreference = nextThemePreference;
         this._theme = nextTheme;
 
         document.documentElement.setAttribute('data-theme', nextTheme);
@@ -142,7 +200,7 @@ export class WorkspaceShell {
 
         if (persist) {
             try {
-                localStorage.setItem(this._themeStorageKey, nextTheme);
+                localStorage.setItem(this._themeStorageKey, nextThemePreference);
             } catch {
                 // Ignore localStorage access errors.
             }
@@ -206,6 +264,7 @@ export class WorkspaceShell {
         document.querySelectorAll('.view-panel').forEach((panel) => {
             panel.classList.toggle('active', panel.id === `${nextTab}Panel`);
         });
+        syncSharedDockState(nextTab);
 
         if (notify) {
             this._onViewTabChanged?.(nextTab);
@@ -244,12 +303,12 @@ export class WorkspaceShell {
         const container = getHtmlElement('scene3dContainer');
         if (!panel || !container) return;
 
-        const bar = getHtmlElement('cameraBookmarksBar');
+        const dock = getHtmlElement('workspaceBottomDock');
         const panelRect = panel.getBoundingClientRect();
-        const barRect = bar ? bar.getBoundingClientRect() : null;
+        const dockRect = dock ? dock.getBoundingClientRect() : null;
         const panelHeight = Math.floor(panelRect.height || 0);
-        const barHeight = Math.ceil(barRect ? barRect.height : 0);
-        const targetHeight = Math.max(120, panelHeight - barHeight);
+        const dockHeight = Math.ceil(dockRect ? dockRect.height : 0);
+        const targetHeight = Math.max(120, panelHeight - dockHeight);
         if (panelHeight > 50) {
             container.style.height = `${targetHeight}px`;
             return;
@@ -258,7 +317,7 @@ export class WorkspaceShell {
         const viewContainer = document.querySelector('.view-container');
         const rect = viewContainer ? viewContainer.getBoundingClientRect() : null;
         const fallbackHeight = Math.floor((rect && rect.height) ? rect.height : window.innerHeight);
-        const fallbackTarget = Math.max(120, fallbackHeight - barHeight);
+        const fallbackTarget = Math.max(120, fallbackHeight - dockHeight);
         if (fallbackTarget > 50) {
             container.style.height = `${fallbackTarget}px`;
         }
@@ -318,31 +377,54 @@ export class WorkspaceShell {
         return isScene3DPanelActive();
     }
 
-    _getSavedTheme() {
+    _getSavedThemePreference() {
         try {
             const stored = localStorage.getItem(this._themeStorageKey);
-            if (stored === 'dark' || stored === 'light') return stored;
+            if (stored === 'dark' || stored === 'light' || stored === 'system') return stored;
         } catch {
             // Ignore localStorage access errors.
         }
 
-        const domTheme = document.documentElement?.getAttribute('data-theme');
-        return domTheme === 'dark' ? 'dark' : 'light';
+        return 'system';
+    }
+
+    _bindSystemThemePreferenceListener() {
+        this._systemThemeMediaQuery = getSystemThemeMediaQuery();
+        if (!this._systemThemeMediaQuery) return;
+
+        const handleSystemThemeChange = () => {
+            if (this._themePreference !== 'system') return;
+            this.applyTheme('system', { persist: false });
+        };
+
+        if (typeof this._systemThemeMediaQuery.addEventListener === 'function') {
+            this._systemThemeMediaQuery.addEventListener('change', handleSystemThemeChange);
+            this._cleanup.push(() => this._systemThemeMediaQuery?.removeEventListener?.('change', handleSystemThemeChange));
+            return;
+        }
+
+        if (typeof this._systemThemeMediaQuery.addListener === 'function') {
+            this._systemThemeMediaQuery.addListener(handleSystemThemeChange);
+            this._cleanup.push(() => this._systemThemeMediaQuery?.removeListener?.(handleSystemThemeChange));
+        }
     }
 
     _refreshThemeToggleButton() {
         const themeToggleBtn = getButtonElement('themeToggleBtn');
         if (!themeToggleBtn) return;
 
-        const isDark = this._theme === 'dark';
-        const nextModeLabel = isDark ? 'light' : 'dark';
-        themeToggleBtn.setAttribute('aria-pressed', String(isDark));
-        themeToggleBtn.setAttribute('aria-label', `Toggle dark mode (currently ${this._theme})`);
-        themeToggleBtn.setAttribute('title', `Switch to ${nextModeLabel} mode`);
+        const nextThemePreference = getNextThemePreference(this._themePreference);
+        themeToggleBtn.dataset.themePref = this._themePreference;
+        themeToggleBtn.setAttribute(
+            'aria-pressed',
+            this._themePreference === 'system' ? 'mixed' : String(this._themePreference === 'dark')
+        );
+        themeToggleBtn.setAttribute('aria-label', `Switch to ${nextThemePreference} mode`);
+        themeToggleBtn.setAttribute('title', `Switch to ${nextThemePreference} mode`);
 
         const label = themeToggleBtn.querySelector('.theme-toggle-label');
         if (label) {
-            label.textContent = `Switch to ${nextModeLabel} mode`;
+            label.textContent = `Switch to ${nextThemePreference} mode`;
         }
     }
 
@@ -352,7 +434,7 @@ export class WorkspaceShell {
 
         const handleThemeToggle = (event) => {
             event.stopPropagation();
-            this.applyTheme(this._theme === 'dark' ? 'light' : 'dark');
+            this.applyTheme(getNextThemePreference(this._themePreference));
         };
 
         themeToggleBtn.addEventListener('click', handleThemeToggle);

@@ -21,16 +21,28 @@
     <script>
         (() => {
             const storageKey = 'jlg-seating-theme';
-            let theme = 'light';
+
+            const resolveSystemTheme = () => {
+                try {
+                    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+                } catch (_) {
+                    return 'light';
+                }
+            };
+
+            let themePreference = 'system';
             try {
                 const savedTheme = localStorage.getItem(storageKey);
-                if (savedTheme === 'dark' || savedTheme === 'light') {
-                    theme = savedTheme;
+                if (savedTheme === 'dark' || savedTheme === 'light' || savedTheme === 'system') {
+                    themePreference = savedTheme;
                 }
-            } catch (_) {
-                theme = 'light';
-            }
-            document.documentElement.setAttribute('data-theme', theme);
+            } catch (_) {}
+
+            const effectiveTheme = themePreference === 'system'
+                ? resolveSystemTheme()
+                : themePreference;
+
+            document.documentElement.setAttribute('data-theme', effectiveTheme);
         })();
     </script>
 </head>
@@ -496,6 +508,9 @@
             <!-- Left Sidebar: Utility Tray -->
             <div class="sidebar-utility-panel">
                 <div class="sidebar-utility-strip">
+                    <div class="view-tabs-note sidebar-beta-note" role="note" aria-label="Beta disclaimer">
+                        <strong>Beta</strong> Results may be inaccurate.
+                    </div>
                     <button id="saveProjectBtn" class="sidebar-save-btn" type="button" title="Save project" aria-label="Save project" disabled>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
                             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -506,7 +521,7 @@
                         <span class="sr-only save-project-label">Save Project</span>
                     </button>
                     <button id="themeToggleBtn" class="theme-toggle-btn" type="button"
-                        title="Switch to dark mode" aria-label="Toggle dark mode" aria-pressed="false">
+                        title="Toggle theme" aria-label="Toggle theme" aria-pressed="mixed" data-theme-pref="system">
                         <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path>
@@ -523,7 +538,13 @@
                             <path d="m6.34 17.66-1.41 1.41"></path>
                             <path d="m19.07 4.93-1.41 1.41"></path>
                         </svg>
-                        <span class="theme-toggle-label">Toggle dark mode</span>
+                        <svg class="theme-icon-system" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="3" y="4" width="18" height="12" rx="2"></rect>
+                            <path d="M8 20h8"></path>
+                            <path d="M12 16v4"></path>
+                        </svg>
+                        <span class="theme-toggle-label">Toggle theme</span>
                     </button>
                 </div>
             </div>
@@ -670,16 +691,11 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="editor-toolbar-meta">
+                        <div class="editor-toolbar-meta editor-toolbar-meta--hidden" aria-hidden="true">
                             <div id="editorProjectMeta" class="editor-project-meta">Create or open a project</div>
                             <div id="projectStatusMessage" class="project-status-message" data-tone="default">Project persistence ready</div>
                         </div>
                     </div>
-                </div>
-                <div class="view-tabs-center" aria-label="View selection">
-                    <button class="view-tab-btn active" data-tab="profile">Section</button>
-                    <button class="view-tab-btn" data-tab="field">Plan</button>
-                    <button class="view-tab-btn" data-tab="scene3d">3D</button>
                 </div>
                 <div class="view-tabs-right" aria-label="Project actions">
                     <a id="feedbackBtn"
@@ -687,9 +703,6 @@
                        href="mailto:eklinger@jlgarchitects.com?subject=Seating%20Bowl%20Study%20Beta%20Feedback"
                        title="Opens your default email app. If nothing opens, email eklinger@jlgarchitects.com."
                        aria-label="Send beta feedback by email to eklinger@jlgarchitects.com">Feedback</a>
-                    <div class="view-tabs-note" role="note" aria-label="Beta disclaimer">
-                        <strong>Beta</strong> Results may be inaccurate.
-                    </div>
                 </div>
             </div>
 
@@ -698,50 +711,80 @@
                 <!-- Profile Panel -->
                 <div id="profilePanel" class="view-panel active">
                     <canvas id="profileCanvas"></canvas>
-                    <div class="view-overlay-controls" aria-label="Section profile view toggles">
-                        <div class="toggle-row sightline-toggle-row">
-                            <label class="header-toggle overlay-icon-toggle" title="Sightline Visuals" aria-label="Toggle sightline visuals">
-                                <input type="checkbox" id="toggleSightlinesBtn" checked>
-                                <svg class="toggle-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
-                                    <circle cx="12" cy="12" r="3"></circle>
-                                </svg>
-                            </label>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Field Plan Panel -->
                 <div id="fieldPanel" class="view-panel">
                     <canvas id="fieldCanvas"></canvas>
-                    <div class="view-overlay-controls" aria-label="Field plan view toggles">
-                        <div class="toggle-row sightline-toggle-row">
-                            <label class="header-toggle overlay-icon-toggle" title="Section Metrics" aria-label="Toggle section metrics overlay">
-                                <input type="checkbox" id="toggleSectionMetricsBtn">
-                                <svg class="toggle-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <line x1="6" y1="19" x2="6" y2="12"></line>
-                                    <line x1="12" y1="19" x2="12" y2="7"></line>
-                                    <line x1="18" y1="19" x2="18" y2="4"></line>
-                                </svg>
-                            </label>
-                        </div>
-                        <div class="toggle-row sightline-toggle-row">
-                            <label class="header-toggle overlay-icon-toggle" title="Sightline Visuals" aria-label="Toggle sightline visuals">
-                                <input type="checkbox" id="toggleSightlinesBtnField" checked>
-                                <svg class="toggle-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
-                                    <circle cx="12" cy="12" r="3"></circle>
-                                </svg>
-                            </label>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- 3D Panel -->
                 <div id="scene3dPanel" class="view-panel">
                     <div id="scene3dContainer"></div>
-                    <div class="scene3d-bottom-dock">
-                        <div class="view-overlay-controls view-overlay-controls-3d" aria-label="3D view toggles">
+                </div>
+
+                <div id="workspaceBottomDock" class="workspace-bottom-dock collapsed" data-active-view="profile">
+                    <div id="cameraBookmarksBar" class="camera-bookmarks-bar" aria-label="Saved view timeline">
+                        <div class="cam-bookmarks-list" id="cameraBookmarksList">
+                            <!-- Bookmark buttons injected here -->
+                        </div>
+                    </div>
+                    <div class="workspace-bottom-dock-controls">
+                        <div class="workspace-bottom-dock-section workspace-bottom-dock-section-left">
+                            <div class="workspace-dock-view workspace-dock-scene-actions" data-dock-view="scene3d" hidden aria-hidden="true">
+                                <div class="cam-bookmarks-header">
+                                    <button id="toggleBookmarksBtn" class="icon-btn" title="Toggle Saved Views">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                            stroke-width="2">
+                                            <polyline points="6 9 12 15 18 9"></polyline>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <button class="cam-bookmark-btn cam-bookmark-primary" id="saveCameraViewBtn"
+                                    title="Save current camera view">
+                                    Save View
+                                </button>
+                            </div>
+                        </div>
+                        <div class="workspace-bottom-dock-section workspace-bottom-dock-section-center view-tabs-center" aria-label="View selection">
+                            <button class="view-tab-btn active" data-tab="profile">Section</button>
+                            <button class="view-tab-btn" data-tab="field">Plan</button>
+                            <button class="view-tab-btn" data-tab="scene3d">3D</button>
+                        </div>
+                        <div class="workspace-bottom-dock-section workspace-bottom-dock-section-right">
+                            <div class="view-overlay-controls workspace-dock-view active" data-dock-view="profile" aria-label="Section profile view toggles">
+                            <div class="toggle-row sightline-toggle-row">
+                                <label class="header-toggle overlay-icon-toggle" title="Sightline Visuals" aria-label="Toggle sightline visuals">
+                                    <input type="checkbox" id="toggleSightlinesBtn" checked>
+                                    <svg class="toggle-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                    </svg>
+                                </label>
+                            </div>
+                            </div>
+                            <div class="view-overlay-controls workspace-dock-view" data-dock-view="field" aria-label="Field plan view toggles" hidden aria-hidden="true">
+                            <div class="toggle-row sightline-toggle-row">
+                                <label class="header-toggle overlay-icon-toggle" title="Section Metrics" aria-label="Toggle section metrics overlay">
+                                    <input type="checkbox" id="toggleSectionMetricsBtn">
+                                    <svg class="toggle-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <line x1="6" y1="19" x2="6" y2="12"></line>
+                                        <line x1="12" y1="19" x2="12" y2="7"></line>
+                                        <line x1="18" y1="19" x2="18" y2="4"></line>
+                                    </svg>
+                                </label>
+                            </div>
+                            <div class="toggle-row sightline-toggle-row">
+                                <label class="header-toggle overlay-icon-toggle" title="Sightline Visuals" aria-label="Toggle sightline visuals">
+                                    <input type="checkbox" id="toggleSightlinesBtnField" checked>
+                                    <svg class="toggle-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                    </svg>
+                                </label>
+                            </div>
+                            </div>
+                            <div class="view-overlay-controls workspace-dock-view" data-dock-view="scene3d" aria-label="3D view toggles" hidden aria-hidden="true">
                             <div class="toggle-row sightline-toggle-row">
                                 <label class="header-toggle overlay-icon-toggle" title="3D Seat Cubes" aria-label="Toggle 3D seat cubes">
                                     <input type="checkbox" id="showSeatCubes3D">
@@ -752,23 +795,6 @@
                                     </svg>
                                 </label>
                             </div>
-                        </div>
-                        <!-- Camera Bookmarks Toolbar -->
-                        <div class="camera-bookmarks-bar collapsed" id="cameraBookmarksBar">
-                            <div class="cam-bookmarks-header">
-                                <button id="toggleBookmarksBtn" class="icon-btn" title="Toggle Saved Views">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2">
-                                        <polyline points="6 9 12 15 18 9"></polyline>
-                                    </svg>
-                                </button>
-                            </div>
-                            <button class="cam-bookmark-btn cam-bookmark-primary" id="saveCameraViewBtn"
-                                title="Save current camera view">
-                                Save View
-                            </button>
-                            <div class="cam-bookmarks-list" id="cameraBookmarksList">
-                                <!-- Bookmark buttons injected here -->
                             </div>
                         </div>
                     </div>
