@@ -105,7 +105,7 @@ function buildPieChartMarkup(summary = {}) {
                 'Z'
             ].join(' ');
 
-            svgPaths += `<path d="${d}" fill="${segment.color}" class="chart-segment" stroke="white" stroke-width="1">
+            svgPaths += `<path d="${d}" fill="${segment.color}" class="chart-segment" stroke="${segment.color}" stroke-width="1">
                             <title>${segment.label}: ${segment.count} (${(percent * 100).toFixed(1)}%)</title>
                          </path>`;
         });

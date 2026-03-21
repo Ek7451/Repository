@@ -82,6 +82,32 @@ function createFieldTemplateCases() {
     ];
 }
 
+function createMockCanvas({ width = 800, height = 600 } = {}) {
+    const handlers = new Map();
+    return {
+        width,
+        height,
+        handlers,
+        getContext: vi.fn(() => ({
+            clearRect: vi.fn(),
+            fillRect: vi.fn(),
+            save: vi.fn(),
+            translate: vi.fn(),
+            scale: vi.fn(),
+            restore: vi.fn()
+        })),
+        addEventListener: vi.fn((type, handler) => {
+            handlers.set(type, handler);
+        }),
+        getBoundingClientRect: vi.fn(() => ({
+            left: 0,
+            top: 0,
+            width,
+            height
+        }))
+    };
+}
+
 function createSharedBowlGeometryCases() {
     return [
         createFullChamferBowlConfig({ corner: 'Square', radius: 0 }),
@@ -242,6 +268,54 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(ctx.moveTo).toHaveBeenNthCalledWith(2, 0, -62.5);
         expect(ctx.lineTo).toHaveBeenNthCalledWith(2, 0, -46.5);
         expect(ctx.arc).toHaveBeenCalledWith(0, -54.5, 4.8, 0, Math.PI * 2);
+    });
+
+    it('keeps seating extents padding symmetric around plan geometry', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const bounds = renderer._getBounds(
+            {
+                shape: 'rectangle',
+                field_length: 100,
+                field_width: 50,
+                runoff: 0
+            },
+            0,
+            [
+                {
+                    rows: [
+                        { x: 40, tread_depth: 3 },
+                        { x: 80, tread_depth: 3 }
+                    ]
+                }
+            ],
+            { showSeating: true, t1: true, t2: false, t3: false }
+        );
+
+        expect(bounds.minX).toBeCloseTo(-142);
+        expect(bounds.maxX).toBeCloseTo(142);
+        expect(bounds.minY).toBeCloseTo(-92);
+        expect(bounds.maxY).toBeCloseTo(92);
+    });
+
+    it('fits plan extents against the visible panel frame instead of the dock-reserved canvas area', () => {
+        const canvas = createMockCanvas({ width: 1124, height: 808 });
+        const renderer = new FieldRenderer(/** @type {any} */ (canvas));
+
+        canvas.parentElement = {};
+        vi.stubGlobal('getComputedStyle', () => ({
+            paddingLeft: '0px',
+            paddingRight: '0px',
+            paddingTop: '0px',
+            paddingBottom: '40px'
+        }));
+
+        const viewport = renderer._getFitViewport();
+
+        expect(viewport.width).toBe(1124);
+        expect(viewport.height).toBe(768);
+        expect(viewport.offsetY).toBe(0);
+
+        vi.unstubAllGlobals();
     });
 
     it('shares bowl geometry segments across renderer consumers for supported bowl families', async () => {
@@ -1344,6 +1418,66 @@ describe('FieldRenderer helper delegation surface', () => {
 });
 
 describe('Scene3D interaction guards', () => {
+    it('keeps top and bottom padding stable across wider plan viewports', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        renderer.padding = 40;
+        const bounds = {
+            minX: -100,
+            maxX: 100,
+            minY: -50,
+            maxY: 50
+        };
+
+        const wideScale = renderer._calcScale(bounds, 700, 400);
+        const extraWideScale = renderer._calcScale(bounds, 1000, 400);
+        const renderedHeight = (bounds.maxY - bounds.minY) * wideScale;
+
+        expect(wideScale).toBeCloseTo(extraWideScale);
+        expect((400 - renderedHeight) / 2).toBeCloseTo(40);
+    });
+
+    it('reduces plan-view extents scale only when the viewport becomes width-limited', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        renderer.padding = 40;
+        const bounds = {
+            minX: -100,
+            maxX: 100,
+            minY: -50,
+            maxY: 50
+        };
+
+        const wideScale = renderer._calcScale(bounds, 700, 400);
+        const narrowScale = renderer._calcScale(bounds, 500, 400);
+
+        expect(wideScale).toBeCloseTo(3.2);
+        expect(narrowScale).toBeCloseTo(2.5);
+        expect(narrowScale).toBeLessThan(wideScale);
+    });
+
+    it('resets plan zoom extents after middle-button double-click following manual pan and zoom', () => {
+        const canvas = createMockCanvas();
+        const renderer = new FieldRenderer(/** @type {any} */ (canvas));
+        const dateNowSpy = vi.spyOn(Date, 'now');
+        renderer._lastArgs = [{ runoff: 18 }, null, null, null, 0, null, 0, []];
+        renderer._rerenderFromLastArgs = vi.fn();
+        renderer._userZoom = 1.8;
+        renderer._panX = 64;
+        renderer._panY = -28;
+        renderer._userHasZoomed = true;
+
+        dateNowSpy.mockReturnValueOnce(1000).mockReturnValueOnce(1180);
+        canvas.handlers.get('auxclick')({ button: 1 });
+        canvas.handlers.get('auxclick')({ button: 1 });
+
+        expect(renderer._userZoom).toBe(1);
+        expect(renderer._panX).toBe(0);
+        expect(renderer._panY).toBe(0);
+        expect(renderer._userHasZoomed).toBe(false);
+        expect(renderer._rerenderFromLastArgs).toHaveBeenCalledTimes(1);
+
+        dateNowSpy.mockRestore();
+    });
+
     it('does not treat middle-button dolly drags as double-click zoom extents', async () => {
         const { Scene3D } = await import('../../viz/scene3d.js');
         const scene = Object.create(Scene3D.prototype);
@@ -1409,5 +1543,75 @@ describe('Scene3D interaction guards', () => {
         expect(scene.camera.near).toBeCloseTo(0.1);
         expect(scene.camera.far).toBeCloseTo(5000);
         expect(updateProjectionMatrix).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps 3d zoom-extents distance stable across wider viewports when height is unchanged', async () => {
+        const { Scene3D } = await import('../../viz/scene3d.js');
+        const THREE = await import('../../lib/three.module.js');
+
+        const createScene = (viewport) => {
+            const scene = Object.create(Scene3D.prototype);
+            scene.THREE = THREE;
+            scene.camera = new THREE.PerspectiveCamera(50, 1, 1, 5000);
+            scene.camera.position.set(600, 420, 600);
+            scene.controls = {
+                target: new THREE.Vector3(0, 0, 0),
+                update: vi.fn()
+            };
+            scene.bowlGroup = new THREE.Group();
+            scene.bowlGroup.add(
+                new THREE.Mesh(
+                    new THREE.BoxGeometry(200, 500, 200),
+                    new THREE.MeshBasicMaterial()
+                )
+            );
+            scene._getViewportSize = () => viewport;
+            return scene;
+        };
+
+        const wideScene = createScene({ w: 1000, h: 400 });
+        wideScene._fitCameraToBowl();
+        const wideDistance = wideScene.camera.position.distanceTo(wideScene.controls.target);
+
+        const extraWideScene = createScene({ w: 1400, h: 400 });
+        extraWideScene._fitCameraToBowl();
+        const extraWideDistance = extraWideScene.camera.position.distanceTo(extraWideScene.controls.target);
+
+        expect(wideDistance).toBeCloseTo(extraWideDistance, 6);
+    });
+
+    it('pushes 3d zoom extents farther back when viewport width becomes the limiting axis', async () => {
+        const { Scene3D } = await import('../../viz/scene3d.js');
+        const THREE = await import('../../lib/three.module.js');
+
+        const createScene = (viewport) => {
+            const scene = Object.create(Scene3D.prototype);
+            scene.THREE = THREE;
+            scene.camera = new THREE.PerspectiveCamera(50, 1, 1, 5000);
+            scene.camera.position.set(600, 300, 520);
+            scene.controls = {
+                target: new THREE.Vector3(0, 0, 0),
+                update: vi.fn()
+            };
+            scene.bowlGroup = new THREE.Group();
+            scene.bowlGroup.add(
+                new THREE.Mesh(
+                    new THREE.BoxGeometry(1200, 120, 200),
+                    new THREE.MeshBasicMaterial()
+                )
+            );
+            scene._getViewportSize = () => viewport;
+            return scene;
+        };
+
+        const wideScene = createScene({ w: 1400, h: 400 });
+        wideScene._fitCameraToBowl();
+        const wideDistance = wideScene.camera.position.distanceTo(wideScene.controls.target);
+
+        const narrowScene = createScene({ w: 400, h: 400 });
+        narrowScene._fitCameraToBowl();
+        const narrowDistance = narrowScene.camera.position.distanceTo(narrowScene.controls.target);
+
+        expect(narrowDistance).toBeGreaterThan(wideDistance);
     });
 });

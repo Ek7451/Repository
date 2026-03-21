@@ -99,9 +99,14 @@ function createProjectChromeHarness() {
         projectPickerModal: new FakeElement('projectPickerModal'),
         projectPickerCloseBtn: new FakeElement('projectPickerCloseBtn'),
         projectPickerSearchInput: new FakeElement('projectPickerSearchInput'),
+        projectPickerSelectionSummary: new FakeElement('projectPickerSelectionSummary'),
+        projectPickerDeleteSelectedBtn: new FakeElement('projectPickerDeleteSelectedBtn'),
         projectPickerCreateBtn: new FakeElement('projectPickerCreateBtn'),
         projectPickerError: new FakeElement('projectPickerError'),
         projectPickerList: new FakeElement('projectPickerList'),
+        'projectPickerNameInput-project-1': new FakeElement('projectPickerNameInput-project-1'),
+        'projectPickerNameInput-project-2': new FakeElement('projectPickerNameInput-project-2'),
+        'projectPickerNameInput-project-3': new FakeElement('projectPickerNameInput-project-3'),
         'projectOptionNameInput-option-1': new FakeElement('projectOptionNameInput-option-1'),
         'projectOptionNameInput-option-2': new FakeElement('projectOptionNameInput-option-2')
     };
@@ -143,8 +148,10 @@ function createProjectChromeHarness() {
         createProject: vi.fn().mockResolvedValue(undefined),
         listProjects: vi.fn().mockResolvedValue([]),
         openProject: vi.fn().mockResolvedValue(undefined),
+        renameProject: vi.fn().mockResolvedValue(undefined),
         duplicateProject: vi.fn().mockResolvedValue(undefined),
-        deleteProject: vi.fn().mockResolvedValue(undefined)
+        deleteProject: vi.fn().mockResolvedValue(undefined),
+        deleteProjects: vi.fn().mockResolvedValue(undefined)
     };
 
     vi.stubGlobal('document', documentStub);
@@ -156,6 +163,16 @@ function createProjectChromeHarness() {
 
     const shell = new ProjectChromeShell({
         projectActions
+    });
+    shell.renderProjectChrome({
+        name: 'Project 1',
+        metadata: {
+            id: 'project-1',
+            name: 'Project 1',
+            createdAt: '2026-03-16T00:00:00.000Z',
+            updatedAt: '2026-03-16T00:00:00.000Z'
+        },
+        canSave: true
     });
 
     shell.renderOptionChrome({
@@ -378,5 +395,150 @@ describe('ProjectChrome shell characterization', () => {
         expect(leftSidebar.hasAttribute('inert')).toBe(false);
         expect(mainArea.hasAttribute('inert')).toBe(false);
         expect(rightSidebar.hasAttribute('inert')).toBe(false);
+    });
+
+    it('tracks multi-select state without opening a project', () => {
+        const { shell, projectActions } = createProjectChromeHarness();
+
+        shell._projectPicker.projects = [
+            { id: 'project-2', name: 'Project 2', sport: 'Football', createdAt: '', updatedAt: '' },
+            { id: 'project-3', name: 'Project 3', sport: 'Soccer', createdAt: '', updatedAt: '' }
+        ];
+
+        shell._toggleProjectPickerSelection('project-2');
+        shell._toggleProjectPickerSelection('project-3');
+
+        expect(shell._projectPicker.selectedProjectIds).toEqual(['project-2', 'project-3']);
+        expect(projectActions.openProject).not.toHaveBeenCalled();
+    });
+
+    it('renders inline project picker icon actions and no kebab menu trigger', () => {
+        const { shell, elements } = createProjectChromeHarness();
+
+        shell._projectPicker.projects = [
+            { id: 'project-2', name: 'Project 2', sport: 'Football', createdAt: '', updatedAt: '' }
+        ];
+        shell._renderProjectPicker();
+
+        expect(elements.projectPickerList.innerHTML).toContain('project-option-manager-icon-btn');
+        expect(elements.projectPickerList.innerHTML).toContain('data-project-picker-row-action="edit"');
+        expect(elements.projectPickerList.innerHTML).toContain('data-project-picker-row-action="duplicate"');
+        expect(elements.projectPickerList.innerHTML).toContain('data-project-picker-row-action="delete"');
+        expect(elements.projectPickerList.innerHTML).not.toContain('project-picker-row-menu-trigger');
+        expect(elements.projectPickerList.innerHTML).not.toContain('project-picker-row-menu-item');
+    });
+
+    it('still opens a single project from the picker row action', async () => {
+        const { shell, projectActions } = createProjectChromeHarness();
+
+        shell._projectPicker.isOpen = true;
+        await shell._handleProjectPickerAction('open', 'project-2');
+
+        expect(projectActions.openProject).toHaveBeenCalledWith('project-2');
+        expect(shell._projectPicker.isOpen).toBe(false);
+    });
+
+    it('enters project rename mode from the inline icon without opening the row', async () => {
+        const { shell, projectActions, elements } = createProjectChromeHarness();
+
+        shell._projectPicker.projects = [
+            { id: 'project-2', name: 'Project 2', sport: 'Football', createdAt: '', updatedAt: '' }
+        ];
+
+        await shell._handleProjectPickerAction('edit', 'project-2');
+
+        expect(projectActions.openProject).not.toHaveBeenCalled();
+        expect(shell._projectPicker.editingProjectId).toBe('project-2');
+        expect(elements['projectPickerNameInput-project-2'].focus).toHaveBeenCalledTimes(1);
+        expect(elements['projectPickerNameInput-project-2'].select).toHaveBeenCalledTimes(1);
+    });
+
+    it('commits and cancels project rename edits', async () => {
+        const { shell, projectActions } = createProjectChromeHarness();
+
+        shell._projectPicker.projects = [
+            { id: 'project-2', name: 'Project 2', sport: 'Football', createdAt: '', updatedAt: '' }
+        ];
+        shell._resetProjectPickerNameDrafts();
+
+        shell._projectPicker.editingProjectId = 'project-2';
+        shell._projectPicker.projectNameDrafts['project-2'] = 'Renamed Project';
+        await shell._commitProjectPickerNameEdit('project-2');
+
+        expect(projectActions.renameProject).toHaveBeenCalledWith('project-2', 'Renamed Project');
+        expect(shell._projectPicker.editingProjectId).toBe('');
+
+        shell._projectPicker.projects = [
+            { id: 'project-2', name: 'Project 2', sport: 'Football', createdAt: '', updatedAt: '' }
+        ];
+        shell._resetProjectPickerNameDrafts();
+        shell._projectPicker.editingProjectId = 'project-2';
+        shell._projectPicker.projectNameDrafts['project-2'] = 'Draft Project';
+        shell._cancelProjectPickerNameEdit('project-2');
+
+        expect(shell._projectPicker.editingProjectId).toBe('');
+        expect(shell._projectPicker.projectNameDrafts['project-2']).toBe('Project 2');
+    });
+
+    it('does not allow selecting the current project for bulk delete', () => {
+        const { shell, elements } = createProjectChromeHarness();
+
+        shell._projectPicker.projects = [
+            { id: 'project-1', name: 'Project 1', sport: 'Football', createdAt: '', updatedAt: '' },
+            { id: 'project-2', name: 'Project 2', sport: 'Soccer', createdAt: '', updatedAt: '' }
+        ];
+
+        shell._toggleProjectPickerSelection('project-1');
+        shell._renderProjectPicker();
+
+        expect(shell._projectPicker.selectedProjectIds).toEqual([]);
+        expect(elements.projectPickerList.innerHTML).toContain('Current project');
+        expect(elements.projectPickerList.innerHTML).toContain('data-project-picker-select="project-1"');
+        expect(elements.projectPickerList.innerHTML).toContain('disabled');
+    });
+
+    it('renders bulk delete state from the selected count and busy action', () => {
+        const { shell, elements } = createProjectChromeHarness();
+
+        shell._projectPicker.selectedProjectIds = ['project-2', 'project-3'];
+        shell._renderProjectPicker();
+
+        expect(elements.projectPickerSelectionSummary.hidden).toBe(false);
+        expect(elements.projectPickerSelectionSummary.textContent).toBe('2 projects selected');
+        expect(elements.projectPickerDeleteSelectedBtn.disabled).toBe(false);
+        expect(elements.projectPickerDeleteSelectedBtn.textContent).toBe('Delete selected');
+
+        shell._projectPicker.busyAction = 'delete';
+        shell._projectPicker.busyProjectId = '';
+        shell._renderProjectPicker();
+
+        expect(elements.projectPickerDeleteSelectedBtn.disabled).toBe(true);
+        expect(elements.projectPickerDeleteSelectedBtn.textContent).toBe('Deleting...');
+    });
+
+    it('deletes selected projects, clears selection, and refreshes the picker list', async () => {
+        const { shell, projectActions } = createProjectChromeHarness();
+
+        projectActions.listProjects.mockResolvedValueOnce([
+            { id: 'project-4', name: 'Project 4', sport: 'Baseball', createdAt: '', updatedAt: '' }
+        ]);
+        vi.stubGlobal('window', {
+            confirm: vi.fn().mockReturnValue(true)
+        });
+
+        shell._projectPicker.projects = [
+            { id: 'project-2', name: 'Project 2', sport: 'Football', createdAt: '', updatedAt: '' },
+            { id: 'project-3', name: 'Project 3', sport: 'Soccer', createdAt: '', updatedAt: '' }
+        ];
+        shell._projectPicker.selectedProjectIds = ['project-2', 'project-3'];
+
+        await shell._handleProjectPickerDeleteSelected();
+
+        expect(projectActions.deleteProjects).toHaveBeenCalledWith(['project-2', 'project-3']);
+        expect(projectActions.listProjects).toHaveBeenCalledTimes(1);
+        expect(shell._projectPicker.selectedProjectIds).toEqual([]);
+        expect(shell._projectPicker.projects).toEqual([
+            { id: 'project-4', name: 'Project 4', sport: 'Baseball', createdAt: '', updatedAt: '' }
+        ]);
     });
 });

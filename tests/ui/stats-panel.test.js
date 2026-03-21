@@ -45,9 +45,16 @@ function createMetrics(overrides = {}) {
         minimumWidth: '36.0',
         maximumWidth: '72.0',
         governingWidth: '48.0',
+        legalMaxOccupantsPerAisle: 360,
         mirroredSideRuns: 1,
         blocksAddedForEgress: 0,
         converged: true,
+        failureReason: null,
+        invalidTopologyPaths: [],
+        invalidTopologyRowIndices: [],
+        seatCapCompliant: true,
+        egressCapCompliant: true,
+        renderedWidthCompliant: true,
         ...overrides
     };
 }
@@ -142,6 +149,36 @@ describe('StatsPanel', () => {
         expect(statsEl.innerHTML).toContain('Max Seats/Row/Section');
         expect(statsEl.innerHTML).toContain('19');
         expect(statsEl.innerHTML).not.toContain('Avg. Seats/Row');
+    });
+
+    test('renders the detailed non-convergence warning text in the banner', () => {
+        const viewModel = buildStatsDto({
+            solvers: [createSolver()],
+            focalPointFt: { x: 0, z: 0 },
+            bowlConfig: { type: 'Full' },
+            egressParams: { egressFactor: 0.2 },
+            tierMetricsByIndex: new Map([[0, createMetrics({
+                converged: false,
+                failureReason: 'egress_cap_stagnated',
+                egressCapCompliant: false,
+                occupantsPerAisleLine: 402,
+                legalMaxOccupantsPerAisle: 360,
+                maximumWidth: '72.0'
+            })]])
+        });
+        const statsEl = { innerHTML: '' };
+        const detailsEl = {
+            innerHTML: '',
+            querySelectorAll: vi.fn(() => [])
+        };
+        const panel = new StatsPanel({
+            statsEl: /** @type {any} */ (statsEl),
+            detailsEl: /** @type {any} */ (detailsEl)
+        });
+
+        panel.update(viewModel);
+
+        expect(statsEl.innerHTML).toContain('Layout is infeasible: max aisle load is 402 occ, above the 360 occ limit at 72.0" max aisle width.');
     });
 
     test('preserves expanded detail sections across rerenders', () => {

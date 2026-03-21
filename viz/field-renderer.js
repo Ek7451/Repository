@@ -39,7 +39,7 @@ const FIELD_THEME_COLORS = {
         gridStrong: 'rgba(232, 237, 242, 0.11)',
         fieldEdge: '#7fae3c',
         runoff: '#c88732',
-        aislesFill: 'rgba(187, 198, 183, 0.12)',
+        aislesFill: 'rgba(187, 198, 183, 0.3)',
         aislesStroke: 'rgba(187, 198, 183, 0.15)',
         focal: '#dbe2ea',
         legendText: '#b2bdca'
@@ -62,25 +62,25 @@ const FIELD_TIER_PLAN_COLORS = {
             rowBand: 'rgba(80, 85, 80, 0.92)',
             aisleFill: 'rgba(35, 35, 35, 0.04)',
             aisleStroke: 'rgba(35, 35, 35, 0.58)',
-            rowOutline: 'rgba(35, 35, 35, 0.14)',
-            frontEdge: 'rgba(35, 35, 35, 0.60)',
-            perimeter: 'rgba(35, 35, 35, 0.70)'
+            rowOutline: 'rgba(32, 32, 32, 0.5)',
+            frontEdge: 'rgba(53, 53, 53, 0.9)',
+            perimeter: 'rgba(68, 68, 68, 0.7)'
         },
         {
             rowBand: 'rgba(136, 143, 135, 0.94)',
             aisleFill: 'rgba(111, 117, 110, 0.09)',
             aisleStroke: 'rgba(111, 117, 110, 0.66)',
-            rowOutline: 'rgba(111, 117, 110, 0.26)',
-            frontEdge: 'rgba(111, 117, 110, 0.78)',
-            perimeter: 'rgba(111, 117, 110, 0.86)'
+            rowOutline: 'rgba(32, 32, 32, 0.5)',
+            frontEdge: 'rgba(53, 53, 53, 0.9)',
+            perimeter: 'rgba(68, 68, 68, 0.7)'
         },
         {
             rowBand: 'rgba(183, 190, 182, 0.98)',
             aisleFill: 'rgba(158, 166, 157, 0.14)',
             aisleStroke: 'rgba(138, 145, 136, 0.76)',
-            rowOutline: 'rgba(148, 156, 146, 0.34)',
-            frontEdge: 'rgba(132, 139, 130, 0.80)',
-            perimeter: 'rgba(122, 129, 120, 0.88)'
+            rowOutline: 'rgba(32, 32, 32, 0.5)',
+            frontEdge: 'rgba(53, 53, 53, 0.9)',
+            perimeter: 'rgba(68, 68, 68, 0.7)'
         }
     ],
     dark: [
@@ -88,15 +88,15 @@ const FIELD_TIER_PLAN_COLORS = {
             rowBand: 'rgba(154, 165, 153, 0.68)',
             aisleFill: 'rgba(198, 208, 195, 0.055)',
             aisleStroke: 'rgba(198, 208, 195, 0.22)',
-            rowOutline: 'rgba(198, 208, 195, 0.11)',
-            frontEdge: 'rgba(198, 208, 195, 0.37)',
+            rowOutline: 'rgba(32, 32, 32, 0.3)',
+            frontEdge: 'rgba(104, 104, 104, 0.37)',
             perimeter: 'rgba(198, 208, 195, 0.45)'
         },
         {
             rowBand: 'rgba(122, 139, 121, 0.72)',
             aisleFill: 'rgba(157, 170, 155, 0.075)',
             aisleStroke: 'rgba(157, 170, 155, 0.26)',
-            rowOutline: 'rgba(157, 170, 155, 0.125)',
+            rowOutline: 'rgba(32, 32, 32, 0.3)',
             frontEdge: 'rgba(157, 170, 155, 0.42)',
             perimeter: 'rgba(157, 170, 155, 0.49)'
         },
@@ -104,7 +104,7 @@ const FIELD_TIER_PLAN_COLORS = {
             rowBand: 'rgba(103, 116, 101, 0.76)',
             aisleFill: 'rgba(131, 145, 130, 0.09)',
             aisleStroke: 'rgba(131, 145, 130, 0.29)',
-            rowOutline: 'rgba(131, 145, 130, 0.14)',
+            rowOutline: 'rgba(32, 32, 32, 0.3)',
             frontEdge: 'rgba(131, 145, 130, 0.45)',
             perimeter: 'rgba(131, 145, 130, 0.52)'
         }
@@ -910,7 +910,7 @@ export class FieldRenderer {
     constructor(canvas, options = {}) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
-        this.padding = 40;
+        this.padding = 200;
         this._theme = normalizeThemeName(options?.theme);
 
         // Zoom/pan state
@@ -957,6 +957,62 @@ export class FieldRenderer {
             this._lastArgs[6],
             this._lastArgs[7]
         );
+    }
+
+    _resetToZoomExtents() {
+        this._userZoom = 1.0;
+        this._panX = 0;
+        this._panY = 0;
+        this._userHasZoomed = false;
+        if (this._lastArgs) {
+            this._rerenderFromLastArgs();
+        }
+    }
+
+    _getFitPaddingPx() {
+        return {
+            horizontal: 0,
+            vertical: this.padding
+        };
+    }
+
+    _getFitViewport() {
+        const viewport = {
+            offsetX: 0,
+            offsetY: 0,
+            width: this.canvas.width,
+            height: this.canvas.height
+        };
+        const parent = this.canvas?.parentElement;
+        if (!parent || typeof getComputedStyle !== 'function') {
+            return viewport;
+        }
+
+        const style = getComputedStyle(parent);
+        const paddingLeft = parseFloat(style.paddingLeft) || 0;
+        const paddingRight = parseFloat(style.paddingRight) || 0;
+        const paddingTop = parseFloat(style.paddingTop) || 0;
+        const paddingBottom = parseFloat(style.paddingBottom) || 0;
+
+        viewport.offsetX = paddingLeft;
+        viewport.offsetY = paddingTop;
+        viewport.width = Math.max(1, this.canvas.width - paddingLeft - paddingRight);
+        viewport.height = Math.max(1, this.canvas.height - paddingTop - paddingBottom);
+        return viewport;
+    }
+
+    _getBaseFitState(bounds, viewport = this._getFitViewport()) {
+        const scale = this._calcScale(bounds, viewport.width, viewport.height);
+        const centerX = (bounds.minX + bounds.maxX) / 2;
+        const centerY = (bounds.minY + bounds.maxY) / 2;
+        return {
+            scale,
+            centerX,
+            centerY,
+            viewport,
+            tx: viewport.offsetX + (viewport.width / 2) - (centerX * scale),
+            ty: viewport.offsetY + (viewport.height / 2) + (centerY * scale)
+        };
     }
 
     _setupInteraction() {
@@ -1009,17 +1065,15 @@ export class FieldRenderer {
             const ratio = this._userZoom / oldZoom;
 
             // Need base auto-fit variables to convert back to panX/Y
-            const w = this.canvas.width;
-            const h = this.canvas.height;
             const template = this._lastArgs[0];
             const runoff = this._lastArgs[1] != null ? this._lastArgs[1] : template.runoff;
             const bounds = this._getBounds(template, runoff, this._lastArgs[2], this._lastArgs[3]);
-            const baseScale = this._calcScale(bounds, w, h);
-            const centerX = (bounds.minX + bounds.maxX) / 2;
-            const centerY = (bounds.minY + bounds.maxY) / 2;
-            const baseTx = w / 2 - centerX * baseScale;
-            const baseTy = h / 2 + centerY * baseScale;
-            const cx = w / 2, cy = h / 2;
+            const fitViewport = this._getFitViewport();
+            const baseFit = this._getBaseFitState(bounds, fitViewport);
+            const baseTx = baseFit.tx;
+            const baseTy = baseFit.ty;
+            const cx = fitViewport.offsetX + (fitViewport.width / 2);
+            const cy = fitViewport.offsetY + (fitViewport.height / 2);
 
             // Calculate current translation
             let currentTx = baseTx, currentTy = baseTy;
@@ -1041,13 +1095,7 @@ export class FieldRenderer {
         }, { passive: false });
 
         this.canvas.addEventListener('dblclick', () => {
-            this._userZoom = 1.0;
-            this._panX = 0;
-            this._panY = 0;
-            this._userHasZoomed = false;
-            if (this._lastArgs) {
-                this._rerenderFromLastArgs();
-            }
+            this._resetToZoomExtents();
         });
 
         // Middle mouse button double-click for zoom extents
@@ -1056,14 +1104,7 @@ export class FieldRenderer {
             if (e.button === 1) { // Middle button
                 const now = Date.now();
                 if (now - this._middleClickTime < 400) {
-                    // Double middle-click: zoom extents
-                    this._userZoom = 1.0;
-                    this._panX = 0;
-                    this._panY = 0;
-                    this._userHasZoomed = false;
-                    if (this._lastArgs) {
-                        this._rerenderFromLastArgs();
-                    }
+                    this._resetToZoomExtents();
                 }
                 this._middleClickTime = now;
             }
@@ -1097,18 +1138,18 @@ export class FieldRenderer {
         // Calculate bounds for auto-fit, including seating if visible
         const bounds = this._getBounds(template, runoff, solvers, visibility);
         // Base auto-fit calculations
-        const baseScale = this._calcScale(bounds, w, h);
-        const centerX = (bounds.minX + bounds.maxX) / 2;
-        const centerY = (bounds.minY + bounds.maxY) / 2;
-
-        const baseTx = w / 2 - centerX * baseScale;
-        const baseTy = h / 2 + centerY * baseScale; // Flip Y
+        const fitViewport = this._getFitViewport();
+        const baseFit = this._getBaseFitState(bounds, fitViewport);
+        const baseScale = baseFit.scale;
+        const baseTx = baseFit.tx;
+        const baseTy = baseFit.ty; // Flip Y
 
         let scale, tx, ty;
 
         if (this._userHasZoomed) {
             scale = baseScale * this._userZoom;
-            const cx = w / 2, cy = h / 2;
+            const cx = fitViewport.offsetX + (fitViewport.width / 2);
+            const cy = fitViewport.offsetY + (fitViewport.height / 2);
 
             // Apply zoom around center, then pan
             tx = cx + (baseTx - cx) * this._userZoom + this._panX;
@@ -1211,12 +1252,13 @@ export class FieldRenderer {
                     if (rightX > bounds.maxX) bounds.maxX = rightX;
                 }
 
-                // Add padding for sunlight shadows
+                // Keep extents breathing room symmetric so zoom extents centers
+                // the visible bowl consistently regardless of available width.
                 const shadowPad = maxDist * 0.15;
-                bounds.minX -= shadowPad * 0.5;
+                bounds.minX -= shadowPad;
                 bounds.maxX += shadowPad;
                 bounds.minY -= shadowPad;
-                bounds.maxY += shadowPad * 0.5;
+                bounds.maxY += shadowPad;
             }
         }
 
@@ -1226,11 +1268,18 @@ export class FieldRenderer {
     _calcScale(bounds, w, h) {
         const rangeX = bounds.maxX - bounds.minX;
         const rangeY = bounds.maxY - bounds.minY;
-        const pad = this.padding * 2;
+        const { horizontal, vertical } = this._getFitPaddingPx();
         // Avoid div/0
         const rx = rangeX || 100;
         const ry = rangeY || 100;
-        return Math.min((w - pad) / rx, (h - pad) / ry);
+
+        // Keep vertical framing stable across layout width changes and only clamp
+        // downward when the current viewport would otherwise clip horizontally.
+        const usableWidth = Math.max(1, w - (horizontal * 2));
+        const usableHeight = Math.max(1, h - (vertical * 2));
+        const scaleY = usableHeight / ry;
+        const scaleX = usableWidth / rx;
+        return Math.min(scaleY, scaleX);
     }
 
     _drawGrid(ctx, w, h, scale, bounds, tx, ty) {

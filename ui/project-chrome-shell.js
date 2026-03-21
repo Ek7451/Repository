@@ -57,7 +57,7 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
-function renderProjectOptionManagerActionIcon(action) {
+function renderProjectActionIcon(action) {
     if (action === 'edit') {
         return `
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
@@ -113,6 +113,7 @@ function normalizeProjectActions(projectActions = null) {
     const actionNames = [
         'saveCurrentProject',
         'renameCurrentProject',
+        'renameProject',
         'createOption',
         'renameOption',
         'duplicateOption',
@@ -123,6 +124,7 @@ function normalizeProjectActions(projectActions = null) {
         'openProject',
         'duplicateProject',
         'deleteProject',
+        'deleteProjects',
         'signOut'
     ];
     const normalized = {};
@@ -201,7 +203,9 @@ export class ProjectChromeShell {
             error: '',
             busyAction: '',
             busyProjectId: '',
-            openRowMenuProjectId: '',
+            editingProjectId: '',
+            projectNameDrafts: {},
+            selectedProjectIds: [],
             projects: []
         };
     }
@@ -623,7 +627,6 @@ export class ProjectChromeShell {
         if (projectPickerSearchInput) {
             const handleProjectPickerSearch = () => {
                 this._projectPicker.search = projectPickerSearchInput.value;
-                this._projectPicker.openRowMenuProjectId = '';
                 this._renderProjectPicker();
             };
             projectPickerSearchInput.addEventListener('input', handleProjectPickerSearch);
@@ -644,6 +647,15 @@ export class ProjectChromeShell {
             this._cleanup.push(() => projectPickerCreateBtn.removeEventListener('click', handleProjectPickerCreate));
         }
 
+        const projectPickerDeleteSelectedBtn = getButtonElement('projectPickerDeleteSelectedBtn');
+        if (projectPickerDeleteSelectedBtn) {
+            const handleProjectPickerDeleteSelected = () => {
+                void this._handleProjectPickerDeleteSelected();
+            };
+            projectPickerDeleteSelectedBtn.addEventListener('click', handleProjectPickerDeleteSelected);
+            this._cleanup.push(() => projectPickerDeleteSelectedBtn.removeEventListener('click', handleProjectPickerDeleteSelected));
+        }
+
         const projectPickerList = getHtmlElement('projectPickerList');
         if (projectPickerList) {
             const handleProjectPickerListClick = (event) => {
@@ -651,18 +663,11 @@ export class ProjectChromeShell {
                 const target = getTargetElement(event.target);
                 if (!target) return;
 
-                const rowMenuTrigger = target.closest('[data-project-picker-menu-trigger]');
-                if (rowMenuTrigger) {
-                    event.stopPropagation();
-                    this._toggleProjectPickerRowMenu(rowMenuTrigger.getAttribute('data-project-picker-menu-trigger'));
-                    return;
-                }
-
-                const rowAction = target.closest('[data-project-picker-action]');
+                const rowAction = target.closest('[data-project-picker-row-action]');
                 if (rowAction) {
                     event.stopPropagation();
                     void this._handleProjectPickerAction(
-                        rowAction.getAttribute('data-project-picker-action'),
+                        rowAction.getAttribute('data-project-picker-row-action'),
                         rowAction.getAttribute('data-project-id')
                     );
                     return;
@@ -674,8 +679,67 @@ export class ProjectChromeShell {
                     void this._handleProjectPickerAction('open', openProjectTrigger.getAttribute('data-open-project-id'));
                 }
             };
+            const handleProjectPickerListChange = (event) => {
+                if (this._isProjectPickerInteractionLocked()) return;
+                const target = getTargetElement(event.target);
+                if (!target) return;
+
+                const selectionToggle = target.closest('[data-project-picker-select]');
+                if (!selectionToggle) return;
+
+                this._toggleProjectPickerSelection(selectionToggle.getAttribute('data-project-picker-select'));
+            };
+            const handleProjectPickerListInput = (event) => {
+                const target = /** @type {HTMLInputElement | null} */ (event.target);
+                const projectId = target?.getAttribute?.('data-project-picker-name-id');
+                if (!target || !projectId) return;
+                this._projectPicker.projectNameDrafts[projectId] = target.value;
+            };
+            const handleProjectPickerListFocusOut = (event) => {
+                const target = /** @type {HTMLInputElement | null} */ (event.target);
+                const projectId = target?.getAttribute?.('data-project-picker-name-id');
+                if (!target || !projectId) return;
+                if (target.dataset.skipCommitOnBlur === 'true') {
+                    delete target.dataset.skipCommitOnBlur;
+                    return;
+                }
+                const relatedTarget = getTargetElement(event.relatedTarget);
+                if (relatedTarget?.closest('[data-project-picker-row-action]')) {
+                    return;
+                }
+                void this._commitProjectPickerNameEdit(projectId);
+            };
+            const handleProjectPickerListKeyDown = (event) => {
+                const target = /** @type {HTMLInputElement | null} */ (event.target);
+                const projectId = target?.getAttribute?.('data-project-picker-name-id');
+                if (!target || !projectId) return;
+
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    target.dataset.skipCommitOnBlur = 'true';
+                    void this._commitProjectPickerNameEdit(projectId);
+                    target.blur();
+                    return;
+                }
+
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    target.dataset.skipCommitOnBlur = 'true';
+                    target.blur();
+                    this._cancelProjectPickerNameEdit(projectId);
+                }
+            };
             projectPickerList.addEventListener('click', handleProjectPickerListClick);
+            projectPickerList.addEventListener('change', handleProjectPickerListChange);
+            projectPickerList.addEventListener('input', handleProjectPickerListInput);
+            projectPickerList.addEventListener('focusout', handleProjectPickerListFocusOut);
+            projectPickerList.addEventListener('keydown', handleProjectPickerListKeyDown);
             this._cleanup.push(() => projectPickerList.removeEventListener('click', handleProjectPickerListClick));
+            this._cleanup.push(() => projectPickerList.removeEventListener('change', handleProjectPickerListChange));
+            this._cleanup.push(() => projectPickerList.removeEventListener('input', handleProjectPickerListInput));
+            this._cleanup.push(() => projectPickerList.removeEventListener('focusout', handleProjectPickerListFocusOut));
+            this._cleanup.push(() => projectPickerList.removeEventListener('keydown', handleProjectPickerListKeyDown));
         }
 
         const handleDocumentClick = (event) => {
@@ -689,15 +753,6 @@ export class ProjectChromeShell {
             if (this._projectOptionMenuOpen && !target.closest('.project-option-shell')) {
                 this._projectOptionMenuOpen = false;
                 this._renderOptionChrome();
-            }
-
-            if (
-                this._projectPicker.openRowMenuProjectId
-                && !target.closest('.project-picker-row-menu')
-                && !target.closest('[data-project-picker-menu-trigger]')
-            ) {
-                this._projectPicker.openRowMenuProjectId = '';
-                this._renderProjectPicker();
             }
         };
         document.addEventListener('click', handleDocumentClick);
@@ -856,6 +911,22 @@ export class ProjectChromeShell {
     _resetProjectOptionNameDrafts() {
         this._projectOptionNameDrafts = Object.fromEntries(
             this._optionChrome.items.map((item) => [item.id, item.label])
+        );
+    }
+
+    _getProjectPickerProject(projectId) {
+        if (!projectId) return null;
+        return this._projectPicker.projects.find((project) => project.id === projectId) ?? null;
+    }
+
+    _resetProjectPickerNameDraft(projectId) {
+        if (!projectId) return;
+        this._projectPicker.projectNameDrafts[projectId] = this._getProjectPickerProject(projectId)?.name ?? '';
+    }
+
+    _resetProjectPickerNameDrafts() {
+        this._projectPicker.projectNameDrafts = Object.fromEntries(
+            this._projectPicker.projects.map((project) => [project.id, project.name])
         );
     }
 
@@ -1096,7 +1167,7 @@ export class ProjectChromeShell {
                         title="Rename ${escapeHtml(item.label)}"
                         ${this._projectSaveBusy || !this._projectActions?.renameOption ? 'disabled' : ''}
                     >
-                        ${renderProjectOptionManagerActionIcon('edit')}
+                        ${renderProjectActionIcon('edit')}
                     </button>
                     <button
                         class="project-option-manager-icon-btn"
@@ -1107,7 +1178,7 @@ export class ProjectChromeShell {
                         title="Duplicate ${escapeHtml(item.label)}"
                         ${this._projectSaveBusy || !this._projectActions?.duplicateOption ? 'disabled' : ''}
                     >
-                        ${renderProjectOptionManagerActionIcon('duplicate')}
+                        ${renderProjectActionIcon('duplicate')}
                     </button>
                     <button
                         class="project-option-manager-icon-btn project-option-manager-icon-btn-danger"
@@ -1118,7 +1189,7 @@ export class ProjectChromeShell {
                         title="Delete ${escapeHtml(item.label)}"
                         ${this._projectSaveBusy || !item.canDelete || !this._projectActions?.deleteOption ? 'disabled' : ''}
                     >
-                        ${renderProjectOptionManagerActionIcon('delete')}
+                        ${renderProjectActionIcon('delete')}
                     </button>
                 </div>
             </div>
@@ -1286,7 +1357,9 @@ export class ProjectChromeShell {
         this._projectPicker.isOpen = true;
         this._projectPicker.search = '';
         this._projectPicker.error = '';
-        this._projectPicker.openRowMenuProjectId = '';
+        this._projectPicker.editingProjectId = '';
+        this._projectPicker.selectedProjectIds = [];
+        this._resetProjectPickerNameDrafts();
         this._renderProjectPicker();
         getInputElement('projectPickerSearchInput')?.focus();
         await this._refreshProjectPickerProjects();
@@ -1295,13 +1368,17 @@ export class ProjectChromeShell {
     _closeProjectPicker() {
         this._projectPicker.isOpen = false;
         this._projectPicker.error = '';
-        this._projectPicker.openRowMenuProjectId = '';
+        this._projectPicker.editingProjectId = '';
+        this._projectPicker.selectedProjectIds = [];
+        this._resetProjectPickerNameDrafts();
         this._renderProjectPicker();
     }
 
     async _refreshProjectPickerProjects() {
         if (!this._projectActions?.listProjects) {
             this._projectPicker.projects = [];
+            this._projectPicker.editingProjectId = '';
+            this._projectPicker.selectedProjectIds = [];
             this._renderProjectPicker();
             return;
         }
@@ -1320,6 +1397,14 @@ export class ProjectChromeShell {
                     updatedAt: typeof project?.updatedAt === 'string' ? project.updatedAt : ''
                 }))
                 : [];
+            this._projectPicker.selectedProjectIds = this._projectPicker.selectedProjectIds.filter((projectId) => (
+                this._projectPicker.projects.some((project) => project.id === projectId)
+                    && !this._isCurrentProjectPickerProject(projectId)
+            ));
+            if (!this._getProjectPickerProject(this._projectPicker.editingProjectId)) {
+                this._projectPicker.editingProjectId = '';
+            }
+            this._resetProjectPickerNameDrafts();
             this._projectPicker.error = '';
         } catch (error) {
             this._projectPicker.error = getErrorReason(error);
@@ -1327,6 +1412,106 @@ export class ProjectChromeShell {
             this._projectPicker.isLoading = false;
             this._renderProjectPicker();
         }
+    }
+
+    _isCurrentProjectPickerProject(projectId) {
+        return Boolean(projectId && this._projectChrome.metadata?.id === projectId);
+    }
+
+    _toggleProjectPickerSelection(projectId) {
+        if (this._isProjectPickerInteractionLocked()) return;
+        const nextProjectId = typeof projectId === 'string' ? projectId : '';
+        if (
+            !nextProjectId
+            || this._isCurrentProjectPickerProject(nextProjectId)
+            || !this._projectPicker.projects.some((project) => project.id === nextProjectId)
+        ) return;
+
+        const selectedProjectIds = new Set(this._projectPicker.selectedProjectIds);
+        if (selectedProjectIds.has(nextProjectId)) {
+            selectedProjectIds.delete(nextProjectId);
+        } else {
+            selectedProjectIds.add(nextProjectId);
+        }
+
+        this._projectPicker.selectedProjectIds = Array.from(selectedProjectIds);
+        this._renderProjectPicker();
+    }
+
+    _startProjectPickerNameEdit(projectId) {
+        if (!projectId || !this._projectActions?.renameProject || this._isProjectPickerInteractionLocked()) return;
+
+        this._projectPicker.editingProjectId = projectId;
+        this._resetProjectPickerNameDraft(projectId);
+        this._renderProjectPicker();
+
+        requestAnimationFrame(() => {
+            const projectNameInput = getInputElement(`projectPickerNameInput-${projectId}`);
+            projectNameInput?.focus();
+            projectNameInput?.select();
+        });
+    }
+
+    _cancelProjectPickerNameEdit(projectId = this._projectPicker.editingProjectId) {
+        if (!projectId) return;
+
+        this._resetProjectPickerNameDraft(projectId);
+        if (this._projectPicker.editingProjectId === projectId) {
+            this._projectPicker.editingProjectId = '';
+        }
+        this._renderProjectPicker();
+    }
+
+    async _commitProjectPickerNameEdit(projectId) {
+        if (!projectId || !this._projectActions?.renameProject || this._isProjectPickerInteractionLocked()) return;
+
+        const project = this._getProjectPickerProject(projectId);
+        if (!project) return;
+
+        const nextName = (this._projectPicker.projectNameDrafts[projectId] ?? project.name).trim();
+        if (!nextName || nextName === project.name.trim()) {
+            this._projectPicker.editingProjectId = '';
+            this._resetProjectPickerNameDraft(projectId);
+            this._renderProjectPicker();
+            return;
+        }
+
+        try {
+            await this._runProjectPickerAction('rename', projectId, async () => {
+                await this._projectActions.renameProject(projectId, nextName);
+                this._projectPicker.editingProjectId = '';
+                await this._refreshProjectPickerProjects();
+            });
+        } finally {
+            this._projectPicker.editingProjectId = '';
+            this._resetProjectPickerNameDraft(projectId);
+            this._renderProjectPicker();
+        }
+    }
+
+    async _handleProjectPickerDeleteSelected() {
+        if (this._isProjectPickerInteractionLocked() || !this._projectActions?.deleteProjects) return;
+
+        const selectedProjectIds = this._projectPicker.selectedProjectIds.filter((projectId) => (
+            typeof projectId === 'string' && projectId && !this._isCurrentProjectPickerProject(projectId)
+        ));
+        if (!selectedProjectIds.length) return;
+
+        const shouldDelete = typeof window !== 'undefined' && typeof window.confirm === 'function'
+            ? window.confirm(
+                selectedProjectIds.length === 1
+                    ? 'Delete 1 selected project?'
+                    : `Delete ${selectedProjectIds.length} selected projects?`
+            )
+            : true;
+        if (!shouldDelete) return;
+
+        await this._runProjectPickerAction('delete', '', async () => {
+            await this._projectActions.deleteProjects(selectedProjectIds);
+            this._projectPicker.selectedProjectIds = [];
+            this._projectPicker.editingProjectId = '';
+            await this._refreshProjectPickerProjects();
+        });
     }
 
     _renderProjectPicker() {
@@ -1359,6 +1544,27 @@ export class ProjectChromeShell {
                 : 'New project';
         }
 
+        const selectedProjectCount = this._projectPicker.selectedProjectIds.length;
+        const projectPickerSelectionSummary = getHtmlElement('projectPickerSelectionSummary');
+        if (projectPickerSelectionSummary) {
+            const summary = selectedProjectCount === 1
+                ? '1 project selected'
+                : `${selectedProjectCount} projects selected`;
+            projectPickerSelectionSummary.hidden = selectedProjectCount < 1;
+            projectPickerSelectionSummary.textContent = summary;
+        }
+
+        const projectPickerDeleteSelectedBtn = getButtonElement('projectPickerDeleteSelectedBtn');
+        if (projectPickerDeleteSelectedBtn) {
+            const isBulkDeleteBusy = this._projectPicker.busyAction === 'delete' && !this._projectPicker.busyProjectId;
+            projectPickerDeleteSelectedBtn.disabled = isInteractionLocked
+                || selectedProjectCount < 1
+                || !this._projectActions?.deleteProjects;
+            projectPickerDeleteSelectedBtn.textContent = isBulkDeleteBusy
+                ? 'Deleting...'
+                : 'Delete selected';
+        }
+
         const projectPickerError = getHtmlElement('projectPickerError');
         if (projectPickerError) {
             const message = this._projectPicker.error.trim();
@@ -1389,69 +1595,122 @@ export class ProjectChromeShell {
 
         projectPickerList.innerHTML = visibleProjects.map((project) => {
             const projectId = escapeHtml(project.id);
-            const isMenuOpen = this._projectPicker.openRowMenuProjectId === project.id;
+            const projectName = escapeHtml(project.name || 'Untitled Project');
+            const isCurrentProject = this._isCurrentProjectPickerProject(project.id);
+            const isEditing = this._projectPicker.editingProjectId === project.id;
+            const projectDraftName = escapeHtml(this._projectPicker.projectNameDrafts[project.id] ?? project.name);
+            const isBusyRename = this._projectPicker.busyAction === 'rename' && this._projectPicker.busyProjectId === project.id;
             const isBusyDuplicate = this._projectPicker.busyAction === 'duplicate' && this._projectPicker.busyProjectId === project.id;
             const isBusyDelete = this._projectPicker.busyAction === 'delete' && this._projectPicker.busyProjectId === project.id;
             const isBusyOpen = this._projectPicker.busyAction === 'open' && this._projectPicker.busyProjectId === project.id;
+            const isSelected = this._projectPicker.selectedProjectIds.includes(project.id);
             const isDisabled = isInteractionLocked ? 'disabled' : '';
+            const isSelectionDisabled = isInteractionLocked || isCurrentProject;
+            const selectionDisabled = isSelectionDisabled ? 'disabled' : '';
+            const selectionChecked = isSelected ? 'checked' : '';
+            const selectionLabel = isSelected ? 'Deselect project' : 'Select project';
 
             return `
-                <article class="project-picker-row" role="listitem">
-                    <button class="project-picker-row-main" type="button" data-open-project-id="${projectId}" ${isDisabled}>
-                        <svg class="project-picker-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
-                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H11l2 2h4.5A2.5 2.5 0 0 1 20 9.5v8A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5v-10z"></path>
-                        </svg>
-                        <span class="project-picker-row-copy">
-                            <span class="project-picker-row-name">${escapeHtml(project.name || 'Untitled Project')}</span>
-                            <span class="project-picker-row-sport">${escapeHtml(project.sport || 'Football')}</span>
-                            ${isBusyOpen ? '<span class="project-picker-row-status">Opening...</span>' : ''}
-                        </span>
-                    </button>
-                    <div class="project-picker-row-updated">${escapeHtml(formatProjectListUpdatedAt(project.updatedAt))}</div>
-                    <button class="project-picker-row-menu-trigger"
-                        type="button"
-                        aria-label="Project actions for ${escapeHtml(project.name || 'Untitled Project')}"
-                        aria-expanded="${isMenuOpen ? 'true' : 'false'}"
-                        data-project-picker-menu-trigger="${projectId}"
-                        ${isDisabled}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
-                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <circle cx="12" cy="5" r="1.25"></circle>
-                            <circle cx="12" cy="12" r="1.25"></circle>
-                            <circle cx="12" cy="19" r="1.25"></circle>
-                        </svg>
-                    </button>
-                    ${isMenuOpen
+                <article class="project-picker-row ${isSelected ? 'project-picker-row-selected' : ''}" role="listitem">
+                    <label class="project-picker-row-select" aria-label="${selectionLabel} ${projectName}">
+                        <input
+                            class="project-picker-row-checkbox"
+                            type="checkbox"
+                            data-project-picker-select="${projectId}"
+                            ${selectionChecked}
+                            ${selectionDisabled}>
+                        <span class="project-picker-row-checkbox-ui" aria-hidden="true"></span>
+                    </label>
+                    ${isEditing
                         ? `
-                            <div class="project-picker-row-menu">
-                                <button class="project-picker-row-menu-item" type="button" data-project-picker-action="duplicate" data-project-id="${projectId}" ${isDisabled}>
-                                    <span>${isBusyDuplicate ? 'Duplicating...' : 'Duplicate project'}</span>
-                                </button>
-                                <button class="project-picker-row-menu-item project-picker-row-menu-item-danger" type="button" data-project-picker-action="delete" data-project-id="${projectId}" ${isDisabled}>
-                                    <span>${isBusyDelete ? 'Deleting...' : 'Delete project'}</span>
-                                </button>
+                            <div class="project-picker-row-main project-picker-row-main-editing">
+                                <svg class="project-picker-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H11l2 2h4.5A2.5 2.5 0 0 1 20 9.5v8A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5v-10z"></path>
+                                </svg>
+                                <span class="project-picker-row-copy">
+                                    <label class="sr-only" for="projectPickerNameInput-${projectId}">${projectName} project name</label>
+                                    <input
+                                        id="projectPickerNameInput-${projectId}"
+                                        class="project-picker-row-name-input"
+                                        type="text"
+                                        maxlength="80"
+                                        value="${projectDraftName}"
+                                        data-project-picker-name-id="${projectId}"
+                                        ${isDisabled}>
+                                    <span class="project-picker-row-sport">
+                                        <span>${escapeHtml(project.sport || 'Football')}</span>
+                                        ${isCurrentProject ? '<span class="project-picker-row-badge">Current project</span>' : ''}
+                                        ${isBusyRename ? '<span class="project-picker-row-status">Renaming...</span>' : ''}
+                                    </span>
+                                </span>
                             </div>
                         `
-                        : ''}
+                        : `
+                            <button class="project-picker-row-main" type="button" data-open-project-id="${projectId}" ${isDisabled}>
+                                <svg class="project-picker-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H11l2 2h4.5A2.5 2.5 0 0 1 20 9.5v8A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5v-10z"></path>
+                                </svg>
+                                <span class="project-picker-row-copy">
+                                    <span class="project-picker-row-name">${projectName}</span>
+                                    <span class="project-picker-row-sport">
+                                        <span>${escapeHtml(project.sport || 'Football')}</span>
+                                        ${isCurrentProject ? '<span class="project-picker-row-badge">Current project</span>' : ''}
+                                        ${isBusyOpen ? '<span class="project-picker-row-status">Opening...</span>' : ''}
+                                        ${isBusyDuplicate ? '<span class="project-picker-row-status">Duplicating...</span>' : ''}
+                                        ${isBusyDelete ? '<span class="project-picker-row-status">Deleting...</span>' : ''}
+                                    </span>
+                                </span>
+                            </button>
+                        `}
+                    <div class="project-picker-row-updated">${escapeHtml(formatProjectListUpdatedAt(project.updatedAt))}</div>
+                    <div class="project-picker-row-actions">
+                        <button
+                            class="project-option-manager-icon-btn"
+                            type="button"
+                            data-project-picker-row-action="edit"
+                            data-project-id="${projectId}"
+                            aria-label="Rename ${projectName}"
+                            title="Rename ${projectName}"
+                            ${isDisabled || !this._projectActions?.renameProject ? 'disabled' : ''}>
+                            ${renderProjectActionIcon('edit')}
+                        </button>
+                        <button
+                            class="project-option-manager-icon-btn"
+                            type="button"
+                            data-project-picker-row-action="duplicate"
+                            data-project-id="${projectId}"
+                            aria-label="Duplicate ${projectName}"
+                            title="Duplicate ${projectName}"
+                            ${isDisabled || !this._projectActions?.duplicateProject ? 'disabled' : ''}>
+                            ${renderProjectActionIcon('duplicate')}
+                        </button>
+                        <button
+                            class="project-option-manager-icon-btn project-option-manager-icon-btn-danger"
+                            type="button"
+                            data-project-picker-row-action="delete"
+                            data-project-id="${projectId}"
+                            aria-label="Delete ${projectName}"
+                            title="Delete ${projectName}"
+                            ${isDisabled || !this._projectActions?.deleteProject ? 'disabled' : ''}>
+                            ${renderProjectActionIcon('delete')}
+                        </button>
+                    </div>
                 </article>
             `;
         }).join('');
-    }
-
-    _toggleProjectPickerRowMenu(projectId) {
-        if (this._isProjectPickerInteractionLocked()) return;
-        const nextProjectId = typeof projectId === 'string' ? projectId : '';
-        this._projectPicker.openRowMenuProjectId = this._projectPicker.openRowMenuProjectId === nextProjectId
-            ? ''
-            : nextProjectId;
-        this._renderProjectPicker();
     }
 
     async _handleProjectPickerAction(action, projectId) {
         if (this._isProjectPickerInteractionLocked()) return;
         const nextProjectId = typeof projectId === 'string' ? projectId : '';
         if (!nextProjectId) return;
+
+        if (action === 'edit') {
+            this._startProjectPickerNameEdit(nextProjectId);
+            return;
+        }
 
         if (action === 'open' && this._projectActions?.openProject) {
             await this._runProjectPickerAction('open', nextProjectId, async () => {
@@ -1464,22 +1723,23 @@ export class ProjectChromeShell {
         if (action === 'duplicate' && this._projectActions?.duplicateProject) {
             await this._runProjectPickerAction('duplicate', nextProjectId, async () => {
                 await this._projectActions.duplicateProject(nextProjectId);
-                this._projectPicker.openRowMenuProjectId = '';
+                this._projectPicker.editingProjectId = '';
                 await this._refreshProjectPickerProjects();
             });
             return;
         }
 
         if (action === 'delete' && this._projectActions?.deleteProject) {
-            const shouldDelete = typeof window.confirm === 'function'
-                ? window.confirm('Delete this project?')
+            const projectLabel = this._getProjectPickerProject(nextProjectId)?.name ?? 'this project';
+            const shouldDelete = typeof window !== 'undefined' && typeof window.confirm === 'function'
+                ? window.confirm(`Delete "${projectLabel}"?`)
                 : true;
             if (!shouldDelete) return;
 
             const isCurrentProject = this._projectChrome.metadata?.id === nextProjectId;
             await this._runProjectPickerAction('delete', nextProjectId, async () => {
                 await this._projectActions.deleteProject(nextProjectId);
-                this._projectPicker.openRowMenuProjectId = '';
+                this._projectPicker.editingProjectId = '';
                 if (isCurrentProject) {
                     this._closeProjectPicker();
                     return;

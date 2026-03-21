@@ -33,6 +33,15 @@
     --accent-red: #d1433d;
     --accent-green: #7aae1a;
     --accent-lime: #7aae1a;
+    --scrollbar-thumb: #c8cbc1;
+    --scrollbar-thumb-hover: #adb39f;
+    --results-scrollbar-track: rgba(15, 17, 19, 0.05);
+    --occupancy-track-bg: #d9ddd1;
+    --occupancy-track-outline: rgba(15, 17, 19, 0.08);
+    --egress-track-bg: #dbe2e8;
+    --tier-1-surface: rgba(35, 35, 35, 0.04);
+    --tier-2-surface: rgba(111, 117, 110, 0.06);
+    --tier-3-surface: rgba(158, 166, 157, 0.12);
     --quality-excellent: #7aae1a;
     --quality-good: #37996e;
     --quality-acceptable: #de850a;
@@ -42,7 +51,7 @@
     --shadow-lg: 0 10px 24px rgba(15, 17, 19, 0.1);
     --gap-xs: 4px;
     --gap-sm: 8px;
-    --gap-md: 12px;
+    --gap-md: 6px;
     --gap-lg: 16px;
     --gap-xl: 24px;
     --radius-sm: 8px;
@@ -71,12 +80,12 @@ body.jlg-shell {
 }
 
 *::-webkit-scrollbar-thumb {
-    background: #c8cbc1;
+    background: var(--scrollbar-thumb);
     border-radius: 999px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-    background: #adb39f;
+    background: var(--scrollbar-thumb-hover);
 }
 
 .sr-only {
@@ -699,18 +708,6 @@ body.jlg-shell {
     padding: 10px 12px 12px;
 }
 
-.jlg-shell .tier-section-1 .section-body {
-    background: linear-gradient(180deg, rgba(35, 35, 35, 0.03), rgba(255, 255, 255, 0));
-}
-
-.jlg-shell .tier-section-2 .section-body {
-    background: linear-gradient(180deg, rgba(111, 117, 110, 0.045), rgba(255, 255, 255, 0));
-}
-
-.jlg-shell .tier-section-3 .section-body {
-    background: linear-gradient(180deg, rgba(158, 166, 157, 0.1), rgba(255, 255, 255, 0));
-}
-
 .jlg-shell .tier-disabled .section-body {
     opacity: 0.5;
     pointer-events: none;
@@ -1005,7 +1002,7 @@ body.jlg-shell {
     display: block;
 }
 
-.jlg-shell .theme-toggle-btn .theme-icon-sun {
+.jlg-shell .theme-toggle-btn .theme-icon-moon {
     display: none;
 }
 
@@ -1013,12 +1010,12 @@ body.jlg-shell {
     display: none;
 }
 
-.jlg-shell .theme-toggle-btn[data-theme-pref="dark"] .theme-icon-moon,
-.jlg-shell .theme-toggle-btn[data-theme-pref="system"] .theme-icon-moon {
+.jlg-shell .theme-toggle-btn[data-theme-pref="dark"] .theme-icon-sun,
+.jlg-shell .theme-toggle-btn[data-theme-pref="system"] .theme-icon-sun {
     display: none;
 }
 
-.jlg-shell .theme-toggle-btn[data-theme-pref="dark"] .theme-icon-sun {
+.jlg-shell .theme-toggle-btn[data-theme-pref="dark"] .theme-icon-moon {
     display: block;
 }
 
@@ -1231,10 +1228,15 @@ body.jlg-shell {
 .jlg-shell .project-option-manager-icon-btn:focus-visible,
 .jlg-shell .project-option-manager-name-input:focus-visible,
 .jlg-shell .project-picker-close-btn:focus-visible,
+.jlg-shell .project-picker-delete-selected-btn:focus-visible,
 .jlg-shell .project-picker-create-btn:focus-visible,
 .jlg-shell .project-picker-row-main:focus-visible,
-.jlg-shell .project-picker-row-menu-trigger:focus-visible,
-.jlg-shell .project-picker-row-menu-item:focus-visible {
+.jlg-shell .project-picker-row-name-input:focus-visible {
+    outline: 2px solid rgba(122, 174, 26, 0.55);
+    outline-offset: 2px;
+}
+
+.jlg-shell .project-picker-row-checkbox:focus-visible + .project-picker-row-checkbox-ui {
     outline: 2px solid rgba(122, 174, 26, 0.55);
     outline-offset: 2px;
 }
@@ -1368,8 +1370,7 @@ body.jlg-shell {
 
 .jlg-shell .project-option-menu,
 .jlg-shell .project-menu-panel,
-.jlg-shell .project-menu-submenu-panel,
-.jlg-shell .project-picker-row-menu {
+.jlg-shell .project-menu-submenu-panel {
     border: 1px solid #d7dad0;
     background: rgba(255, 255, 255, 0.98);
     box-shadow: 0 18px 32px rgba(15, 17, 19, 0.16);
@@ -1387,8 +1388,7 @@ body.jlg-shell {
 }
 
 .jlg-shell .project-menu-item,
-.jlg-shell .project-option-item,
-.jlg-shell .project-picker-row-menu-item {
+.jlg-shell .project-option-item {
     appearance: none;
     width: 100%;
     border: none;
@@ -1408,13 +1408,11 @@ body.jlg-shell {
 }
 
 .jlg-shell .project-menu-item:hover,
-.jlg-shell .project-option-item:hover,
-.jlg-shell .project-picker-row-menu-item:hover {
+.jlg-shell .project-option-item:hover {
     background: #f3f5eb;
 }
 
-.jlg-shell .project-menu-item-danger,
-.jlg-shell .project-picker-row-menu-item-danger {
+.jlg-shell .project-menu-item-danger {
     color: #b42318;
 }
 
@@ -1714,8 +1712,7 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
 }
 
 .jlg-shell .project-picker-close-btn,
-.jlg-shell .project-option-manager-close-btn,
-.jlg-shell .project-picker-row-menu-trigger {
+.jlg-shell .project-option-manager-close-btn {
     appearance: none;
     width: 36px;
     height: 36px;
@@ -1731,8 +1728,7 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
 }
 
 .jlg-shell .project-picker-close-btn:hover,
-.jlg-shell .project-option-manager-close-btn:hover,
-.jlg-shell .project-picker-row-menu-trigger:hover {
+.jlg-shell .project-option-manager-close-btn:hover {
     background: #f3f5eb;
     color: #1d2329;
 }
@@ -1748,6 +1744,13 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
 .jlg-shell .project-picker-search-field {
     flex: 1 1 auto;
     min-width: 0;
+}
+
+.jlg-shell .project-picker-toolbar-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
 }
 
 .jlg-shell .project-picker-search-field input {
@@ -1769,18 +1772,45 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
     box-shadow: 0 0 0 3px rgba(122, 174, 26, 0.14);
 }
 
+.jlg-shell .project-picker-selection-summary {
+    margin: 0;
+    color: #4f5660;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.jlg-shell .project-picker-delete-selected-btn,
 .jlg-shell .project-picker-create-btn {
     appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     height: 44px;
     padding: 0 18px;
-    border: 1px solid #324050;
     border-radius: 24px;
-    background: #151d27;
-    color: #ffffff;
     font-size: 14px;
     font-weight: 700;
     cursor: pointer;
     transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.jlg-shell .project-picker-delete-selected-btn {
+    border: 1px solid rgba(180, 35, 24, 0.22);
+    background: #fff1f0;
+    color: #b42318;
+}
+
+.jlg-shell .project-picker-delete-selected-btn:hover {
+    background: #ffe2de;
+    border-color: rgba(180, 35, 24, 0.34);
+    transform: translateY(-1px);
+}
+
+.jlg-shell .project-picker-create-btn {
+    border: 1px solid #324050;
+    background: #151d27;
+    color: #ffffff;
 }
 
 .jlg-shell .project-picker-create-btn:hover {
@@ -1789,6 +1819,7 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
     transform: translateY(-1px);
 }
 
+.jlg-shell .project-picker-delete-selected-btn:disabled,
 .jlg-shell .project-picker-create-btn:disabled {
     opacity: 0.6;
     cursor: default;
@@ -1998,7 +2029,7 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
 .jlg-shell .project-picker-table-head,
 .jlg-shell .project-picker-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 190px 44px;
+    grid-template-columns: 32px minmax(0, 1fr) 190px auto;
     gap: 16px;
     align-items: center;
 }
@@ -2026,6 +2057,45 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
     border-bottom: 1px solid #eceee7;
 }
 
+.jlg-shell .project-picker-row-selected {
+    background: rgba(122, 174, 26, 0.08);
+}
+
+.jlg-shell .project-picker-row-select {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.jlg-shell .project-picker-row-checkbox {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.jlg-shell .project-picker-row-checkbox-ui {
+    width: 18px;
+    height: 18px;
+    border: 1px solid #b7c0c9;
+    border-radius: 6px;
+    background: #ffffff;
+    box-shadow: inset 0 0 0 0 #7aae1a;
+    transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.jlg-shell .project-picker-row-checkbox:checked + .project-picker-row-checkbox-ui {
+    border-color: #7aae1a;
+    background: #7aae1a;
+    box-shadow: inset 0 0 0 4px #ffffff;
+}
+
+.jlg-shell .project-picker-row-checkbox:disabled + .project-picker-row-checkbox-ui {
+    border-color: #d7ddd3;
+    background: #f3f5ef;
+    box-shadow: none;
+}
+
 .jlg-shell .project-picker-row-main {
     appearance: none;
     min-width: 0;
@@ -2038,6 +2108,10 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
     padding: 0;
     text-align: left;
     cursor: pointer;
+}
+
+.jlg-shell .project-picker-row-main-editing {
+    cursor: default;
 }
 
 .jlg-shell .project-picker-row-main:hover .project-picker-row-name {
@@ -2055,6 +2129,25 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
     min-width: 0;
 }
 
+.jlg-shell .project-picker-row-name-input {
+    width: 100%;
+    min-height: 40px;
+    padding: 0 12px;
+    border: 1px solid #d4d8cd;
+    border-radius: 16px;
+    background: #ffffff;
+    color: #121417;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.jlg-shell .project-picker-row-name-input:focus {
+    outline: none;
+    border-color: #7aae1a;
+    box-shadow: 0 0 0 3px rgba(122, 174, 26, 0.14);
+}
+
 .jlg-shell .project-picker-row-name {
     color: #1b2026;
     font-size: 15px;
@@ -2067,10 +2160,27 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
 }
 
 .jlg-shell .project-picker-row-sport {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
     color: #6f7680;
     font-size: 12px;
     font-weight: 600;
     margin-top: 2px;
+}
+
+.jlg-shell .project-picker-row-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 20px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: #edf4dc;
+    color: #557818;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.01em;
 }
 
 .jlg-shell .project-picker-row-updated {
@@ -2079,14 +2189,20 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
     font-weight: 600;
 }
 
-.jlg-shell .project-picker-row-menu {
-    position: absolute;
-    top: 10px;
-    right: 52px;
-    z-index: 2;
-    width: 196px;
-    padding: 8px;
-    border-radius: 18px;
+.jlg-shell .project-picker-row-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: flex-end;
+}
+
+.jlg-shell .project-picker-row-copy .project-picker-row-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 0;
+    color: #6f7680;
+    font-size: 12px;
+    font-weight: 700;
 }
 
 .jlg-shell .project-picker-row-status,
@@ -2651,7 +2767,22 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
 .jlg-shell .results-scroll-panel {
     flex: 1;
     overflow-y: auto;
-    padding: 0 var(--gap-sm) var(--gap-md) 6px;
+    padding: 0 var(--gap-sm) var(--gap-md) 0px;
+    scrollbar-color: var(--scrollbar-thumb) var(--results-scrollbar-track);
+    scrollbar-width: thin;
+}
+
+.jlg-shell .results-scroll-panel::-webkit-scrollbar-track {
+    background: var(--results-scrollbar-track);
+    border-radius: 999px;
+}
+
+.jlg-shell .results-scroll-panel::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+}
+
+.jlg-shell .results-scroll-panel::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
 }
 
 .jlg-shell .results-panel-shell {
@@ -2736,7 +2867,7 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
     flex-direction: column;
     gap: var(--gap-md);
     margin-bottom: var(--gap-md);
-    padding: 8px var(--gap-sm) var(--gap-md);
+    padding: 0px var(--gap-sm) var(--gap-md);
     border-bottom: 1px solid var(--border-color);
 }
 
@@ -2752,10 +2883,10 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
 
 .pie-chart-container {
     position: relative;
-    width: 120px;
+    width: 150px;
     height: 120px;
     flex-shrink: 0;
-    margin: 0 auto;
+    margin: 10px;
 }
 
 .pie-chart-svg {
@@ -2802,7 +2933,7 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
     justify-content: center;
     gap: 6px;
     padding-left: 12px;
-    flex: 1;
+    flex: 0 0 auto;
     border-left: 1px solid var(--border-color);
     margin-left: 12px;
 }
@@ -2899,7 +3030,8 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
     border-radius: 5px;
     display: flex;
     overflow: hidden;
-    background: var(--bg-hover);
+    background: var(--occupancy-track-bg);
+    box-shadow: inset 0 0 0 1px var(--occupancy-track-outline);
 }
 
 .occupancy-bar-segment {
@@ -2946,17 +3078,17 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
 
 .results-details.tier-section-1 {
     border-left-color: var(--accent-blue);
-    background: rgba(35, 35, 35, 0.04);
+    background: var(--tier-1-surface);
 }
 
 .results-details.tier-section-2 {
     border-left-color: var(--accent-cyan);
-    background: rgba(111, 117, 110, 0.06);
+    background: var(--tier-2-surface);
 }
 
 .results-details.tier-section-3 {
     border-left-color: var(--accent-purple);
-    background: rgba(158, 166, 157, 0.12);
+    background: var(--tier-3-surface);
 }
 
 .results-details .section-header {
@@ -3047,7 +3179,7 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
 .egress-bar-compact {
     height: 8px;
     width: 100%;
-    background: #e2e8f0;
+    background: var(--egress-track-bg);
     border-radius: 4px;
     overflow: hidden;
     display: flex;
@@ -3203,13 +3335,17 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
     font-size: 9.5px;
     font-weight: 700;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 4px;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.35;
 }
 
 .tier-metrics-warning svg {
     color: #f59e0b;
+    flex: 0 0 auto;
 }
 
 .results-details--supporting {
@@ -3356,10 +3492,22 @@ html[data-theme="dark"] {
     --border-light: #354253;
     --border-focus: #8fcf33;
     --primary-color: #8fcf33;
+    --accent-blue: #93b5e8;
+    --accent-cyan: #7ec6af;
+    --accent-purple: #c2addf;
     --text-primary: #e8edf2;
     --text-secondary: #b7c1cc;
     --text-tertiary: #a2afbd;
     --text-muted: #8d98a8;
+    --scrollbar-thumb: #536981;
+    --scrollbar-thumb-hover: #6b84a1;
+    --results-scrollbar-track: rgba(232, 237, 242, 0.08);
+    --occupancy-track-bg: #263446;
+    --occupancy-track-outline: rgba(232, 237, 242, 0.08);
+    --egress-track-bg: #243142;
+    --tier-1-surface: rgba(147, 181, 232, 0.16);
+    --tier-2-surface: rgba(126, 198, 175, 0.16);
+    --tier-3-surface: rgba(194, 173, 223, 0.18);
     --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.22);
     --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.32), 0 2px 6px rgba(0, 0, 0, 0.22);
     --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.38), 0 4px 10px rgba(0, 0, 0, 0.24);
@@ -3371,11 +3519,11 @@ html[data-theme="dark"] body.jlg-shell {
 }
 
 html[data-theme="dark"] *::-webkit-scrollbar-thumb {
-    background: #394758;
+    background: var(--scrollbar-thumb);
 }
 
 html[data-theme="dark"] *::-webkit-scrollbar-thumb:hover {
-    background: #4b5d73;
+    background: var(--scrollbar-thumb-hover);
 }
 
 /* Dark Theme: Left Panel Utilities */
@@ -3478,8 +3626,7 @@ html[data-theme="dark"] .jlg-shell .editor-toolbar-icon-btn,
 html[data-theme="dark"] .jlg-shell .project-option-trigger,
 html[data-theme="dark"] .jlg-shell .project-name-edit-btn,
 html[data-theme="dark"] .jlg-shell .project-option-manager-close-btn,
-html[data-theme="dark"] .jlg-shell .project-picker-close-btn,
-html[data-theme="dark"] .jlg-shell .project-picker-row-menu-trigger {
+html[data-theme="dark"] .jlg-shell .project-picker-close-btn {
     color: #a7b2c1;
 }
 
@@ -3487,8 +3634,7 @@ html[data-theme="dark"] .jlg-shell .editor-toolbar-icon-btn:hover,
 html[data-theme="dark"] .jlg-shell .project-option-trigger:hover,
 html[data-theme="dark"] .jlg-shell .project-name-edit-btn:hover,
 html[data-theme="dark"] .jlg-shell .project-option-manager-close-btn:hover,
-html[data-theme="dark"] .jlg-shell .project-picker-close-btn:hover,
-html[data-theme="dark"] .jlg-shell .project-picker-row-menu-trigger:hover {
+html[data-theme="dark"] .jlg-shell .project-picker-close-btn:hover {
     background: #1a2330;
     color: #edf2f7;
 }
@@ -3556,8 +3702,7 @@ html[data-theme="dark"] .jlg-shell .project-menu-panel,
 html[data-theme="dark"] .jlg-shell .project-menu-submenu-panel,
 html[data-theme="dark"] .jlg-shell .project-option-menu,
 html[data-theme="dark"] .jlg-shell .project-option-manager-dialog,
-html[data-theme="dark"] .jlg-shell .project-picker-dialog,
-html[data-theme="dark"] .jlg-shell .project-picker-row-menu {
+html[data-theme="dark"] .jlg-shell .project-picker-dialog {
     background: rgba(14, 20, 27, 0.98);
     border-color: #2b3542;
 }
@@ -3566,15 +3711,14 @@ html[data-theme="dark"] .jlg-shell .project-menu-item,
 html[data-theme="dark"] .jlg-shell .project-option-item,
 html[data-theme="dark"] .jlg-shell .project-option-manager-main,
 html[data-theme="dark"] .jlg-shell .project-option-manager-icon-btn,
-html[data-theme="dark"] .jlg-shell .project-picker-row-menu-item {
+html[data-theme="dark"] .jlg-shell .project-picker-delete-selected-btn {
     color: #e8edf2;
 }
 
 html[data-theme="dark"] .jlg-shell .project-menu-item:hover,
 html[data-theme="dark"] .jlg-shell .project-option-item:hover,
 html[data-theme="dark"] .jlg-shell .project-option-manager-main:hover,
-html[data-theme="dark"] .jlg-shell .project-option-manager-icon-btn:hover,
-html[data-theme="dark"] .jlg-shell .project-picker-row-menu-item:hover {
+html[data-theme="dark"] .jlg-shell .project-option-manager-icon-btn:hover {
     background: #1a2330;
 }
 
@@ -3586,13 +3730,18 @@ html[data-theme="dark"] .jlg-shell .project-picker-row {
     border-color: #2b3542;
 }
 
+html[data-theme="dark"] .jlg-shell .project-picker-row-selected {
+    background: rgba(122, 174, 26, 0.12);
+}
+
 html[data-theme="dark"] .jlg-shell .editor-project-meta,
 html[data-theme="dark"] .jlg-shell .project-picker-table-head,
 html[data-theme="dark"] .jlg-shell .project-picker-row-sport,
 html[data-theme="dark"] .jlg-shell .project-picker-row-updated,
 html[data-theme="dark"] .jlg-shell .project-picker-row-status,
 html[data-theme="dark"] .jlg-shell .project-picker-empty,
-html[data-theme="dark"] .jlg-shell .project-option-manager-empty {
+html[data-theme="dark"] .jlg-shell .project-option-manager-empty,
+html[data-theme="dark"] .jlg-shell .project-picker-selection-summary {
     color: #a7b2c1;
 }
 
@@ -3600,6 +3749,44 @@ html[data-theme="dark"] .jlg-shell .project-picker-header h2,
 html[data-theme="dark"] .jlg-shell .project-option-manager-header h2,
 html[data-theme="dark"] .jlg-shell .project-picker-row-name {
     color: #edf2f7;
+}
+
+html[data-theme="dark"] .jlg-shell .project-picker-row-checkbox-ui {
+    border-color: #506073;
+    background: #111822;
+}
+
+html[data-theme="dark"] .jlg-shell .project-picker-row-checkbox:checked + .project-picker-row-checkbox-ui {
+    border-color: #7aae1a;
+    background: #7aae1a;
+    box-shadow: inset 0 0 0 4px #111822;
+}
+
+html[data-theme="dark"] .jlg-shell .project-picker-row-checkbox:disabled + .project-picker-row-checkbox-ui {
+    border-color: #2f3947;
+    background: #18202b;
+    box-shadow: none;
+}
+
+html[data-theme="dark"] .jlg-shell .project-picker-row-name-input {
+    background: #151d27;
+    border-color: #324050;
+    color: #edf2f7;
+}
+
+html[data-theme="dark"] .jlg-shell .project-picker-row-badge {
+    background: rgba(122, 174, 26, 0.16);
+    color: #cfe89a;
+}
+
+html[data-theme="dark"] .jlg-shell .project-picker-delete-selected-btn {
+    border-color: rgba(255, 137, 122, 0.24);
+    background: rgba(117, 27, 20, 0.36);
+}
+
+html[data-theme="dark"] .jlg-shell .project-picker-delete-selected-btn:hover {
+    background: rgba(138, 33, 24, 0.48);
+    border-color: rgba(255, 137, 122, 0.34);
 }
 
 
@@ -3772,7 +3959,7 @@ html[data-theme="dark"] .jlg-shell .cam-bookmark-btn.cam-bookmark-primary {
 }
 
 html[data-theme="dark"] .egress-bar-compact {
-    background: #253142;
+    background: var(--egress-track-bg);
 }
 
 html[data-theme="dark"] .cam-bookmark-dropdown {
@@ -3868,12 +4055,24 @@ html[data-theme="dark"] .jlg-shell .section-body {
     background: var(--bg-panel);
 }
 
+html[data-theme="dark"] .jlg-shell #fieldSetupSection .section-body {
+    background: linear-gradient(180deg, rgba(141, 152, 168, 0.16), rgba(18, 24, 33, 0));
+}
+
+html[data-theme="dark"] .jlg-shell #occupancySection .section-body {
+    background: linear-gradient(180deg, rgba(141, 152, 168, 0.16), rgba(18, 24, 33, 0));
+}
+
+html[data-theme="dark"] .jlg-shell #bowlConfigSection .section-body {
+    background: linear-gradient(180deg, rgba(141, 152, 168, 0.16), rgba(18, 24, 33, 0));
+}
+
 html[data-theme="dark"] .jlg-shell .tier-section-1 .section-body {
-    background: linear-gradient(180deg, rgba(143, 207, 51, 0.08), rgba(18, 24, 33, 0));
+    background: linear-gradient(180deg, rgba(141, 152, 168, 0.16), rgba(18, 24, 33, 0));
 }
 
 html[data-theme="dark"] .jlg-shell .tier-section-2 .section-body {
-    background: linear-gradient(180deg, rgba(55, 153, 110, 0.12), rgba(18, 24, 33, 0));
+    background: linear-gradient(180deg, rgba(141, 152, 168, 0.16), rgba(18, 24, 33, 0));
 }
 
 html[data-theme="dark"] .jlg-shell .tier-section-3 .section-body {
@@ -3958,15 +4157,15 @@ html[data-theme="dark"] .jlg-shell .control-section.stats-panel.results-panel-sh
 }
 
 html[data-theme="dark"] .jlg-shell .results-details.tier-section-1 {
-    background: rgba(143, 207, 51, 0.08);
+    background: var(--tier-1-surface);
 }
 
 html[data-theme="dark"] .jlg-shell .results-details.tier-section-2 {
-    background: rgba(55, 153, 110, 0.12);
+    background: var(--tier-2-surface);
 }
 
 html[data-theme="dark"] .jlg-shell .results-details.tier-section-3 {
-    background: rgba(141, 152, 168, 0.16);
+    background: var(--tier-3-surface);
 }
 
 html[data-theme="dark"] .jlg-shell .camera-bookmarks-bar {
@@ -4121,6 +4320,21 @@ html[data-theme="dark"] .jlg-shell .cam-bookmarks-header {
         align-items: stretch;
     }
 
+    .jlg-shell .project-picker-toolbar-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .jlg-shell .project-picker-selection-summary {
+        white-space: normal;
+    }
+
+    .jlg-shell .project-picker-delete-selected-btn,
+    .jlg-shell .project-picker-create-btn {
+        width: 100%;
+        justify-content: center;
+    }
+
     .jlg-shell .project-option-manager-row {
         grid-template-columns: minmax(0, 1fr);
         gap: 12px;
@@ -4148,7 +4362,7 @@ html[data-theme="dark"] .jlg-shell .cam-bookmarks-header {
 
     .jlg-shell .project-picker-table-head,
     .jlg-shell .project-picker-row {
-        grid-template-columns: minmax(0, 1fr) 132px 44px;
+        grid-template-columns: 32px minmax(0, 1fr) 132px auto;
     }
 
     .jlg-shell .view-tabs-note {

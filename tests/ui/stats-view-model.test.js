@@ -44,9 +44,16 @@ function createMetrics(overrides = {}) {
         minimumWidth: '36.0',
         maximumWidth: '72.0',
         governingWidth: '48.0',
+        legalMaxOccupantsPerAisle: 360,
         mirroredSideRuns: 1,
         blocksAddedForEgress: 0,
         converged: true,
+        failureReason: null,
+        invalidTopologyPaths: [],
+        invalidTopologyRowIndices: [],
+        seatCapCompliant: true,
+        egressCapCompliant: true,
+        renderedWidthCompliant: true,
         ...overrides
     };
 }
@@ -184,24 +191,107 @@ describe('buildStatsViewModel', () => {
         });
     });
 
-    test('surfaces forced-width and non-converged warning states', () => {
+    test('surfaces forced-width and stability-only warning states together', () => {
         const forcedWidthViewModel = buildStatsDto({
             solvers: [createSolver()],
             focalPointFt: { x: 0, z: 0 },
             bowlConfig: { type: 'Full' },
-            egressParams: { egressFactor: 0.2 },
-            tierMetricsByIndex: new Map([[0, createMetrics({ blocksAddedForEgress: 2 })]])
+            egressParams: { egressFactor: 0.2, seatsBetweenAisles: 20 },
+            tierMetricsByIndex: new Map([[0, createMetrics({
+                blocksAddedForEgress: 2,
+                converged: false
+            })]])
         });
-        const nonConvergedViewModel = buildStatsDto({
+
+        expect(forcedWidthViewModel.tiers[0].egress.warningText).toContain('Limit Forced');
+        expect(forcedWidthViewModel.tiers[0].egress.warningText).toContain('did not fully stabilize');
+    });
+
+    test('reports seat-cap infeasibility in plain English', () => {
+        const viewModel = buildStatsDto({
+            solvers: [createSolver()],
+            focalPointFt: { x: 0, z: 0 },
+            bowlConfig: { type: 'Full' },
+            egressParams: { egressFactor: 0.2, seatsBetweenAisles: 30 },
+            tierMetricsByIndex: new Map([[0, createMetrics({
+                converged: false,
+                failureReason: 'seat_cap_stagnated',
+                seatCapCompliant: false,
+                maxSeatsPerSectionRow: 33
+            })]])
+        });
+
+        expect(viewModel.tiers[0].egress.warningText).toContain('Layout is infeasible: max seats per row section is 33');
+        expect(viewModel.tiers[0].egress.warningText).toContain('30-seat limit');
+    });
+
+    test('reports egress-cap infeasibility in plain English', () => {
+        const viewModel = buildStatsDto({
             solvers: [createSolver()],
             focalPointFt: { x: 0, z: 0 },
             bowlConfig: { type: 'Full' },
             egressParams: { egressFactor: 0.2 },
-            tierMetricsByIndex: new Map([[0, createMetrics({ converged: false })]])
+            tierMetricsByIndex: new Map([[0, createMetrics({
+                converged: false,
+                failureReason: 'egress_cap_stagnated',
+                egressCapCompliant: false,
+                occupantsPerAisleLine: 402,
+                legalMaxOccupantsPerAisle: 360,
+                maximumWidth: '72.0'
+            })]])
         });
 
-        expect(forcedWidthViewModel.tiers[0].egress.warningText).toContain('Limit Forced');
-        expect(nonConvergedViewModel.tiers[0].egress.warningText).toContain('did not converge');
+        expect(viewModel.tiers[0].egress.warningText).toContain('Layout is infeasible: max aisle load is 402 occ');
+        expect(viewModel.tiers[0].egress.warningText).toContain('360 occ limit');
+        expect(viewModel.tiers[0].egress.warningText).toContain('72.0" max aisle width');
+    });
+
+    test('reports topology and measurement geometry diagnostics', () => {
+        const topologyViewModel = buildStatsDto({
+            solvers: [createSolver()],
+            focalPointFt: { x: 0, z: 0 },
+            bowlConfig: { type: 'Full' },
+            egressParams: { egressFactor: 0.2 },
+            tierMetricsByIndex: new Map([[0, createMetrics({
+                converged: false,
+                failureReason: 'invalid_topology',
+                invalidTopologyRowIndices: [0, 2],
+                invalidTopologyPaths: [1]
+            })]])
+        });
+        const measurementViewModel = buildStatsDto({
+            solvers: [createSolver()],
+            focalPointFt: { x: 0, z: 0 },
+            bowlConfig: { type: 'Full' },
+            egressParams: { egressFactor: 0.2 },
+            tierMetricsByIndex: new Map([[0, createMetrics({
+                converged: false,
+                failureReason: 'invalid_measurement'
+            })]])
+        });
+
+        expect(topologyViewModel.tiers[0].egress.warningText).toContain('Layout could not be resolved against the current tier geometry.');
+        expect(topologyViewModel.tiers[0].egress.warningText).toContain('Affected rows 1, 3; paths 2.');
+        expect(measurementViewModel.tiers[0].egress.warningText).toContain('Layout could not be measured reliably against the current tier geometry.');
+    });
+
+    test('uses a neutral stability warning when non-convergence remains compliant', () => {
+        const viewModel = buildStatsDto({
+            solvers: [createSolver()],
+            focalPointFt: { x: 0, z: 0 },
+            bowlConfig: { type: 'Full' },
+            egressParams: { egressFactor: 0.2 },
+            tierMetricsByIndex: new Map([[0, createMetrics({
+                converged: false,
+                failureReason: 'grouped_open_stagnated',
+                seatCapCompliant: true,
+                egressCapCompliant: true,
+                renderedWidthCompliant: true
+            })]])
+        });
+
+        expect(viewModel.tiers[0].egress.warningText).toContain('Layout did not fully stabilize');
+        expect(viewModel.tiers[0].egress.warningText).not.toContain('Layout is infeasible');
     });
 
     test('keeps estimated egress values separate from final realized metrics', () => {

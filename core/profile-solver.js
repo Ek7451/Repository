@@ -443,6 +443,17 @@ function buildLegacyMetricsFromLayout({ solver, layout, egressParams }) {
         blocksAddedForEgress: 0,
         converged: summary.converged !== false,
         mirroredSideRuns: mirrorRuns,
+        failureReason: summary?.failureReason || null,
+        topologyValid: summary?.topologyValid,
+        measurementValid: summary?.measurementValid,
+        layoutSolveConverged: summary?.layoutSolveConverged,
+        renderedWidthSolveConverged: summary?.renderedWidthSolveConverged,
+        invalidTopologyPaths: Array.isArray(summary?.invalidTopologyPaths)
+            ? summary.invalidTopologyPaths.slice()
+            : [],
+        invalidTopologyRowIndices: Array.isArray(summary?.invalidTopologyRowIndices)
+            ? summary.invalidTopologyRowIndices.slice()
+            : [],
         seatCapCompliant: summary?.compliance?.seatCapCompliant,
         egressCapCompliant: summary?.compliance?.egressCapCompliant,
         renderedWidthCompliant: summary?.compliance?.renderedWidthCompliant

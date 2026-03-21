@@ -791,7 +791,6 @@ export function buildProfileRenderOptions(state, structuralDepth = 0) {
         structuralDepth: Number(structuralDepth) || 0,
         structuralProfileMode: normalizeStructuralProfileMode(state?.bowl?.structuralProfileMode),
         showSightlines,
-        showCLabels: showSightlines,
         tierRowCountControls: buildTierRowCountControlConfigs(state)
     };
 }

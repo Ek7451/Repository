@@ -5,27 +5,50 @@ import { buildStructuralProfileGeometry } from '../../core/profile-solver.js';
 import { ProfileRenderer } from '../../viz/profile-renderer.js';
 
 function createCanvasStub(context = {}) {
+    const listeners = new Map();
     return /** @type {HTMLCanvasElement} */ (/** @type {unknown} */ ({
         style: {},
         width: 800,
         height: 600,
         getContext: vi.fn(() => context),
-        addEventListener: vi.fn(),
+        addEventListener: vi.fn((eventName, handler) => {
+            listeners.set(eventName, handler);
+        }),
         getBoundingClientRect: vi.fn(() => ({
             left: 0,
             top: 0
         })),
         setPointerCapture: vi.fn(),
-        releasePointerCapture: vi.fn()
+        releasePointerCapture: vi.fn(),
+        dispatch(eventName, event = {}) {
+            const handler = listeners.get(eventName);
+            if (typeof handler !== 'function') {
+                throw new Error(`No listener registered for ${eventName}`);
+            }
+
+            const dispatchedEvent = {
+                button: 0,
+                pointerId: 1,
+                clientX: 0,
+                clientY: 0,
+                preventDefault: vi.fn(),
+                ...event
+            };
+            handler(dispatchedEvent);
+            return dispatchedEvent;
+        }
     }));
 }
 
 function createRecordingContext() {
     let pathIndex = -1;
     const operations = [];
-
-    return {
+    const context = {
         operations,
+        fillStyle: null,
+        strokeStyle: null,
+        lineWidth: 1,
+        globalAlpha: 1,
         save: vi.fn(),
         restore: vi.fn(),
         beginPath: vi.fn(() => {
@@ -34,11 +57,33 @@ function createRecordingContext() {
         }),
         moveTo: vi.fn((x, y) => operations.push({ type: 'moveTo', pathIndex, x, y })),
         lineTo: vi.fn((x, y) => operations.push({ type: 'lineTo', pathIndex, x, y })),
+        arc: vi.fn((x, y, radius, startAngle, endAngle) => operations.push({
+            type: 'arc',
+            pathIndex,
+            x,
+            y,
+            radius,
+            startAngle,
+            endAngle
+        })),
         closePath: vi.fn(() => operations.push({ type: 'closePath', pathIndex })),
-        fill: vi.fn(),
-        stroke: vi.fn(),
-        setLineDash: vi.fn()
+        fill: vi.fn(() => operations.push({
+            type: 'fill',
+            pathIndex,
+            fillStyle: context.fillStyle,
+            globalAlpha: context.globalAlpha
+        })),
+        stroke: vi.fn(() => operations.push({
+            type: 'stroke',
+            pathIndex,
+            strokeStyle: context.strokeStyle,
+            lineWidth: context.lineWidth,
+            globalAlpha: context.globalAlpha
+        })),
+        setLineDash: vi.fn((segments) => operations.push({ type: 'setLineDash', pathIndex, segments }))
     };
+
+    return context;
 }
 
 function createTier(overrides = {}) {
@@ -162,7 +207,10 @@ describe('ProfileRenderer drag snapping helpers', () => {
             tierIdx: 1
         });
 
-        const riserPath = ctx.operations.filter((operation) => operation.pathIndex === 4);
+        const riserPath = ctx.operations.filter((operation) => (
+            operation.pathIndex === 4 &&
+            ['beginPath', 'moveTo', 'lineTo'].includes(operation.type)
+        ));
 
         expect(riserPath).toEqual([
             { type: 'beginPath', pathIndex: 4 },
@@ -195,6 +243,149 @@ describe('ProfileRenderer drag snapping helpers', () => {
             numRows: 4
         });
         expect(target?.candidates.map((candidate) => candidate.numRows)).toEqual([3, 4, 5, 6]);
+
+        const expandedHitTarget = renderer._findTierRowCountHandleTarget(
+            (handlePoint.x * renderer._pxPerFoot) + 16,
+            -handlePoint.z * renderer._pxPerFoot
+        );
+        expect(expandedHitTarget).toMatchObject({
+            tierIndex: 0,
+            numRows: 4
+        });
+    });
+
+    it('builds the move handle at the first-row base front point', () => {
+        const renderer = new ProfileRenderer(createCanvasStub(), {});
+        const [solver] = buildActiveTierSolvers([
+            createTier({ firstRowDist: 48, firstRowElev: 5, numRows: 4 })
+        ], { x: 0, z: 0 });
+
+        const tierState = renderer._buildTierRenderState(solver, 0);
+
+        expect(tierState?.positionHandlePoint).toEqual({
+            x: solver.rows[0].x - solver.treadDepthFt,
+            z: 0
+        });
+    });
+
+    it('finds the move handle only at the first-row base front point', () => {
+        const renderer = new ProfileRenderer(createCanvasStub(), {});
+        const [solver] = buildActiveTierSolvers([
+            createTier({ numRows: 4 })
+        ], { x: 0, z: 0 });
+
+        renderer._pxPerFoot = 10;
+        renderer._offsetX = 0;
+        renderer._offsetY = 0;
+        renderer._lastTierRenderState = [
+            renderer._buildTierRenderState(solver, 0, { min: 3, max: 6, step: 1 })
+        ].filter(Boolean);
+
+        const tierState = renderer._lastTierRenderState[0];
+        const handlePoint = tierState.positionHandlePoint;
+        const handleTarget = renderer._findTierPositionHandleTarget(
+            handlePoint.x * renderer._pxPerFoot,
+            -handlePoint.z * renderer._pxPerFoot
+        );
+
+        expect(handleTarget).toMatchObject({
+            tierIndex: 0,
+            firstRowDist: tierState.firstRowDist,
+            firstRowElev: tierState.firstRowElev,
+            handlePoint
+        });
+
+        const expandedHitTarget = renderer._findTierPositionHandleTarget(
+            (handlePoint.x * renderer._pxPerFoot) + 16,
+            -handlePoint.z * renderer._pxPerFoot
+        );
+        expect(expandedHitTarget).toMatchObject({
+            tierIndex: 0,
+            firstRowDist: tierState.firstRowDist,
+            firstRowElev: tierState.firstRowElev,
+            handlePoint
+        });
+
+        const interiorPoint = {
+            x: (tierState.bounds.minX + tierState.bounds.maxX) / 2,
+            z: (tierState.bounds.minZ + tierState.bounds.maxZ) / 2
+        };
+        expect(renderer._findTierPositionHandleTarget(
+            interiorPoint.x * renderer._pxPerFoot,
+            -interiorPoint.z * renderer._pxPerFoot
+        )).toBeNull();
+    });
+
+    it('starts position drag only from the bottom move handle and preserves top handle row-count dragging', () => {
+        const canvas = /** @type {any} */ (createCanvasStub());
+        const renderer = new ProfileRenderer(canvas, {
+            onTierPositionChanged: vi.fn(),
+            onTierRowCountChanged: vi.fn()
+        });
+        const [solver] = buildActiveTierSolvers([
+            createTier({ numRows: 4 })
+        ], { x: 0, z: 0 });
+
+        renderer._pxPerFoot = 10;
+        renderer._offsetX = 0;
+        renderer._offsetY = 0;
+        renderer._lastTierRenderState = [
+            renderer._buildTierRenderState(solver, 0, { min: 3, max: 6, step: 1 })
+        ].filter(Boolean);
+
+        const tierState = renderer._lastTierRenderState[0];
+        const interiorEvent = canvas.dispatch('pointerdown', {
+            pointerId: 6,
+            clientX: ((tierState.bounds.minX + tierState.bounds.maxX) / 2) * renderer._pxPerFoot,
+            clientY: -((tierState.bounds.minZ + tierState.bounds.maxZ) / 2) * renderer._pxPerFoot
+        });
+
+        expect(renderer._dragState).toBeNull();
+        expect(canvas.setPointerCapture).not.toHaveBeenCalled();
+        expect(interiorEvent.preventDefault).not.toHaveBeenCalled();
+
+        const moveHandleEvent = canvas.dispatch('pointerdown', {
+            pointerId: 7,
+            clientX: tierState.positionHandlePoint.x * renderer._pxPerFoot,
+            clientY: -tierState.positionHandlePoint.z * renderer._pxPerFoot
+        });
+
+        expect(renderer._dragState?.mode).toBe('position');
+        expect(renderer._dragState?.tierIndex).toBe(tierState.tierIndex);
+        expect(canvas.setPointerCapture).toHaveBeenCalledWith(7);
+        expect(moveHandleEvent.preventDefault).toHaveBeenCalled();
+
+        renderer._dragState = null;
+        /** @type {any} */ (canvas.setPointerCapture).mockClear();
+        const rowCountEvent = canvas.dispatch('pointerdown', {
+            pointerId: 8,
+            clientX: tierState.rowCountHandlePoint.x * renderer._pxPerFoot,
+            clientY: -tierState.rowCountHandlePoint.z * renderer._pxPerFoot
+        });
+
+        expect(renderer._dragState?.mode).toBe('rowCount');
+        expect(renderer._dragState?.tierIndex).toBe(tierState.tierIndex);
+        expect(canvas.setPointerCapture).toHaveBeenCalledWith(8);
+        expect(rowCountEvent.preventDefault).toHaveBeenCalled();
+    });
+
+    it('draws the move handle as a solid white circle', () => {
+        const ctx = createRecordingContext();
+        const renderer = new ProfileRenderer(createCanvasStub(ctx), {});
+
+        renderer._drawTierPositionHandle(ctx, { sx: 12, sy: 18 }, 0);
+
+        const fillOperation = ctx.operations.find((operation) => operation.type === 'fill');
+        const strokeOperation = ctx.operations.find((operation) => operation.type === 'stroke');
+
+        expect(fillOperation).toMatchObject({
+            type: 'fill',
+            fillStyle: '#ffffff'
+        });
+        expect(strokeOperation).toMatchObject({
+            type: 'stroke',
+            strokeStyle: renderer._getTierColors(0).stroke
+        });
     });
 
     it('resolves row-count drags to the nearest candidate and emits only changed row counts', () => {

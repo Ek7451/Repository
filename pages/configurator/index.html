@@ -147,7 +147,7 @@
                             <label>Max Seats/Row</label>
                             <input type="range" id="seatsBetweenAislesSlider" min="10" max="40" step="1" value="20">
                             <input type="number" id="seatsBetweenAislesInput" min="10" max="40" step="1" value="20">
-                            <span class="unit"></span>
+                            <span class="unit">qty</span>
                             <span class="info-icon"
                                 data-tooltip="Max contiguous seats between aisles. Evaluated against the average tier length for aggregate baseline feasibility and block counts.">ⓘ</span>
                         </div>
@@ -156,7 +156,7 @@
                             <label>Egress Factor</label>
                             <input type="range" id="egressFactorSlider" min="0.1" max="0.5" step="0.01" value="0.2">
                             <input type="number" id="egressFactorInput" min="0.1" max="1.0" step="0.01" value="0.2">
-                            <span class="unit"></span>
+                            <span class="unit">in/occ</span>
                             <span class="info-icon"
                                 data-tooltip-template="egressFactorTooltipTemplate">ⓘ</span>
                         </div>
@@ -218,6 +218,7 @@
                                     <option value="stepped" selected>Stepped</option>
                                     <option value="sloped">Sloped</option>
                                 </select>
+                                <span class="unit"></span>
                                 <span class="info-icon"
                                     data-tooltip="Stepped follows each tread/riser offset. Sloped uses a straight underside between the front and rear structural limits.">ⓘ</span>
                             </div>
@@ -227,6 +228,9 @@
                                     <option value="radial" selected>Radial</option>
                                     <option value="perpendicular">Perpendicular</option>
                                 </select>
+                                <span class="info-icon"
+                                    data-tooltip="Radial points the aisle toward the venue center. Perpendicular keeps the aisle square to the straight section.">ⓘ</span>
+                                <span class="unit"></span>
                             </div>
                             <div class="control-row">
                                 <label>Chamfer Aisle Layout</label>
@@ -234,6 +238,9 @@
                                     <option value="radial" selected>Radial</option>
                                     <option value="perpendicular">Perpendicular</option>
                                 </select>
+                                <span class="info-icon"
+                                    data-tooltip="Radial points the aisle toward the venue center through the corner. Perpendicular keeps the aisle square to the chamfered corner face.">ⓘ</span>
+                                <span class="unit"></span>
                             </div>
                         </div>
                     </div>
@@ -270,7 +277,7 @@
                             <label>Number of Rows</label>
                             <input type="range" id="numRowsSlider" min="3" max="80" step="1" value="30">
                             <input type="number" id="numRowsInput" min="3" max="80" step="1" value="30">
-                            <span class="unit"></span>
+                            <span class="unit">qty</span>
                             <span class="info-icon"
                                 data-tooltip="15–20: lower bowl, 20–30: full tier, 40+: consider tier breaks">ⓘ</span>
                         </div>
@@ -362,7 +369,7 @@
                             <label>Rows</label>
                             <input type="range" id="t2NumRowsSlider" min="3" max="60" step="1" value="15">
                             <input type="number" id="t2NumRowsInput" min="3" max="60" step="1" value="15">
-                            <span class="unit"></span>
+                            <span class="unit">qty</span>
                             <span class="info-icon" data-tooltip="Number of rows in this tier">ⓘ</span>
                         </div>
 
@@ -448,7 +455,7 @@
                             <label>Rows</label>
                             <input type="range" id="t3NumRowsSlider" min="3" max="60" step="1" value="10">
                             <input type="number" id="t3NumRowsInput" min="3" max="60" step="1" value="10">
-                            <span class="unit"></span>
+                            <span class="unit">qty</span>
                             <span class="info-icon" data-tooltip="Number of rows in this tier">ⓘ</span>
                         </div>
 
@@ -879,11 +886,16 @@
                         <span class="sr-only">Search projects</span>
                         <input id="projectPickerSearchInput" type="search" placeholder="Search projects">
                     </label>
-                    <button id="projectPickerCreateBtn" class="project-picker-create-btn" type="button">New project</button>
+                    <div class="project-picker-toolbar-actions">
+                        <p id="projectPickerSelectionSummary" class="project-picker-selection-summary" hidden></p>
+                        <button id="projectPickerDeleteSelectedBtn" class="project-picker-delete-selected-btn" type="button">Delete selected</button>
+                        <button id="projectPickerCreateBtn" class="project-picker-create-btn" type="button">New project</button>
+                    </div>
                 </div>
                 <p id="projectPickerError" class="project-picker-error" hidden></p>
                 <div class="project-picker-table">
                     <div class="project-picker-table-head" aria-hidden="true">
+                        <span></span>
                         <span>Name</span>
                         <span>Last updated</span>
                         <span></span>

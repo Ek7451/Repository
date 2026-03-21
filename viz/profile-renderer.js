@@ -95,11 +95,12 @@ function syncProfileThemeColors(theme = 'light') {
 const PROFILE_X_AXIS_LABEL_Y_OFFSET_PX = 96; // keep bottom scale clear of profile overlay toggle
 const PROFILE_ZERO_LINE_WORLD_Z_OFFSET_FT = 0;
 const TIER_DRAG_PICK_DISTANCE_PX = 18;
-const TIER_DRAG_PICK_PADDING_PX = 10;
 const TIER_DRAG_SNAP_TOLERANCE_PX = 12;
 const TIER_DRAG_GUIDE_POINT_RADIUS_PX = 4;
 const TIER_ROW_COUNT_HANDLE_RADIUS_PX = 6;
-const TIER_ROW_COUNT_HANDLE_PICK_DISTANCE_PX = 12;
+const TIER_ROW_COUNT_HANDLE_PICK_DISTANCE_PX = 20;
+const TIER_POSITION_HANDLE_RADIUS_PX = 6;
+const TIER_POSITION_HANDLE_PICK_DISTANCE_PX = 20;
 
 function getTierBaseZ(solver, tierIndex = 0) {
     if (!solver?.rows?.length) return 0;
@@ -175,6 +176,7 @@ export class ProfileRenderer {
         this._dragState = null;
         this._hoveredTierIndex = null;
         this._hoveredTierHandleIndex = null;
+        this._hoveredTierHandleKind = null;
 
         this._setupInteraction();
         syncProfileThemeColors(this._theme);
@@ -243,6 +245,7 @@ export class ProfileRenderer {
             this._isPanning = false;
             this._hoveredTierIndex = null;
             this._hoveredTierHandleIndex = null;
+            this._hoveredTierHandleKind = null;
             if (!this._dragState) {
                 this.canvas.style.cursor = 'default';
             }
@@ -331,6 +334,7 @@ export class ProfileRenderer {
                 this.hoveredRow = -1;
                 this._hoveredTierIndex = rowCountHandleTarget.tierIndex;
                 this._hoveredTierHandleIndex = rowCountHandleTarget.tierIndex;
+                this._hoveredTierHandleKind = 'rowCount';
                 this.canvas.style.cursor = 'row-resize';
                 this.canvas.setPointerCapture?.(e.pointerId);
                 e.preventDefault();
@@ -338,7 +342,7 @@ export class ProfileRenderer {
                 return;
             }
 
-            const tierTarget = this._findTierDragTarget(mx, my);
+            const tierTarget = this._findTierPositionHandleTarget(mx, my);
             if (!tierTarget) return;
 
             this._dragState = {
@@ -358,6 +362,9 @@ export class ProfileRenderer {
                 }
             };
             this.hoveredRow = -1;
+            this._hoveredTierIndex = tierTarget.tierIndex;
+            this._hoveredTierHandleIndex = tierTarget.tierIndex;
+            this._hoveredTierHandleKind = 'position';
             this.canvas.style.cursor = 'grabbing';
             this.canvas.setPointerCapture?.(e.pointerId);
             e.preventDefault();
@@ -453,19 +460,28 @@ export class ProfileRenderer {
 
     _updateInteractionTargets(mx, my) {
         const handleTarget = this._findTierRowCountHandleTarget(mx, my);
-        const tierTarget = handleTarget ? null : this._findTierDragTarget(mx, my);
-        const nextHoveredTierIndex = handleTarget?.tierIndex ?? tierTarget?.tierIndex ?? null;
-        const nextHoveredTierHandleIndex = handleTarget?.tierIndex ?? null;
+        const positionHandleTarget = handleTarget ? null : this._findTierPositionHandleTarget(mx, my);
+        const tierTarget = handleTarget || positionHandleTarget ? null : this._findTierHoverTarget(mx, my);
+        const nextHoveredTierIndex = handleTarget?.tierIndex
+            ?? positionHandleTarget?.tierIndex
+            ?? tierTarget?.tierIndex
+            ?? null;
+        const nextHoveredTierHandleIndex = handleTarget?.tierIndex ?? positionHandleTarget?.tierIndex ?? null;
+        const nextHoveredTierHandleKind = handleTarget
+            ? 'rowCount'
+            : (positionHandleTarget ? 'position' : null);
 
         if (
             nextHoveredTierIndex === this._hoveredTierIndex &&
-            nextHoveredTierHandleIndex === this._hoveredTierHandleIndex
+            nextHoveredTierHandleIndex === this._hoveredTierHandleIndex &&
+            nextHoveredTierHandleKind === this._hoveredTierHandleKind
         ) {
             return;
         }
 
         this._hoveredTierIndex = nextHoveredTierIndex;
         this._hoveredTierHandleIndex = nextHoveredTierHandleIndex;
+        this._hoveredTierHandleKind = nextHoveredTierHandleKind;
         this._rerender();
     }
 
@@ -482,7 +498,7 @@ export class ProfileRenderer {
 
         const nextCursor = this._findTierRowCountHandleTarget(mx, my)
             ? 'row-resize'
-            : (this._findTierDragTarget(mx, my) ? 'grab' : 'default');
+            : (this._findTierPositionHandleTarget(mx, my) ? 'grab' : 'default');
         if (this.canvas.style.cursor !== nextCursor) {
             this.canvas.style.cursor = nextCursor;
         }
@@ -498,6 +514,10 @@ export class ProfileRenderer {
         const firstRow = rows[0];
         const lastRow = rows[rows.length - 1];
         const riserX = firstRow.x - solver.treadDepthFt;
+        const positionHandlePoint = {
+            x: riserX,
+            z: baseZ
+        };
         const rowCountHandlePoint = {
             x: lastRow.x,
             z: lastRow.z,
@@ -523,6 +543,7 @@ export class ProfileRenderer {
             segments,
             rowCountControlConfig,
             rowCountCandidates: buildTierRowCountHandleCandidates(solver, rowCountControlConfig),
+            positionHandlePoint,
             rowCountHandlePoint,
             referencePoints: rows.flatMap((row) => ([
                 {
@@ -572,6 +593,33 @@ export class ProfileRenderer {
         return closestTarget;
     }
 
+    _findTierPositionHandleTarget(mx, my) {
+        if (!this._lastTierRenderState.length) return null;
+
+        let closestTarget = null;
+        let closestDistance = Infinity;
+
+        for (let index = this._lastTierRenderState.length - 1; index >= 0; index -= 1) {
+            const tier = this._lastTierRenderState[index];
+            const handlePoint = tier.positionHandlePoint;
+            if (!handlePoint) continue;
+
+            const screenPoint = this._toScreenPoint(handlePoint.x, handlePoint.z);
+            const distance = Math.hypot(screenPoint.sx - mx, screenPoint.sy - my);
+            if (distance > TIER_POSITION_HANDLE_PICK_DISTANCE_PX || distance >= closestDistance) continue;
+
+            closestDistance = distance;
+            closestTarget = {
+                tierIndex: tier.tierIndex,
+                firstRowDist: tier.firstRowDist,
+                firstRowElev: tier.firstRowElev,
+                handlePoint
+            };
+        }
+
+        return closestTarget;
+    }
+
     _resolveNearestRowCountCandidate(candidates, mx, my) {
         if (!Array.isArray(candidates) || candidates.length === 0) return null;
 
@@ -589,19 +637,14 @@ export class ProfileRenderer {
         return closestCandidate;
     }
 
-    _findTierDragTarget(mx, my) {
+    _findTierHoverTarget(mx, my) {
         if (!this._lastTierRenderState.length) return null;
 
         let closestTier = null;
         let closestDistance = Infinity;
-        let boundsMatch = null;
 
         for (let index = this._lastTierRenderState.length - 1; index >= 0; index -= 1) {
             const tier = this._lastTierRenderState[index];
-            const withinBounds = this._isPointInsideTierBounds(tier, mx, my);
-            if (!boundsMatch && withinBounds) {
-                boundsMatch = tier;
-            }
 
             for (const [start, end] of tier.segments) {
                 const startScreen = this._toScreenPoint(start.x, start.z);
@@ -621,26 +664,11 @@ export class ProfileRenderer {
             }
         }
 
-        const target = closestTier || boundsMatch;
-        if (!target) return null;
-
-        return {
-            tierIndex: target.tierIndex,
-            firstRowDist: target.firstRowDist,
-            firstRowElev: target.firstRowElev
-        };
-    }
-
-    _isPointInsideTierBounds(tier, mx, my) {
-        if (!tier?.bounds) return false;
-
-        const topLeft = this._toScreenPoint(tier.bounds.minX, tier.bounds.maxZ);
-        const bottomRight = this._toScreenPoint(tier.bounds.maxX, tier.bounds.minZ);
-        const minX = Math.min(topLeft.sx, bottomRight.sx) - TIER_DRAG_PICK_PADDING_PX;
-        const maxX = Math.max(topLeft.sx, bottomRight.sx) + TIER_DRAG_PICK_PADDING_PX;
-        const minY = Math.min(topLeft.sy, bottomRight.sy) - TIER_DRAG_PICK_PADDING_PX;
-        const maxY = Math.max(topLeft.sy, bottomRight.sy) + TIER_DRAG_PICK_PADDING_PX;
-        return mx >= minX && mx <= maxX && my >= minY && my <= maxY;
+        return closestTier
+            ? {
+                tierIndex: closestTier.tierIndex
+            }
+            : null;
     }
 
     _resolveDragTargetPosition(tierIndex, firstRowDist, firstRowElev) {
@@ -802,6 +830,7 @@ export class ProfileRenderer {
                 ...lastResolvedPosition
             });
         }
+        this._updateInteractionTargets(this._lastMx, this._lastMy);
         this._updateInteractionCursor(this._lastMx, this._lastMy);
         this._rerender();
     }
@@ -877,7 +906,8 @@ export class ProfileRenderer {
                 tier.tierIndex,
                 {
                     isActive,
-                    isHandleHovered: this._hoveredTierHandleIndex === tier.tierIndex
+                    isHandleHovered: this._hoveredTierHandleIndex === tier.tierIndex &&
+                        this._hoveredTierHandleKind === 'rowCount'
                 }
             );
         });
@@ -893,6 +923,57 @@ export class ProfileRenderer {
         ctx.save();
         ctx.globalAlpha = isActive || isHandleHovered ? 1 : 0.78;
         ctx.fillStyle = isActive ? colors.stroke : BRAND_PROFILE_COLORS.canvasBg;
+        ctx.strokeStyle = colors.stroke;
+        ctx.lineWidth = isActive ? 2.5 : 2;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.arc(point.sx, point.sy, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        if (isHandleHovered || isActive) {
+            ctx.strokeStyle = BRAND_PROFILE_COLORS.hoverInk;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(point.sx, point.sy, radius + 3, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    _drawTierPositionHandles(ctx, toScreen) {
+        this._lastTierRenderState.forEach((tier) => {
+            const handlePoint = tier?.positionHandlePoint;
+            if (!handlePoint) return;
+
+            const isActive = this._dragState?.mode === 'position' && this._dragState.tierIndex === tier.tierIndex;
+            const isHovered = this._hoveredTierIndex === tier.tierIndex;
+            if (!isActive && !isHovered) return;
+
+            this._drawTierPositionHandle(
+                ctx,
+                toScreen(handlePoint.x, handlePoint.z),
+                tier.tierIndex,
+                {
+                    isActive,
+                    isHandleHovered: this._hoveredTierHandleIndex === tier.tierIndex &&
+                        this._hoveredTierHandleKind === 'position'
+                }
+            );
+        });
+    }
+
+    _drawTierPositionHandle(ctx, point, tierIndex, {
+        isActive = false,
+        isHandleHovered = false
+    } = {}) {
+        const colors = this._getTierColors(tierIndex);
+        const radius = isActive ? TIER_POSITION_HANDLE_RADIUS_PX + 1 : TIER_POSITION_HANDLE_RADIUS_PX;
+
+        ctx.save();
+        ctx.globalAlpha = isActive || isHandleHovered ? 1 : 0.88;
+        ctx.fillStyle = '#ffffff';
         ctx.strokeStyle = colors.stroke;
         ctx.lineWidth = isActive ? 2.5 : 2;
         ctx.setLineDash([]);
@@ -934,8 +1015,6 @@ export class ProfileRenderer {
 
         const showSightlines = options.showSightlines !== false;
         const showHeads = options.showHeads !== false;
-        const showCLabels = options.showCLabels !== false;
-        const rowLabelFontPx = options.rowLabelFontPx ?? 11;
         const structuralDepth = (options.structuralDepth || 0) / 12.0;
         const structuralProfileMode = options.structuralProfileMode === 'sloped' ? 'sloped' : 'stepped';
         const tierRowCountControls = Array.isArray(options.tierRowCountControls)
@@ -978,6 +1057,7 @@ export class ProfileRenderer {
         ) {
             this._hoveredTierIndex = null;
             this._hoveredTierHandleIndex = null;
+            this._hoveredTierHandleKind = null;
         }
 
         ctx.clearRect(0, 0, w, h);
@@ -1146,39 +1226,12 @@ export class ProfileRenderer {
                 }
             }
 
-            // Draw C-value labels
-            if (showCLabels) {
-                ctx.save();
-                ctx.font = `bold ${rowLabelFontPx}px Inter, system-ui, sans-serif`;
-                ctx.textAlign = 'center';
-                // Keep row labels anchored to the original tread line even when structural depth is displayed.
-                const labelOffsetPx = 12;
-                const cValueOffsetPx = 23;
-
-                for (let i = 0; i < solver.rows.length; i++) {
-                    const row = solver.rows[i];
-                    const quality = getCValueQuality(row.c_value);
-                    const globalI = globalRowIdx + i;
-                    const isHovered = this.hoveredRow === globalI;
-
-                    if (this.hoveredRow >= 0 && !isHovered) continue;
-
-                    const treadMid = toScreen(row.x - solver.treadDepthFt / 2, row.z);
-                    ctx.fillStyle = quality.color;
-                    ctx.globalAlpha = isHovered ? 1 : 0.7;
-                    ctx.fillText(`R${row.row_number}`, treadMid.sx, treadMid.sy + labelOffsetPx);
-                    if (row.row_number > 1) {
-                        ctx.fillText(`${row.c_value.toFixed(1)}"`, treadMid.sx, treadMid.sy + cValueOffsetPx);
-                    }
-                }
-                ctx.restore();
-            }
-
             globalRowIdx += solver.rows.length;
         }
 
         // Draw focal point marker
         this._drawFocalPoint(ctx, focalX, focalZ, toScreen, scale);
+        this._drawTierPositionHandles(ctx, toScreen);
         this._drawTierRowCountHandles(ctx, toScreen);
 
         if (this._dragState) {

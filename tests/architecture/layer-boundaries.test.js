@@ -624,6 +624,175 @@ describe('entry routing and bootstrap', () => {
         expect(app.setProjectStatus).toHaveBeenCalledWith(`Duplicated ${duplicatedProject.name}`, 'success');
     });
 
+    it('injects project actions that rename a non-current saved project via getProject and updateProject without loading it', async () => {
+        const location = createLocation(
+            'http://localhost/pages/configurator/index.html?project=project-1&devBackend=local'
+        );
+        const session = {
+            userId: 'pat@example.com',
+            displayName: 'Pat Example',
+            email: 'pat@example.com',
+            jobTitle: 'Design Technology Specialist II'
+        };
+        const initialProject = {
+            id: 'project-1',
+            name: 'Arena Study',
+            createdAt: '2026-03-16T00:00:00.000Z',
+            updatedAt: '2026-03-16T00:00:00.000Z',
+            state: { sport: 'Football' }
+        };
+        const detachedProject = {
+            id: 'project-2',
+            name: 'Harbor Study',
+            createdAt: '2026-03-16T01:00:00.000Z',
+            updatedAt: '2026-03-16T01:00:00.000Z',
+            state: { sport: 'Soccer' }
+        };
+        const authService = {
+            getSession: vi.fn().mockResolvedValue(session),
+            signInWithMicrosoft: vi.fn()
+        };
+        const projectApi = {
+            getProject: vi.fn()
+                .mockResolvedValueOnce(initialProject)
+                .mockResolvedValueOnce(detachedProject),
+            updateProject: vi.fn().mockResolvedValue({
+                ...detachedProject,
+                name: 'Renamed Detached Study'
+            })
+        };
+        const app = {
+            destroy: vi.fn(),
+            init: vi.fn().mockResolvedValue(),
+            loadProject: vi.fn(),
+            setProjectStatus: vi.fn(),
+            setSession: vi.fn(),
+            getProjectMetadata: vi.fn(() => ({
+                id: 'project-1',
+                name: 'Arena Study'
+            }))
+        };
+        let projectActions = /** @type {any} */ (null);
+        const appFactory = vi.fn((options) => {
+            projectActions = options.projectActions;
+            return app;
+        });
+
+        await bootAppShell({
+            document: createRouteDocument('configurator'),
+            location,
+            runtimeConfig: { devBackend: 'local' },
+            authService,
+            projectApi,
+            appFactory
+        });
+
+        if (!projectActions) {
+            throw new Error('projectActions were not injected');
+        }
+
+        await projectActions.renameProject('project-2', '  Renamed Detached Study  ');
+
+        expect(projectActions.renameProject).toEqual(expect.any(Function));
+        expect(projectApi.getProject).toHaveBeenNthCalledWith(2, 'project-2');
+        expect(projectApi.updateProject).toHaveBeenCalledWith('project-2', {
+            name: 'Renamed Detached Study',
+            state: detachedProject.state
+        });
+        expect(app.loadProject).not.toHaveBeenCalled();
+        expect(app.setProjectStatus).toHaveBeenCalledWith('Renaming project...', 'pending');
+        expect(app.setProjectStatus).toHaveBeenCalledWith('Renamed Renamed Detached Study', 'success');
+    });
+
+    it('routes current-project renameProject calls through the current project save path', async () => {
+        const location = createLocation(
+            'http://localhost/pages/configurator/index.html?project=project-1&devBackend=local'
+        );
+        const session = {
+            userId: 'pat@example.com',
+            displayName: 'Pat Example',
+            email: 'pat@example.com',
+            jobTitle: 'Design Technology Specialist II'
+        };
+        const loadedProject = {
+            id: 'project-1',
+            name: 'Arena Study',
+            createdAt: '2026-03-16T00:00:00.000Z',
+            updatedAt: '2026-03-16T00:00:00.000Z',
+            state: createProjectStateDocument()
+        };
+        const renamedProject = {
+            ...loadedProject,
+            name: 'Renamed Study',
+            updatedAt: '2026-03-16T00:10:00.000Z'
+        };
+        const authService = {
+            getSession: vi.fn().mockResolvedValue(session),
+            signInWithMicrosoft: vi.fn()
+        };
+        let currentProjectState = createProjectStateDocument();
+        const projectApi = {
+            getProject: vi.fn().mockResolvedValue(loadedProject),
+            updateProject: vi.fn().mockResolvedValue(renamedProject)
+        };
+        const app = {
+            destroy: vi.fn(),
+            init: vi.fn().mockResolvedValue(),
+            loadProject: vi.fn(),
+            setProjectMetadata: vi.fn(),
+            setProjectName: vi.fn(),
+            setProjectSaveBusy: vi.fn(),
+            setProjectStateDocument: vi.fn((projectStateDocument) => {
+                currentProjectState = projectStateDocument;
+            }),
+            setProjectStatus: vi.fn(),
+            setSession: vi.fn(),
+            captureStateSnapshot: vi.fn(() => ({ sport: 'Football' })),
+            getProjectMetadata: vi.fn(() => ({
+                id: 'project-1',
+                name: 'Arena Study'
+            })),
+            getProjectStateDocument: vi.fn(() => currentProjectState),
+            getProjectSaveRequest: vi.fn((projectStateDocument) => ({
+                name: 'Arena Study',
+                state: projectStateDocument
+            }))
+        };
+        let projectActions = /** @type {any} */ (null);
+        const appFactory = vi.fn((options) => {
+            projectActions = options.projectActions;
+            return app;
+        });
+
+        await bootAppShell({
+            document: createRouteDocument('configurator'),
+            location,
+            runtimeConfig: { devBackend: 'local' },
+            authService,
+            projectApi,
+            appFactory
+        });
+
+        if (!projectActions) {
+            throw new Error('projectActions were not injected');
+        }
+
+        await projectActions.renameProject('project-1', '  Renamed Study  ');
+
+        expect(projectApi.getProject).toHaveBeenCalledTimes(1);
+        expect(projectApi.updateProject).toHaveBeenCalledWith('project-1', expect.objectContaining({
+            name: 'Arena Study',
+            state: expect.objectContaining({
+                _projectVersion: 'dashboard-cutover-v1',
+                activeOptionId: 'option-1',
+                sport: 'Football'
+            })
+        }));
+        expect(app.setProjectName).toHaveBeenCalledWith('  Renamed Study  ');
+        expect(app.setProjectSaveBusy).toHaveBeenCalledWith(true);
+        expect(app.setProjectSaveBusy).toHaveBeenCalledWith(false);
+    });
+
     it('injects option actions that stage the active snapshot before persisting and reload the selected option', async () => {
         const location = createLocation(
             'http://localhost/pages/configurator/index.html?project=project-1&devBackend=local'
@@ -875,5 +1044,76 @@ describe('entry routing and bootstrap', () => {
             '',
             buildConfiguratorUrl('project-3', { devBackend: 'local' })
         );
+    });
+
+    it('injects project actions that bulk delete via the existing single-delete project API', async () => {
+        const location = createLocation(
+            'http://localhost/pages/configurator/index.html?project=project-1&devBackend=local'
+        );
+        const history = {
+            replaceState: vi.fn()
+        };
+        const session = {
+            userId: 'pat@example.com',
+            displayName: 'Pat Example',
+            email: 'pat@example.com',
+            jobTitle: 'Design Technology Specialist II'
+        };
+        const initialProject = {
+            id: 'project-1',
+            name: 'Arena Study',
+            createdAt: '2026-03-16T00:00:00.000Z',
+            updatedAt: '2026-03-16T00:00:00.000Z',
+            state: { sport: 'Football' }
+        };
+        const authService = {
+            getSession: vi.fn().mockResolvedValue(session),
+            signInWithMicrosoft: vi.fn()
+        };
+        const projectApi = {
+            getProject: vi.fn().mockResolvedValue(initialProject),
+            deleteProject: vi.fn().mockResolvedValue(),
+            createProject: vi.fn()
+        };
+        const app = {
+            destroy: vi.fn(),
+            init: vi.fn().mockResolvedValue(),
+            setProjectStatus: vi.fn(),
+            setSession: vi.fn(),
+            getProjectMetadata: vi.fn(() => ({
+                id: 'project-1',
+                name: 'Arena Study'
+            }))
+        };
+        let projectActions = /** @type {any} */ (null);
+        const appFactory = vi.fn((options) => {
+            projectActions = options.projectActions;
+            return app;
+        });
+
+        await bootAppShell({
+            document: createRouteDocument('configurator'),
+            history,
+            location,
+            runtimeConfig: { devBackend: 'local' },
+            authService,
+            projectApi,
+            appFactory
+        });
+
+        if (!projectActions) {
+            throw new Error('projectActions were not injected');
+        }
+
+        await projectActions.deleteProjects(['project-2', 'project-3', 'project-2']);
+
+        expect(projectActions.deleteProjects).toEqual(expect.any(Function));
+        expect(projectApi.deleteProject).toHaveBeenNthCalledWith(1, 'project-2');
+        expect(projectApi.deleteProject).toHaveBeenNthCalledWith(2, 'project-3');
+        expect(projectApi.deleteProject).toHaveBeenCalledTimes(2);
+        expect(projectApi.createProject).not.toHaveBeenCalled();
+        expect(history.replaceState).not.toHaveBeenCalled();
+        expect(app.setProjectStatus).toHaveBeenCalledWith('Deleting 2 projects...', 'pending');
+        expect(app.setProjectStatus).toHaveBeenCalledWith('Deleted 2 projects', 'success');
     });
 });

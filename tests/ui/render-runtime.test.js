@@ -201,7 +201,6 @@ describe('RenderRuntime', () => {
                 structuralDepth: 18,
                 structuralProfileMode: 'sloped',
                 showSightlines: true,
-                showCLabels: true,
                 tierRowCountControls: [
                     { min: 5, max: 80, step: 1 },
                     { min: 3, max: 60, step: 1 },

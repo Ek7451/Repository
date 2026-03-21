@@ -169,6 +169,13 @@ describe('profile solver helper exports', () => {
                     actualSections: 1,
                     tierSeatCount: 22,
                     legalMaxOccupantsPerAisle: 360,
+                    failureReason: 'egress_cap_stagnated',
+                    topologyValid: true,
+                    measurementValid: true,
+                    layoutSolveConverged: false,
+                    renderedWidthSolveConverged: true,
+                    invalidTopologyPaths: [0],
+                    invalidTopologyRowIndices: [1],
                     backRowSectionSeatCounts: [12],
                     avgBackRowSeatsPerSection: 12,
                     maxBackRowSeatsPerSection: 12,
@@ -232,6 +239,13 @@ describe('profile solver helper exports', () => {
             totalSeatingLength: '37',
             totalAisleLength: '45',
             blocksAddedForEgress: 0,
+            failureReason: 'egress_cap_stagnated',
+            topologyValid: true,
+            measurementValid: true,
+            layoutSolveConverged: false,
+            renderedWidthSolveConverged: true,
+            invalidTopologyPaths: [0],
+            invalidTopologyRowIndices: [1],
             renderedWidthCompliant: true
         });
         expect(solver.rows[0]).toMatchObject({

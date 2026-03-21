@@ -62,6 +62,94 @@ function buildEgressDisplayData({
     };
 }
 
+function formatDiagnosticIndexSuffix({ invalidTopologyRowIndices, invalidTopologyPaths }) {
+    const detailParts = [];
+    const rowIndexes = Array.isArray(invalidTopologyRowIndices)
+        ? invalidTopologyRowIndices
+            .filter((value) => Number.isInteger(value) && value >= 0)
+            .slice(0, 3)
+            .map((value) => value + 1)
+        : [];
+    const pathIndexes = Array.isArray(invalidTopologyPaths)
+        ? invalidTopologyPaths
+            .filter((value) => Number.isInteger(value) && value >= 0)
+            .slice(0, 3)
+            .map((value) => value + 1)
+        : [];
+
+    if (rowIndexes.length > 0) {
+        detailParts.push(`rows ${rowIndexes.join(', ')}`);
+    }
+    if (pathIndexes.length > 0) {
+        detailParts.push(`paths ${pathIndexes.join(', ')}`);
+    }
+
+    return detailParts.length > 0 ? ` Affected ${detailParts.join('; ')}.` : '';
+}
+
+function buildSeatCapInfeasibilityWarning(metrics, egressParams = {}) {
+    const actualSeats = Math.max(0, Number(metrics?.maxSeatsPerSectionRow) || 0);
+    const seatLimit = Number(egressParams?.seatsBetweenAisles);
+
+    if (Number.isFinite(seatLimit) && seatLimit > 0) {
+        return `Layout is infeasible: max seats per row section is ${actualSeats}, above the ${Math.round(seatLimit)}-seat limit.`;
+    }
+
+    return 'Layout is infeasible: section seat count still exceeds the configured seat limit.';
+}
+
+function buildEgressCapInfeasibilityWarning(metrics) {
+    const actualLoad = Math.max(0, Number(metrics?.occupantsPerAisleLine) || 0);
+    const legalMaxLoad = Math.max(0, Number(metrics?.legalMaxOccupantsPerAisle) || 0);
+    const maxAisleWidth = metrics?.maximumWidth ?? metrics?.governingWidth ?? metrics?.renderedAisleWidth;
+
+    if (legalMaxLoad > 0 && maxAisleWidth) {
+        return `Layout is infeasible: max aisle load is ${actualLoad} occ, above the ${legalMaxLoad} occ limit at ${maxAisleWidth}" max aisle width.`;
+    }
+
+    return 'Layout is infeasible: aisle load still exceeds the legal capacity.';
+}
+
+function buildRenderedWidthWarning(metrics) {
+    const renderedWidth = metrics?.renderedAisleWidth ?? metrics?.aisleWidth ?? '0.0';
+    const requiredWidth = metrics?.governingWidth ?? metrics?.capacityWidth ?? '0.0';
+    return `Layout is infeasible: rendered aisle width is ${renderedWidth}", below the ${requiredWidth}" requirement.`;
+}
+
+function buildStabilityWarning() {
+    return 'Layout did not fully stabilize, but the final aisle widths were widened conservatively.';
+}
+
+function buildNonConvergenceWarning(metrics, egressParams = {}) {
+    if (!metrics || metrics.converged !== false) return '';
+
+    const failureReason = typeof metrics.failureReason === 'string' ? metrics.failureReason : '';
+    const seatCapFailed = metrics.seatCapCompliant === false;
+    const egressCapFailed = metrics.egressCapCompliant === false;
+    const renderedWidthFailed = metrics.renderedWidthCompliant === false;
+
+    switch (failureReason) {
+    case 'seat_cap_stagnated':
+        return buildSeatCapInfeasibilityWarning(metrics, egressParams);
+    case 'egress_cap_stagnated':
+        return buildEgressCapInfeasibilityWarning(metrics);
+    case 'invalid_topology':
+        return `Layout could not be resolved against the current tier geometry.${formatDiagnosticIndexSuffix(metrics)}`;
+    case 'invalid_measurement':
+        return 'Layout could not be measured reliably against the current tier geometry.';
+    case 'grouped_open_stagnated':
+        if (seatCapFailed) return buildSeatCapInfeasibilityWarning(metrics, egressParams);
+        if (egressCapFailed) return buildEgressCapInfeasibilityWarning(metrics);
+        if (renderedWidthFailed) return buildRenderedWidthWarning(metrics);
+        return buildStabilityWarning();
+    default:
+        if (seatCapFailed) return buildSeatCapInfeasibilityWarning(metrics, egressParams);
+        if (egressCapFailed) return buildEgressCapInfeasibilityWarning(metrics);
+        if (renderedWidthFailed) return buildRenderedWidthWarning(metrics);
+        return buildStabilityWarning();
+    }
+}
+
 function buildTierStatsViewModel({
     solver,
     loopIndex,
@@ -142,11 +230,12 @@ function buildTierStatsViewModel({
         if (finalEgress.blocksAddedForEgress > 0) {
             warningMessages.push(`Limit Forced: Clamped to Max Aisle (${metrics.maximumWidth}")`);
         }
-        if (metrics.converged === false) {
-            warningMessages.push('Warning: Layout did not converge.');
+        const nonConvergenceWarning = buildNonConvergenceWarning(metrics, egressParams);
+        if (nonConvergenceWarning) {
+            warningMessages.push(nonConvergenceWarning);
         }
-        if (metrics.renderedWidthCompliant === false) {
-            warningMessages.push('Rendered aisle width differs from the final realized requirement.');
+        if (metrics.renderedWidthCompliant === false && nonConvergenceWarning !== buildRenderedWidthWarning(metrics)) {
+            warningMessages.push(buildRenderedWidthWarning(metrics));
         }
 
         egress = {

@@ -5,9 +5,11 @@ import {
     buildUntitledProjectCreateRequest,
     createProjectOption,
     deleteProjectOption,
+    deriveProjectNameFromSport,
     duplicateProjectOption,
     getActiveProjectOption,
     getActiveProjectStateSnapshot,
+    normalizeProjectName,
     renameProjectOption,
     selectProjectOption,
     stageActiveProjectOptionState
@@ -243,6 +245,43 @@ function createProjectActionPort({
             }
         },
 
+        async renameProject(projectId, name) {
+            const app = getApp();
+            const nextProjectId = typeof projectId === 'string' ? projectId : '';
+            if (!nextProjectId) {
+                throw new Error('Project id is required.');
+            }
+
+            const currentProjectId = app.getProjectMetadata().id;
+            if (currentProjectId && currentProjectId === nextProjectId) {
+                await this.renameCurrentProject(name);
+                return;
+            }
+
+            const savedProject = await projectApi.getProject(nextProjectId);
+            const nextName = normalizeProjectName(
+                name,
+                deriveProjectNameFromSport(savedProject?.state?.sport)
+            );
+
+            app.setProjectStatus('Renaming project...', 'pending');
+
+            try {
+                await projectApi.updateProject(nextProjectId, {
+                    name: nextName,
+                    state: savedProject.state
+                });
+                app.setProjectStatus(`Renamed ${nextName}`, 'success');
+            } catch (error) {
+                console.error('Project rename failed:', error);
+                app.setProjectStatus(
+                    getProjectActionErrorMessage('Project rename', error),
+                    'error'
+                );
+                throw error;
+            }
+        },
+
         async createOption() {
             await mutateProjectOptions({
                 pendingMessage: 'Creating option...',
@@ -393,6 +432,47 @@ function createProjectActionPort({
                 console.error('Project delete failed:', error);
                 app.setProjectStatus(
                     getProjectActionErrorMessage('Project delete', error),
+                    'error'
+                );
+                throw error;
+            }
+        },
+
+        async deleteProjects(projectIds) {
+            const app = getApp();
+            const currentProjectId = app.getProjectMetadata().id;
+            const uniqueProjectIds = Array.isArray(projectIds)
+                ? [...new Set(projectIds.filter((projectId) => typeof projectId === 'string' && projectId))]
+                : [];
+
+            if (!uniqueProjectIds.length) {
+                return;
+            }
+
+            if (currentProjectId && uniqueProjectIds.includes(currentProjectId)) {
+                const error = new Error('Current project cannot be deleted from bulk actions.');
+                app.setProjectStatus(error.message, 'error');
+                throw error;
+            }
+
+            const count = uniqueProjectIds.length;
+            app.setProjectStatus(
+                count === 1 ? 'Deleting 1 project...' : `Deleting ${count} projects...`,
+                'pending'
+            );
+
+            try {
+                for (const projectId of uniqueProjectIds) {
+                    await projectApi.deleteProject(projectId);
+                }
+                app.setProjectStatus(
+                    count === 1 ? 'Deleted 1 project' : `Deleted ${count} projects`,
+                    'success'
+                );
+            } catch (error) {
+                console.error('Project bulk delete failed:', error);
+                app.setProjectStatus(
+                    getProjectActionErrorMessage('Project bulk delete', error),
                     'error'
                 );
                 throw error;

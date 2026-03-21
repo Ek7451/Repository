@@ -66,6 +66,7 @@ function normalizeThemeName(theme) {
 let BRAND_COLORS = SCENE_THEME_COLORS.light;
 const MIDDLE_CLICK_DOUBLE_MS = 400;
 const MIDDLE_CLICK_DRAG_PX = 6;
+const SCENE_EXTENTS_VERTICAL_PADDING_PX = 40;
 
 function syncSceneThemeColors(theme = 'light') {
     theme = normalizeThemeName(theme);
@@ -1163,12 +1164,73 @@ export class Scene3D {
         this.camera.updateProjectionMatrix();
     }
 
+    _getFitPaddingPx() {
+        return {
+            horizontal: 0,
+            vertical: SCENE_EXTENTS_VERTICAL_PADDING_PX
+        };
+    }
+
+    _getFitCameraDistance(box, direction, viewportSize) {
+        if (!box || !direction || !viewportSize || !this.THREE || !this.camera) return Number.NaN;
+
+        const { w, h } = viewportSize;
+        const safeWidth = Math.max(1, Number(w) || 1);
+        const safeHeight = Math.max(1, Number(h) || 1);
+        const { horizontal, vertical } = this._getFitPaddingPx();
+        const widthRatio = Math.max(1 / safeWidth, (safeWidth - (horizontal * 2)) / safeWidth);
+        const heightRatio = Math.max(1 / safeHeight, (safeHeight - (vertical * 2)) / safeHeight);
+
+        const forward = direction.clone().negate().normalize();
+        const fallbackUp = Math.abs(forward.y) > 0.999
+            ? new this.THREE.Vector3(0, 0, 1)
+            : new this.THREE.Vector3(0, 1, 0);
+        const cameraUp = this.camera.up?.clone?.() ?? fallbackUp.clone();
+        if (Math.abs(cameraUp.dot(forward)) > 0.999) {
+            cameraUp.copy(fallbackUp);
+        }
+
+        const right = new this.THREE.Vector3().crossVectors(forward, cameraUp).normalize();
+        const up = new this.THREE.Vector3().crossVectors(right, forward).normalize();
+        const center = box.getCenter(new this.THREE.Vector3());
+        const corners = [
+            new this.THREE.Vector3(box.min.x, box.min.y, box.min.z),
+            new this.THREE.Vector3(box.min.x, box.min.y, box.max.z),
+            new this.THREE.Vector3(box.min.x, box.max.y, box.min.z),
+            new this.THREE.Vector3(box.min.x, box.max.y, box.max.z),
+            new this.THREE.Vector3(box.max.x, box.min.y, box.min.z),
+            new this.THREE.Vector3(box.max.x, box.min.y, box.max.z),
+            new this.THREE.Vector3(box.max.x, box.max.y, box.min.z),
+            new this.THREE.Vector3(box.max.x, box.max.y, box.max.z)
+        ];
+
+        const verticalHalfTan = Math.tan((this.camera.fov * Math.PI / 180) / 2) * heightRatio;
+        const horizontalHalfTan = verticalHalfTan * (safeWidth / safeHeight) * (widthRatio / heightRatio);
+        let requiredDistance = 0;
+
+        corners.forEach((corner) => {
+            const offset = corner.sub(center);
+            const localX = Math.abs(offset.dot(right));
+            const localY = Math.abs(offset.dot(up));
+            const localZ = offset.dot(forward);
+
+            requiredDistance = Math.max(
+                requiredDistance,
+                (localY / Math.max(verticalHalfTan, 1e-6)) - localZ,
+                (localX / Math.max(horizontalHalfTan, 1e-6)) - localZ
+            );
+        });
+
+        return requiredDistance;
+    }
+
     _fitCameraToBowl() {
         if (!this.bowlGroup || this.bowlGroup.children.length === 0 || !this.camera || !this.controls) return;
 
         const box = new this.THREE.Box3().setFromObject(this.bowlGroup);
         if (box.isEmpty()) return;
 
+        const viewportSize = this._getViewportSize();
         const size = box.getSize(new this.THREE.Vector3());
         const center = box.getCenter(new this.THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z);
@@ -1184,16 +1246,21 @@ export class Scene3D {
             return;
         }
 
-        const fov = this.camera.fov * (Math.PI / 180);
-        const rawDistance = (maxDim / (2 * Math.tan(fov / 2))) * 0.95;
-        const distance = Math.min(3000, Math.max(140, rawDistance));
-
         // Get current view direction relative to the target
         const direction = new this.THREE.Vector3().subVectors(this.camera.position, this.controls.target);
         if (direction.lengthSq() < 0.0001) {
             direction.set(1, 0.6, 1); // fallback direction if camera is somehow perfectly on target
         }
         direction.normalize();
+
+        this.camera.aspect = viewportSize.w / viewportSize.h;
+        this.camera.updateProjectionMatrix();
+
+        const fallbackFov = this.camera.fov * (Math.PI / 180);
+        const fallbackDistance = (maxDim / (2 * Math.tan(fallbackFov / 2))) * 0.95;
+        const rawDistance = this._getFitCameraDistance(box, direction, viewportSize);
+        const safeDistance = Number.isFinite(rawDistance) && rawDistance > 0 ? rawDistance : fallbackDistance;
+        const distance = Math.min(3000, Math.max(140, safeDistance));
 
         // Update target to the bounding box center
         this.controls.target.copy(center);
