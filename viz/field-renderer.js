@@ -27,6 +27,7 @@ const FIELD_THEME_COLORS = {
         gridStrong: 'rgba(35, 35, 35, 0.10)',
         fieldEdge: '#7aae1a',   // JLG Green
         runoff: '#de850a',      // JLG Orange
+        sectionCut: 'rgba(48, 48, 48, 0.6)',
         // Solid light-gray aisle fill; row step linework is drawn afterward so steps remain visible.
         aislesFill: 'rgba(231, 236, 228, 0.96)',
         aislesStroke: 'rgba(231, 236, 228, 0.00)',
@@ -39,6 +40,7 @@ const FIELD_THEME_COLORS = {
         gridStrong: 'rgba(232, 237, 242, 0.11)',
         fieldEdge: '#7fae3c',
         runoff: '#c88732',
+        sectionCut: 'rgba(255, 255, 255, 0.6)',
         aislesFill: 'rgba(187, 198, 183, 0.3)',
         aislesStroke: 'rgba(187, 198, 183, 0.15)',
         focal: '#dbe2ea',
@@ -203,6 +205,8 @@ const SECTION_LABEL_STACK_OFFSET_PX = 12.6; // original 9
 const ROW_SEATCOUNT_LABEL_EDGE_OFFSET_FT = 2.0;
 const ROW_SEATCOUNT_LABEL_MIN_T = 0.08;
 const ROW_SEATCOUNT_LABEL_MAX_T = 0.45;
+const SECTION_CUT_LINE_EXTENSION_FT = 10;
+const SECTION_CUT_LINE_INTERSECTION_EPSILON = 1e-6;
 
 function normalizeLoopU(u) {
     let out = Number(u) || 0;
@@ -890,6 +894,65 @@ export function buildBowlBandPolygons(bowlConfig, frontOffset, backOffset, arcRe
     return polygons;
 }
 
+function pushUniqueIntersectionY(intersections, nextY) {
+    if (!Number.isFinite(nextY)) return;
+    if (intersections.some((value) => Math.abs(value - nextY) <= SECTION_CUT_LINE_INTERSECTION_EPSILON)) {
+        return;
+    }
+    intersections.push(nextY);
+}
+
+function collectVerticalRayIntersectionYs(subpaths, rayX = 0) {
+    const intersections = [];
+    const safeRayX = Number(rayX) || 0;
+
+    (subpaths || []).forEach((points) => {
+        if (!Array.isArray(points) || points.length < 2) return;
+
+        for (let index = 1; index < points.length; index += 1) {
+            const prev = points[index - 1];
+            const next = points[index];
+            const x1 = Number(prev?.x);
+            const y1 = Number(prev?.y);
+            const x2 = Number(next?.x);
+            const y2 = Number(next?.y);
+            if (![x1, y1, x2, y2].every(Number.isFinite)) continue;
+
+            const dx = x2 - x1;
+            if (Math.abs(dx) <= SECTION_CUT_LINE_INTERSECTION_EPSILON) {
+                if (Math.abs(x1 - safeRayX) > SECTION_CUT_LINE_INTERSECTION_EPSILON) continue;
+                pushUniqueIntersectionY(intersections, y1);
+                pushUniqueIntersectionY(intersections, y2);
+                continue;
+            }
+
+            const minX = Math.min(x1, x2) - SECTION_CUT_LINE_INTERSECTION_EPSILON;
+            const maxX = Math.max(x1, x2) + SECTION_CUT_LINE_INTERSECTION_EPSILON;
+            if (safeRayX < minX || safeRayX > maxX) continue;
+
+            const t = (safeRayX - x1) / dx;
+            if (t < -SECTION_CUT_LINE_INTERSECTION_EPSILON || t > 1 + SECTION_CUT_LINE_INTERSECTION_EPSILON) continue;
+
+            const clampedT = Math.max(0, Math.min(1, t));
+            pushUniqueIntersectionY(intersections, y1 + ((y2 - y1) * clampedT));
+        }
+    });
+
+    return intersections;
+}
+
+function findNearestVerticalRayIntersectionY(intersections, originY, direction = -1) {
+    const safeOriginY = Number(originY) || 0;
+    const safeDirection = direction >= 0 ? 1 : -1;
+    const candidates = (intersections || []).filter((value) => (
+        safeDirection < 0
+            ? value < (safeOriginY - SECTION_CUT_LINE_INTERSECTION_EPSILON)
+            : value > (safeOriginY + SECTION_CUT_LINE_INTERSECTION_EPSILON)
+    ));
+    if (!candidates.length) return null;
+    return safeDirection < 0 ? Math.max(...candidates) : Math.min(...candidates);
+}
+
 function approximatePathSignedArea(path, samples = 160) {
     if (!path || !(path.length > 0) || !path.closed) return 0;
     const pts = [];
@@ -1163,8 +1226,9 @@ export class FieldRenderer {
             ty = baseTy;
         }
 
-        // Draw grid based on bounds
-        this._drawGrid(ctx, w, h, scale, bounds, tx, ty);
+        // Draw the grid across the visible canvas, not just the fitted geometry bounds.
+        const visibleBounds = this._getVisibleWorldBounds(scale, tx, ty, w, h);
+        this._drawGrid(ctx, w, h, scale, visibleBounds, tx, ty);
 
         // Save context for transformations
         ctx.save();
@@ -1189,6 +1253,8 @@ export class FieldRenderer {
         if (solvers && visibility && visibility.showSeating) {
             this._drawSeating(ctx, solvers, template, visibility, scale, visualFocalX, bowlConfig, offsetCorrection, tierAisleLayouts);
         }
+
+        this._drawSectionCutLine(ctx, solvers, visibility, scale, visualFocalX, bowlConfig, offsetCorrection);
 
         // Draw focal point
         this._drawFocalPoint(ctx, template, scale, visualFocalX);
@@ -1256,8 +1322,9 @@ export class FieldRenderer {
                 }
 
                 // Keep extents breathing room symmetric so zoom extents centers
-                // the visible bowl consistently regardless of available width.
-                const shadowPad = maxDist * 0.15;
+                // the visible bowl consistently regardless of available width,
+                // while leaving room for the section cut indicator extension.
+                const shadowPad = Math.max(maxDist * 0.15, SECTION_CUT_LINE_EXTENSION_FT);
                 bounds.minX -= shadowPad;
                 bounds.maxX += shadowPad;
                 bounds.minY -= shadowPad;
@@ -1283,6 +1350,15 @@ export class FieldRenderer {
         const scaleY = usableHeight / ry;
         const scaleX = usableWidth / rx;
         return Math.min(scaleY, scaleX);
+    }
+
+    _getVisibleWorldBounds(scale, tx, ty, width, height) {
+        return {
+            minX: (0 - tx) / scale,
+            maxX: (width - tx) / scale,
+            minY: (ty - height) / scale,
+            maxY: ty / scale
+        };
     }
 
     _drawGrid(ctx, w, h, scale, bounds, tx, ty) {
@@ -2494,6 +2570,69 @@ export class FieldRenderer {
         ctx.restore();
     }
 
+    _getSectionCutLineData(solvers, visibility, visualFocalY, bowlConfig, offsetCorrection = 0) {
+        if (!Array.isArray(solvers) || !visibility?.showSeating || !bowlConfig) return null;
+
+        let outerOffset = null;
+        solvers.forEach((solver, tierIndex) => {
+            if (tierIndex === 0 && !visibility.t1) return;
+            if (tierIndex === 1 && !visibility.t2) return;
+            if (tierIndex === 2 && !visibility.t3) return;
+            if (!Array.isArray(solver?.rows) || solver.rows.length < 1) return;
+
+            const lastRow = solver.rows[solver.rows.length - 1];
+            const nextOffset = Number(lastRow?.x) - (Number(offsetCorrection) || 0);
+            if (!Number.isFinite(nextOffset)) return;
+            outerOffset = outerOffset === null ? nextOffset : Math.max(outerOffset, nextOffset);
+        });
+
+        if (!Number.isFinite(outerOffset)) return null;
+
+        const startY = Number(visualFocalY) || 0;
+        const perimeterSubpaths = buildBowlGeometrySubpaths(bowlConfig, outerOffset);
+        const intersections = collectVerticalRayIntersectionYs(perimeterSubpaths, 0);
+        if (!intersections.length) return null;
+
+        let direction = -1;
+        let edgeY = findNearestVerticalRayIntersectionY(intersections, startY, direction);
+        if (!Number.isFinite(edgeY)) {
+            direction = 1;
+            edgeY = findNearestVerticalRayIntersectionY(intersections, startY, direction);
+        }
+        if (!Number.isFinite(edgeY)) return null;
+
+        return {
+            startX: 0,
+            startY,
+            edgeX: 0,
+            edgeY,
+            endX: 0,
+            endY: edgeY + (direction * SECTION_CUT_LINE_EXTENSION_FT)
+        };
+    }
+
+    _drawSectionCutLine(ctx, solvers, visibility, scale, visualFocalY, bowlConfig, offsetCorrection = 0) {
+        const cutLine = this._getSectionCutLineData(
+            solvers,
+            visibility,
+            visualFocalY,
+            bowlConfig,
+            offsetCorrection
+        );
+        if (!cutLine) return;
+
+        ctx.save();
+        ctx.strokeStyle = BRAND_FIELD_COLORS.sectionCut;
+        ctx.lineWidth = 2 / Math.max(1e-6, Number(scale) || 1);
+        ctx.lineCap = 'round';
+        ctx.setLineDash([1,2,]);
+        ctx.beginPath();
+        ctx.moveTo(cutLine.startX, cutLine.startY);
+        ctx.lineTo(cutLine.endX, cutLine.endY);
+        ctx.stroke();
+        ctx.restore();
+    }
+
     _drawFocalPoint(ctx, template, scale, visualFocalX) {
         const fx = 0;
         const fy = visualFocalX !== undefined ? visualFocalX : (template.focal_y || 0);
@@ -2531,6 +2670,7 @@ export class FieldRenderer {
             { color: BRAND_FIELD_COLORS.fieldEdge, label: 'Field Edge', dash: false },
             { color: BRAND_FIELD_COLORS.runoff, label: 'Runoff', dash: true },
             { color: '#e7ece4', label: 'Aisles', dash: false },
+            { color: BRAND_FIELD_COLORS.sectionCut, label: 'Section Cut', dash: false },
             { color: BRAND_FIELD_COLORS.focal, label: 'Focal Point', dash: false }
         ];
 

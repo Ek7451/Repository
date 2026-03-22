@@ -260,6 +260,9 @@ describe('FieldRenderer helper delegation surface', () => {
         renderer._drawSeating = vi.fn(() => {
             callOrder.push('seating');
         });
+        renderer._drawSectionCutLine = vi.fn(() => {
+            callOrder.push('sectionCut');
+        });
         renderer._drawFocalPoint = vi.fn(() => {
             callOrder.push('focal');
         });
@@ -280,7 +283,75 @@ describe('FieldRenderer helper delegation surface', () => {
             []
         );
 
-        expect(callOrder).toEqual(['runoff', 'field', 'seating', 'focal']);
+        expect(callOrder).toEqual(['runoff', 'field', 'seating', 'sectionCut', 'focal']);
+    });
+
+    it('draws the plan-view grid from the visible canvas bounds', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        renderer.canvas = { width: 800, height: 600 };
+        renderer.ctx = {
+            clearRect: vi.fn(),
+            fillStyle: '',
+            fillRect: vi.fn(),
+            save: vi.fn(),
+            translate: vi.fn(),
+            scale: vi.fn(),
+            restore: vi.fn()
+        };
+        renderer._userHasZoomed = false;
+        renderer._drawGrid = vi.fn();
+        renderer._drawLegend = vi.fn();
+        renderer._drawShape = vi.fn();
+        renderer._drawSeating = vi.fn();
+        renderer._drawFocalPoint = vi.fn();
+        renderer._getBounds = vi.fn(() => ({
+            minX: -100,
+            maxX: 100,
+            minY: -50,
+            maxY: 50
+        }));
+        renderer._getFitViewport = vi.fn(() => ({
+            offsetX: 0,
+            offsetY: 0,
+            width: 800,
+            height: 600
+        }));
+        renderer._getBaseFitState = vi.fn(() => ({
+            scale: 2,
+            tx: 400,
+            ty: 300
+        }));
+
+        renderer.render(
+            {
+                shape: 'rectangle',
+                field_length: 360,
+                field_width: 160,
+                runoff: 10
+            },
+            null,
+            [],
+            { showSeating: false, t1: false, t2: false, t3: false },
+            0,
+            null,
+            0,
+            []
+        );
+
+        expect(renderer._drawGrid).toHaveBeenCalledWith(
+            renderer.ctx,
+            800,
+            600,
+            2,
+            {
+                minX: -200,
+                maxX: 200,
+                minY: -150,
+                maxY: 150
+            },
+            400,
+            300
+        );
     });
 
     it('keeps the plan-view focal marker on the field centerline', () => {
@@ -310,6 +381,55 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(ctx.arc).toHaveBeenCalledWith(0, -54.5, 4.8, 0, Math.PI * 2);
     });
 
+    it('projects the section cut line to the outermost visible tier edge and extends it 20 feet', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const cutLine = renderer._getSectionCutLineData(
+            [
+                createTierSolver({ tierIndex: 0 }),
+                {
+                    tierIndex: 1,
+                    rows: [
+                        { x: 44, tread_depth: 3 },
+                        { x: 48, tread_depth: 3 }
+                    ]
+                }
+            ],
+            { showSeating: true, t1: false, t2: true, t3: false },
+            -42.5,
+            createFullChamferBowlConfig(),
+            0
+        );
+
+        expect(cutLine).toEqual({
+            startX: 0,
+            startY: -42.5,
+            edgeX: 0,
+            edgeY: -108,
+            endX: 0,
+            endY: -128
+        });
+    });
+
+    it('finds the section cut edge on open two-sided bowls', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const cutLine = renderer._getSectionCutLineData(
+            [createTierSolver({ tierIndex: 0 })],
+            { showSeating: true, t1: true, t2: false, t3: false },
+            -54.5,
+            createFullChamferBowlConfig({ type: 'Sides' }),
+            0
+        );
+
+        expect(cutLine).toEqual({
+            startX: 0,
+            startY: -54.5,
+            edgeX: 0,
+            edgeY: -93,
+            endX: 0,
+            endY: -113
+        });
+    });
+
     it('keeps seating extents padding symmetric around plan geometry', () => {
         const renderer = Object.create(FieldRenderer.prototype);
         const bounds = renderer._getBounds(
@@ -331,10 +451,10 @@ describe('FieldRenderer helper delegation surface', () => {
             { showSeating: true, t1: true, t2: false, t3: false }
         );
 
-        expect(bounds.minX).toBeCloseTo(-142);
-        expect(bounds.maxX).toBeCloseTo(142);
-        expect(bounds.minY).toBeCloseTo(-92);
-        expect(bounds.maxY).toBeCloseTo(92);
+        expect(bounds.minX).toBeCloseTo(-150);
+        expect(bounds.maxX).toBeCloseTo(150);
+        expect(bounds.minY).toBeCloseTo(-100);
+        expect(bounds.maxY).toBeCloseTo(100);
     });
 
     it('fits plan extents against the visible panel frame instead of the dock-reserved canvas area', () => {
