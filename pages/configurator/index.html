@@ -172,7 +172,23 @@
                     </button>
                     <div class="section-body accordion__panel control-accordion__panel" id="accessibilitySectionBody" hidden>
                         <div class="control-row control-row--slider accessibility-inline-control">
+                            <label>Wheelchair Space</label>
+                            <input type="number" id="wheelchairSpaceAreaSqFtInput" min="0" step="0.5" value="12">
+                            <span class="unit">sf</span>
+                            <span class="info-icon"
+                                data-tooltip="Square footage required per wheelchair space for accessibility area planning metrics.">i</span>
+                        </div>
+
+                        <div class="control-row control-row--slider accessibility-inline-control">
                             <label>Companion Space</label>
+                            <input type="number" id="companionSpaceAreaSqFtInput" min="0" step="0.5" value="8">
+                            <span class="unit">sf</span>
+                            <span class="info-icon"
+                                data-tooltip="Square footage required per companion space for accessibility area planning metrics.">i</span>
+                        </div>
+
+                        <div class="control-row control-row--slider accessibility-inline-control">
+                            <label>Companion Seats</label>
                             <input type="number" id="companionSeatsPerWheelchairSpaceInput" min="0" max="4" step="1" value="1">
                             <span class="unit">qty</span>
                             <span class="info-icon"
@@ -185,9 +201,7 @@
                             </button>
                             <div class="section-body accordion__panel control-accordion__panel" id="wheelchairSpacesCodeSectionBody" hidden>
                                 <div class="code-table-shell">
-                                    <div class="code-table-kicker">1109.2.2.1 General Seating</div>
                                     <p class="code-table-lead">Wheelchair spaces shall be provided in accordance with Table 1109.2.2.1.</p>
-                                    <div class="code-table-caption">Table 1109.2.2.1</div>
                                     <div class="code-table-title">Accessible Wheelchair Spaces</div>
                                     <table class="accessibility-code-table">
                                         <thead>
@@ -200,66 +214,66 @@
                                             <tr>
                                                 <td>
                                                     <div class="accessibility-range-inputs">
-                                                        <input type="number" id="wheelchairSpacesBand1MinSeatsInput" min="0" step="1" value="4">
+                                                        <input type="text" inputmode="numeric" id="wheelchairSpacesBand1MinSeatsInput" min="0" step="1" value="4">
                                                         <span>to</span>
-                                                        <input type="number" id="wheelchairSpacesBand1MaxSeatsInput" min="0" step="1" value="25">
+                                                        <input type="text" inputmode="numeric" id="wheelchairSpacesBand1MaxSeatsInput" min="0" step="1" value="25">
                                                     </div>
                                                 </td>
-                                                <td><input type="number" id="wheelchairSpacesBand1RequiredSpacesInput" min="0" step="1" value="1"></td>
+                                                <td><input type="text" inputmode="numeric" id="wheelchairSpacesBand1RequiredSpacesInput" min="0" step="1" value="1"></td>
                                             </tr>
                                             <tr>
                                                 <td>
                                                     <div class="accessibility-range-inputs">
-                                                        <input type="number" id="wheelchairSpacesBand2MinSeatsInput" min="0" step="1" value="26">
+                                                        <input type="text" inputmode="numeric" id="wheelchairSpacesBand2MinSeatsInput" min="0" step="1" value="26">
                                                         <span>to</span>
-                                                        <input type="number" id="wheelchairSpacesBand2MaxSeatsInput" min="0" step="1" value="50">
+                                                        <input type="text" inputmode="numeric" id="wheelchairSpacesBand2MaxSeatsInput" min="0" step="1" value="50">
                                                     </div>
                                                 </td>
-                                                <td><input type="number" id="wheelchairSpacesBand2RequiredSpacesInput" min="0" step="1" value="2"></td>
+                                                <td><input type="text" inputmode="numeric" id="wheelchairSpacesBand2RequiredSpacesInput" min="0" step="1" value="2"></td>
                                             </tr>
                                             <tr>
                                                 <td>
                                                     <div class="accessibility-range-inputs">
-                                                        <input type="number" id="wheelchairSpacesBand3MinSeatsInput" min="0" step="1" value="51">
+                                                        <input type="text" inputmode="numeric" id="wheelchairSpacesBand3MinSeatsInput" min="0" step="1" value="51">
                                                         <span>to</span>
-                                                        <input type="number" id="wheelchairSpacesBand3MaxSeatsInput" min="0" step="1" value="100">
+                                                        <input type="text" inputmode="numeric" id="wheelchairSpacesBand3MaxSeatsInput" min="0" step="1" value="100">
                                                     </div>
                                                 </td>
-                                                <td><input type="number" id="wheelchairSpacesBand3RequiredSpacesInput" min="0" step="1" value="4"></td>
+                                                <td><input type="text" inputmode="numeric" id="wheelchairSpacesBand3RequiredSpacesInput" min="0" step="1" value="4"></td>
                                             </tr>
                                             <tr>
                                                 <td>
                                                     <div class="accessibility-range-inputs">
-                                                        <input type="number" id="wheelchairSpacesBand4MinSeatsInput" min="0" step="1" value="101">
+                                                        <input type="text" inputmode="numeric" id="wheelchairSpacesBand4MinSeatsInput" min="0" step="1" value="101">
                                                         <span>to</span>
-                                                        <input type="number" id="wheelchairSpacesBand4MaxSeatsInput" min="0" step="1" value="300">
+                                                        <input type="text" inputmode="numeric" id="wheelchairSpacesBand4MaxSeatsInput" min="0" step="1" value="300">
                                                     </div>
                                                 </td>
-                                                <td><input type="number" id="wheelchairSpacesBand4RequiredSpacesInput" min="0" step="1" value="5"></td>
+                                                <td><input type="text" inputmode="numeric" id="wheelchairSpacesBand4RequiredSpacesInput" min="0" step="1" value="5"></td>
                                             </tr>
                                             <tr>
                                                 <td>
                                                     <div class="accessibility-range-inputs">
-                                                        <input type="number" id="wheelchairSpacesBand5MinSeatsInput" min="0" step="1" value="301">
+                                                        <input type="text" inputmode="numeric" id="wheelchairSpacesBand5MinSeatsInput" min="0" step="1" value="301">
                                                         <span>to</span>
-                                                        <input type="number" id="wheelchairSpacesBand5MaxSeatsInput" min="0" step="1" value="500">
+                                                        <input type="text" inputmode="numeric" id="wheelchairSpacesBand5MaxSeatsInput" min="0" step="1" value="500">
                                                     </div>
                                                 </td>
-                                                <td><input type="number" id="wheelchairSpacesBand5RequiredSpacesInput" min="0" step="1" value="6"></td>
+                                                <td><input type="text" inputmode="numeric" id="wheelchairSpacesBand5RequiredSpacesInput" min="0" step="1" value="6"></td>
                                             </tr>
                                             <tr>
                                                 <td>
                                                     <div class="accessibility-range-inputs">
-                                                        <input type="number" id="wheelchairSpacesBand6MinSeatsInput" min="0" step="1" value="501">
+                                                        <input type="text" inputmode="numeric" id="wheelchairSpacesBand6MinSeatsInput" min="0" step="1" value="501">
                                                         <span>to</span>
-                                                        <input type="number" id="wheelchairSpacesBand6MaxSeatsInput" min="0" step="1" value="5000">
+                                                        <input type="text" inputmode="numeric" id="wheelchairSpacesBand6MaxSeatsInput" min="0" step="1" value="5000">
                                                     </div>
                                                 </td>
                                                 <td>
                                                     <div class="accessibility-formula-inputs">
-                                                        <input type="number" id="wheelchairSpacesBand6RequiredSpacesInput" min="0" step="1" value="6">
+                                                        <input type="text" inputmode="numeric" id="wheelchairSpacesBand6RequiredSpacesInput" min="0" step="1" value="6">
                                                         <span>+ 1 /</span>
-                                                        <input type="number" id="wheelchairSpacesBand6SeatsPerIncrementInput" min="1" step="1" value="150">
+                                                        <input type="text" inputmode="numeric" id="wheelchairSpacesBand6SeatsPerIncrementInput" min="1" step="1" value="150">
                                                         <span>seats</span>
                                                     </div>
                                                 </td>
@@ -267,15 +281,15 @@
                                             <tr>
                                                 <td>
                                                     <div class="accessibility-range-inputs accessibility-range-inputs--open">
-                                                        <input type="number" id="wheelchairSpacesBand7MinSeatsInput" min="0" step="1" value="5001">
+                                                        <input type="text" inputmode="numeric" id="wheelchairSpacesBand7MinSeatsInput" min="0" step="1" value="5001">
                                                         <span>and over</span>
                                                     </div>
                                                 </td>
                                                 <td>
                                                     <div class="accessibility-formula-inputs">
-                                                        <input type="number" id="wheelchairSpacesBand7RequiredSpacesInput" min="0" step="1" value="36">
+                                                        <input type="text" inputmode="numeric" id="wheelchairSpacesBand7RequiredSpacesInput" min="0" step="1" value="36">
                                                         <span>+ 1 /</span>
-                                                        <input type="number" id="wheelchairSpacesBand7SeatsPerIncrementInput" min="1" step="1" value="200">
+                                                        <input type="text" inputmode="numeric" id="wheelchairSpacesBand7SeatsPerIncrementInput" min="1" step="1" value="200">
                                                         <span>seats</span>
                                                     </div>
                                                 </td>
@@ -292,9 +306,7 @@
                             </button>
                             <div class="section-body accordion__panel control-accordion__panel" id="wheelchairLocationsCodeSectionBody" hidden>
                                 <div class="code-table-shell">
-                                    <div class="code-table-kicker">802.10 Wheelchair Space Location Dispersion</div>
                                     <p class="code-table-lead">Minimum required wheelchair space locations based on total seating in assembly areas.</p>
-                                    <div class="code-table-caption">Table 802.10</div>
                                     <div class="code-table-title">Wheelchair Space Dispersion</div>
                                     <table class="accessibility-code-table">
                                         <thead>
@@ -307,46 +319,46 @@
                                             <tr>
                                                 <td>
                                                     <div class="accessibility-range-inputs">
-                                                        <input type="number" id="wheelchairLocationsBand1MinSeatsInput" min="0" step="1" value="1">
+                                                        <input type="text" inputmode="numeric" id="wheelchairLocationsBand1MinSeatsInput" min="0" step="1" value="1">
                                                         <span>to</span>
-                                                        <input type="number" id="wheelchairLocationsBand1MaxSeatsInput" min="0" step="1" value="150">
+                                                        <input type="text" inputmode="numeric" id="wheelchairLocationsBand1MaxSeatsInput" min="0" step="1" value="150">
                                                     </div>
                                                 </td>
-                                                <td><input type="number" id="wheelchairLocationsBand1RequiredLocationsInput" min="0" step="1" value="1"></td>
+                                                <td><input type="text" inputmode="numeric" id="wheelchairLocationsBand1RequiredLocationsInput" min="0" step="1" value="1"></td>
                                             </tr>
                                             <tr>
                                                 <td>
                                                     <div class="accessibility-range-inputs">
-                                                        <input type="number" id="wheelchairLocationsBand2MinSeatsInput" min="0" step="1" value="151">
+                                                        <input type="text" inputmode="numeric" id="wheelchairLocationsBand2MinSeatsInput" min="0" step="1" value="151">
                                                         <span>to</span>
-                                                        <input type="number" id="wheelchairLocationsBand2MaxSeatsInput" min="0" step="1" value="500">
+                                                        <input type="text" inputmode="numeric" id="wheelchairLocationsBand2MaxSeatsInput" min="0" step="1" value="500">
                                                     </div>
                                                 </td>
-                                                <td><input type="number" id="wheelchairLocationsBand2RequiredLocationsInput" min="0" step="1" value="2"></td>
+                                                <td><input type="text" inputmode="numeric" id="wheelchairLocationsBand2RequiredLocationsInput" min="0" step="1" value="2"></td>
                                             </tr>
                                             <tr>
                                                 <td>
                                                     <div class="accessibility-range-inputs">
-                                                        <input type="number" id="wheelchairLocationsBand3MinSeatsInput" min="0" step="1" value="501">
+                                                        <input type="text" inputmode="numeric" id="wheelchairLocationsBand3MinSeatsInput" min="0" step="1" value="501">
                                                         <span>to</span>
-                                                        <input type="number" id="wheelchairLocationsBand3MaxSeatsInput" min="0" step="1" value="1000">
+                                                        <input type="text" inputmode="numeric" id="wheelchairLocationsBand3MaxSeatsInput" min="0" step="1" value="1000">
                                                     </div>
                                                 </td>
-                                                <td><input type="number" id="wheelchairLocationsBand3RequiredLocationsInput" min="0" step="1" value="3"></td>
+                                                <td><input type="text" inputmode="numeric" id="wheelchairLocationsBand3RequiredLocationsInput" min="0" step="1" value="3"></td>
                                             </tr>
                                             <tr>
                                                 <td>
                                                     <div class="accessibility-range-inputs">
-                                                        <input type="number" id="wheelchairLocationsBand4MinSeatsInput" min="0" step="1" value="1001">
+                                                        <input type="text" inputmode="numeric" id="wheelchairLocationsBand4MinSeatsInput" min="0" step="1" value="1001">
                                                         <span>to</span>
-                                                        <input type="number" id="wheelchairLocationsBand4MaxSeatsInput" min="0" step="1" value="5000">
+                                                        <input type="text" inputmode="numeric" id="wheelchairLocationsBand4MaxSeatsInput" min="0" step="1" value="5000">
                                                     </div>
                                                 </td>
                                                 <td>
                                                     <div class="accessibility-formula-inputs">
-                                                        <input type="number" id="wheelchairLocationsBand4RequiredLocationsInput" min="0" step="1" value="3">
+                                                        <input type="text" inputmode="numeric" id="wheelchairLocationsBand4RequiredLocationsInput" min="0" step="1" value="3">
                                                         <span>+ 1 /</span>
-                                                        <input type="number" id="wheelchairLocationsBand4SeatsPerIncrementInput" min="1" step="1" value="1000">
+                                                        <input type="text" inputmode="numeric" id="wheelchairLocationsBand4SeatsPerIncrementInput" min="1" step="1" value="1000">
                                                         <span>seats</span>
                                                     </div>
                                                 </td>
@@ -354,15 +366,15 @@
                                             <tr>
                                                 <td>
                                                     <div class="accessibility-range-inputs accessibility-range-inputs--open">
-                                                        <input type="number" id="wheelchairLocationsBand5MinSeatsInput" min="0" step="1" value="5001">
+                                                        <input type="text" inputmode="numeric" id="wheelchairLocationsBand5MinSeatsInput" min="0" step="1" value="5001">
                                                         <span>and over</span>
                                                     </div>
                                                 </td>
                                                 <td>
                                                     <div class="accessibility-formula-inputs">
-                                                        <input type="number" id="wheelchairLocationsBand5RequiredLocationsInput" min="0" step="1" value="7">
+                                                        <input type="text" inputmode="numeric" id="wheelchairLocationsBand5RequiredLocationsInput" min="0" step="1" value="7">
                                                         <span>+ 1 /</span>
-                                                        <input type="number" id="wheelchairLocationsBand5SeatsPerIncrementInput" min="1" step="1" value="2000">
+                                                        <input type="text" inputmode="numeric" id="wheelchairLocationsBand5SeatsPerIncrementInput" min="1" step="1" value="2000">
                                                         <span>seats</span>
                                                     </div>
                                                 </td>
@@ -1062,12 +1074,8 @@
                         </svg>
                     </button>
                     <button class="results-tab-btn" data-target="accessibilityTab" title="Accessibility">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="8" cy="18" r="3.2"></circle>
-                            <circle cx="14" cy="6" r="1.8"></circle>
-                            <path d="M13.5 8.5h-4l-1.4 5.2h4.2l2.9 3.3H19"></path>
-                            <path d="M10.3 13.7 8 9.2"></path>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M22.73 18.34 20.48 19.1a.75.75 0 0 1-.91-.38l-2.8-5.6H8.99a.75.75 0 0 1-.75-.75v-2.4a5.25 5.25 0 1 0 6.74 5.36.75.75 0 1 1 1.5.09A6.75 6.75 0 1 1 8.24 8.42V5.87a2.25 2.25 0 1 1 1.5 0v2.38h5.25a.75.75 0 0 1 0 1.5H9.74v1.88h7.5a.75.75 0 0 1 .67.41l2.71 5.42 1.63-.54a.75.75 0 1 1 .48 1.42Z"></path>
                         </svg>
                     </button>
                     <button class="results-tab-btn" data-target="detailsTab" title="Tier Details">

@@ -38,7 +38,9 @@ const ACCESSIBILITY_BAND_CONTROL_CONFIGS = [
 function buildAccessibilityNumericInputStatePaths() {
     /** @type {Array<[string, StatePath]>} */
     const entries = [
-        ['companionSeatsPerWheelchairSpace', ['occupancy', 'accessibility', 'companionSeatsPerWheelchairSpace']]
+        ['companionSeatsPerWheelchairSpace', ['occupancy', 'accessibility', 'companionSeatsPerWheelchairSpace']],
+        ['wheelchairSpaceAreaSqFt', ['occupancy', 'accessibility', 'wheelchairSpaceAreaSqFt']],
+        ['companionSpaceAreaSqFt', ['occupancy', 'accessibility', 'companionSpaceAreaSqFt']]
     ];
 
     ACCESSIBILITY_BAND_CONTROL_CONFIGS.forEach(({ prefix, path, fields }) => {
@@ -51,6 +53,10 @@ function buildAccessibilityNumericInputStatePaths() {
 }
 
 const ACCESSIBILITY_NUMERIC_INPUT_STATE_PATHS = buildAccessibilityNumericInputStatePaths();
+const ACCESSIBILITY_DECIMAL_INPUT_IDS = new Set([
+    'wheelchairSpaceAreaSqFt',
+    'companionSpaceAreaSqFt'
+]);
 
 const NUMERIC_INPUT_STATE_PATHS = {
     focalX: ['setup', 'focalX'],
@@ -117,6 +123,7 @@ const INTEGER_INPUT_IDS = new Set([
     'maxAisle',
     'seatsBetweenAisles',
     ...Object.keys(ACCESSIBILITY_NUMERIC_INPUT_STATE_PATHS)
+        .filter((id) => !ACCESSIBILITY_DECIMAL_INPUT_IDS.has(id))
 ]);
 const DEFAULT_BOWL_TYPE_OPTIONS = [
     { value: 'Full', label: 'Full Bowl' },

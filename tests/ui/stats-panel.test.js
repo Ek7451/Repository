@@ -34,6 +34,9 @@ function createMetrics(overrides = {}) {
         accessibilityOccupancyContribution: 0,
         wheelchairSpacesRequired: 0,
         companionSeatsRequired: 0,
+        wheelchairSpacesAreaSqFt: 0,
+        companionSpacesAreaSqFt: 0,
+        totalAccessibilityAreaSqFt: 0,
         wheelchairLocationsRequired: 0,
         totalRowLength: '120',
         totalSeatingLength: '96',
@@ -101,6 +104,9 @@ function buildStatsDto(input = {}) {
                 baseSeatCount: totalOccupancyAllTiers,
                 wheelchairSpacesRequired: 0,
                 companionSeatsRequired: 0,
+                wheelchairSpacesAreaSqFt: 0,
+                companionSpacesAreaSqFt: 0,
+                totalAccessibilityAreaSqFt: 0,
                 wheelchairLocationsRequired: 0,
                 accessibilityOccupancyContribution: Math.max(0, reportedOccupancyAllTiers - totalOccupancyAllTiers),
                 reportedOccupancy: reportedOccupancyAllTiers
@@ -148,6 +154,9 @@ describe('StatsPanel', () => {
                 accessibilityOccupancyContribution: 8,
                 wheelchairSpacesRequired: 4,
                 companionSeatsRequired: 4,
+                wheelchairSpacesAreaSqFt: 48,
+                companionSpacesAreaSqFt: 36,
+                totalAccessibilityAreaSqFt: 84,
                 wheelchairLocationsRequired: 2
             })]]),
             configurationSummary: {
@@ -157,6 +166,9 @@ describe('StatsPanel', () => {
                     baseSeatCount: 120,
                     wheelchairSpacesRequired: 4,
                     companionSeatsRequired: 4,
+                    wheelchairSpacesAreaSqFt: 48,
+                    companionSpacesAreaSqFt: 36,
+                    totalAccessibilityAreaSqFt: 84,
                     wheelchairLocationsRequired: 2,
                     accessibilityOccupancyContribution: 8,
                     reportedOccupancy: 128
@@ -180,6 +192,9 @@ describe('StatsPanel', () => {
         expect(accessibilityEl.innerHTML).toContain('ACCESSIBILITY');
         expect(accessibilityEl.innerHTML).toContain('Wheelchair Spaces');
         expect(accessibilityEl.innerHTML).toContain('Companion Seats');
+        expect(accessibilityEl.innerHTML).toContain('Wheelchair Area');
+        expect(accessibilityEl.innerHTML).toContain('Companion Area');
+        expect(accessibilityEl.innerHTML).toContain('Total Area');
         expect(accessibilityEl.innerHTML).toContain('Space Locations');
         expect(accessibilityEl.innerHTML).toContain('Reported Occupancy: 128 total');
     });

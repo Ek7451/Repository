@@ -269,6 +269,9 @@ function buildTierStatsViewModel({
             tierLabel: `TIER ${tierNumber}`,
             wheelchairSpacesRequired: Math.max(0, Number(metrics?.wheelchairSpacesRequired) || 0),
             companionSeatsRequired: Math.max(0, Number(metrics?.companionSeatsRequired) || 0),
+            wheelchairSpacesAreaSqFt: Math.max(0, Number(metrics?.wheelchairSpacesAreaSqFt) || 0),
+            companionSpacesAreaSqFt: Math.max(0, Number(metrics?.companionSpacesAreaSqFt) || 0),
+            totalAccessibilityAreaSqFt: Math.max(0, Number(metrics?.totalAccessibilityAreaSqFt) || 0),
             wheelchairLocationsRequired: Math.max(0, Number(metrics?.wheelchairLocationsRequired) || 0),
             accessibilityOccupancyContribution: Math.max(
                 0,
@@ -367,6 +370,18 @@ export function buildStatsViewModel({
                 companionSeatsRequired: Math.max(
                     0,
                     Number(accessibilitySummary?.companionSeatsRequired) || 0
+                ),
+                wheelchairSpacesAreaSqFt: Math.max(
+                    0,
+                    Number(accessibilitySummary?.wheelchairSpacesAreaSqFt) || 0
+                ),
+                companionSpacesAreaSqFt: Math.max(
+                    0,
+                    Number(accessibilitySummary?.companionSpacesAreaSqFt) || 0
+                ),
+                totalAccessibilityAreaSqFt: Math.max(
+                    0,
+                    Number(accessibilitySummary?.totalAccessibilityAreaSqFt) || 0
                 ),
                 wheelchairLocationsRequired: Math.max(
                     0,

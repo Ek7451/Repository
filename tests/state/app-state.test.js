@@ -299,6 +299,8 @@ describe('AppState', () => {
         state.occupancy.egressFactor = 0.3;
         state.occupancy.showSeatCubes3D = true;
         state.occupancy.accessibility.companionSeatsPerWheelchairSpace = 2;
+        state.occupancy.accessibility.wheelchairSpaceAreaSqFt = 13.5;
+        state.occupancy.accessibility.companionSpaceAreaSqFt = 8.5;
         state.occupancy.accessibility.wheelchairSpaceBands[5].minSeats = 600;
         state.occupancy.accessibility.wheelchairSpaceBands[5].seatsPerIncrement = 175;
         state.tiers[1].enabled = true;
@@ -322,6 +324,8 @@ describe('AppState', () => {
         });
         expect(buildAccessibilityParams(state)).toEqual(expect.objectContaining({
             companionSeatsPerWheelchairSpace: 2,
+            wheelchairSpaceAreaSqFt: 13.5,
+            companionSpaceAreaSqFt: 8.5,
             wheelchairSpaceBands: expect.arrayContaining([
                 expect.objectContaining({ minSeats: 4, maxSeats: 25, requiredSpaces: 1 }),
                 expect.objectContaining({

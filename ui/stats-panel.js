@@ -87,17 +87,28 @@ const QUALITY_LEGEND = [
     { label: 'Acceptable', color: '#de850a', rangeLabel: '2.4 - 3.5"' },
     { label: 'Poor', color: '#d1433d', rangeLabel: '< 2.4"' }
 ];
-const CODE_SCOPE_DISCLAIMER_LINES = [
-    'Accessibility counts, wheelchair space locations, and reported occupancy adjustments are now included in current results.',
-    'The following effects are still excluded from this phase and must be evaluated in later phases:',
-    '- Wheelchair space carve-outs and resulting standard-seat loss',
-    '- Clear floor space, maneuvering, and route geometry',
-    '- Wheelchair location impacts on seating block subdivision, aisle widths, and local layout geometry',
-    '- 30 ft rules and dead end row access conditions',
-    '- Vomitory, concourse, door bank, exit stair, discharge capacity and merging flows',
-    '- Exit loss checks and exit separation',
-    '- Handrail and guard encroachment rules'
+const ACCESSIBILITY_OVERVIEW_METRIC_DEFS = [
+    ['Wheelchair Spaces', 'wheelchair', (summary) => Math.max(0, Number(summary?.wheelchairSpacesRequired) || 0), ''],
+    ['Companion Seats', 'companion', (summary) => Math.max(0, Number(summary?.companionSeatsRequired) || 0), ''],
+    ['Space Locations', 'locations', (summary) => Math.max(0, Number(summary?.wheelchairLocationsRequired) || 0), ''],
+    ['Wheelchair Area', 'area', (summary) => Math.max(0, Number(summary?.wheelchairSpacesAreaSqFt) || 0), 'sf'],
+    ['Companion Area', 'area', (summary) => Math.max(0, Number(summary?.companionSpacesAreaSqFt) || 0), 'sf'],
+    ['Total Area', 'area', (summary) => Math.max(0, Number(summary?.totalAccessibilityAreaSqFt) || 0), 'sf'],
+    ['Occupancy Add', 'occupancy', (summary) => Math.max(0, Number(summary?.accessibilityOccupancyContribution) || 0), 'occ']
 ];
+const ACCESSIBILITY_TIER_METRIC_DEFS = [
+    ...ACCESSIBILITY_OVERVIEW_METRIC_DEFS,
+    ['Standard Seats', 'seats', (accessibility) => Math.max(0, Number(accessibility?.baseSeatCount) || 0), '']
+];
+
+function resolveAccessibilityMetrics(source, definitions) {
+    return definitions.map(([label, kind, valueResolver, suffix]) => [
+        label,
+        kind,
+        String(valueResolver(source)),
+        suffix
+    ]);
+}
 
 function normalizeQualityDistribution(summary = {}) {
     const distributionByLabel = new Map(
@@ -136,6 +147,27 @@ function createMetricIcon(kind) {
         return svg;
     }
 
+    if (kind === 'area') {
+        svg.appendChild(createSvgElement('rect', {
+            x: '5',
+            y: '5',
+            width: '14',
+            height: '14',
+            rx: '2',
+            fill: 'none',
+            stroke: 'currentColor',
+            'stroke-width': '1.8'
+        }));
+        svg.appendChild(createSvgElement('path', {
+            d: 'M9 15 15 9',
+            fill: 'none',
+            stroke: 'currentColor',
+            'stroke-width': '1.8',
+            'stroke-linecap': 'round'
+        }));
+        return svg;
+    }
+
     if (kind === 'sections') {
         svg.appendChild(createSvgElement('path', { d: 'M4 4h6v16H4z M12 4h8v7h-8z M12 13h8v7h-8z' }));
         return svg;
@@ -153,10 +185,9 @@ function createMetricIcon(kind) {
     }
 
     if (kind === 'wheelchair') {
-        svg.appendChild(createSvgElement('circle', { cx: '8', cy: '18', r: '3.2', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8' }));
-        svg.appendChild(createSvgElement('circle', { cx: '14', cy: '6', r: '1.8', fill: 'currentColor' }));
-        svg.appendChild(createSvgElement('path', { d: 'M13.5 8.5h-4l-1.4 5.2h4.2l2.9 3.3H19', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
-        svg.appendChild(createSvgElement('path', { d: 'M10.3 13.7 8 9.2', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8', 'stroke-linecap': 'round' }));
+        svg.appendChild(createSvgElement('path', {
+            d: 'M22.73 18.34 20.48 19.1a.75.75 0 0 1-.91-.38l-2.8-5.6H8.99a.75.75 0 0 1-.75-.75v-2.4a5.25 5.25 0 1 0 6.74 5.36.75.75 0 1 1 1.5.09A6.75 6.75 0 1 1 8.24 8.42V5.87a2.25 2.25 0 1 1 1.5 0v2.38h5.25a.75.75 0 0 1 0 1.5H9.74v1.88h7.5a.75.75 0 0 1 .67.41l2.71 5.42 1.63-.54a.75.75 0 1 1 .48 1.42Z'
+        }));
         return svg;
     }
 
@@ -289,7 +320,7 @@ function createOccupancyBreakdown(tiers = [], totalOccupancy = 0) {
     const container = createElement('div', 'occupancy-breakdown-content');
     const barContainer = createElement('div', 'occupancy-bar-container');
     const bar = createElement('div', 'occupancy-stacked-bar');
-    const tierBreakdownGrid = createElement('div', 'occupancy-tier-breakdown-grid');
+    const tierBreakdownGrid = createOccupancyTierSummaryGrid(tiers);
 
     if (totalOccupancy > 0) {
         tiers.forEach((tier) => {
@@ -297,9 +328,6 @@ function createOccupancyBreakdown(tiers = [], totalOccupancy = 0) {
             if (reportedOccupancy === 0) return;
 
             const color = tier?.occupancy?.color || 'var(--accent-blue)';
-            const label = tier?.occupancy?.label || 'Tier';
-            const standardSeats = Math.max(0, Number(tier?.occupancy?.standardSeats) || 0);
-            const accessibilityContribution = Math.max(0, Number(tier?.occupancy?.accessibilityContribution) || 0);
             const percent = `${(reportedOccupancy / totalOccupancy) * 100}%`;
 
             const segment = createElement('div', 'occupancy-bar-segment');
@@ -308,28 +336,43 @@ function createOccupancyBreakdown(tiers = [], totalOccupancy = 0) {
                 'segment-color': color
             });
             bar.appendChild(segment);
-
-            const tierCard = createElement('div', 'occupancy-tier-breakdown-card');
-            applyStyleVars(tierCard, { 'tier-color': color });
-            tierCard.appendChild(createElement('div', 'occupancy-tier-breakdown-header', label));
-            tierCard.appendChild(createElement('div', 'occupancy-tier-breakdown-total', `${reportedOccupancy.toLocaleString()} total`));
-            tierCard.appendChild(createElement(
-                'div',
-                'occupancy-tier-breakdown-line',
-                `Standard Seats: ${standardSeats.toLocaleString()}`
-            ));
-            tierCard.appendChild(createElement(
-                'div',
-                'occupancy-tier-breakdown-line occupancy-tier-breakdown-line--muted',
-                `Wheelchair + Companion: ${accessibilityContribution.toLocaleString()}`
-            ));
-            tierBreakdownGrid.appendChild(tierCard);
         });
     }
 
     barContainer.appendChild(bar);
     container.append(barContainer, tierBreakdownGrid);
     return container;
+}
+
+function createOccupancyTierSummaryGrid(tiers = []) {
+    const grid = createElement('div', 'occupancy-tier-breakdown-grid');
+
+    tiers.forEach((tier) => {
+        const reportedOccupancy = Math.max(0, Number(tier?.occupancy?.reportedOccupancy) || 0);
+        if (reportedOccupancy === 0) return;
+
+        const color = tier?.occupancy?.color || 'var(--accent-blue)';
+        const label = tier?.occupancy?.label || 'Tier';
+        const standardSeats = Math.max(0, Number(tier?.occupancy?.standardSeats) || 0);
+        const accessibilityContribution = Math.max(0, Number(tier?.occupancy?.accessibilityContribution) || 0);
+
+        const tierCard = createElement('div', 'occupancy-tier-breakdown-card');
+        applyStyleVars(tierCard, { 'tier-color': color });
+        tierCard.appendChild(createElement('div', 'occupancy-tier-breakdown-header', label));
+        tierCard.appendChild(createElement(
+            'div',
+            'occupancy-tier-breakdown-line',
+            `Standard: ${standardSeats.toLocaleString()}`
+        ));
+        tierCard.appendChild(createElement(
+            'div',
+            'occupancy-tier-breakdown-line occupancy-tier-breakdown-line--muted',
+            `Accessible: ${accessibilityContribution.toLocaleString()}`
+        ));
+        grid.appendChild(tierCard);
+    });
+
+    return grid;
 }
 
 function createMetricItem(label, iconKind, mainValue, suffixText = '') {
@@ -357,12 +400,7 @@ function createAccessibilityOverview(summary = {}) {
     section.appendChild(totalBlock);
 
     const grid = createElement('div', 'tier-metrics-grid accessibility-overview-grid');
-    [
-        ['Wheelchair Spaces', 'wheelchair', String(Math.max(0, Number(summary?.wheelchairSpacesRequired) || 0))],
-        ['Companion Seats', 'companion', String(Math.max(0, Number(summary?.companionSeatsRequired) || 0))],
-        ['Space Locations', 'locations', String(Math.max(0, Number(summary?.wheelchairLocationsRequired) || 0))],
-        ['Occupancy Add', 'occupancy', String(Math.max(0, Number(summary?.accessibilityOccupancyContribution) || 0)), 'occ']
-    ].forEach(([label, kind, value, suffix]) => {
+    resolveAccessibilityMetrics(summary, ACCESSIBILITY_OVERVIEW_METRIC_DEFS).forEach(([label, kind, value, suffix]) => {
         grid.appendChild(createMetricItem(label, kind, value, suffix || ''));
     });
     section.appendChild(grid);
@@ -380,7 +418,6 @@ function buildMetricItemMarkup(label, value, suffix = '') {
 
 function buildOccupancyBreakdownMarkup(tiers = [], totalOccupancy = 0) {
     const barSegments = [];
-    const tierCards = [];
 
     if (totalOccupancy > 0) {
         tiers.forEach((tier) => {
@@ -388,19 +425,8 @@ function buildOccupancyBreakdownMarkup(tiers = [], totalOccupancy = 0) {
             if (!(reportedOccupancy > 0)) return;
 
             const color = tier?.occupancy?.color || 'var(--accent-blue)';
-            const label = tier?.occupancy?.label || 'Tier';
-            const standardSeats = Math.max(0, Number(tier?.occupancy?.standardSeats) || 0);
-            const accessibilityContribution = Math.max(0, Number(tier?.occupancy?.accessibilityContribution) || 0);
             barSegments.push(`
                 <div class="occupancy-bar-segment" style="--segment-width:${(reportedOccupancy / totalOccupancy) * 100}%; --segment-color:${escapeHtml(color)}"></div>
-            `);
-            tierCards.push(`
-                <div class="occupancy-tier-breakdown-card" style="--tier-color:${escapeHtml(color)}">
-                    <div class="occupancy-tier-breakdown-header">${escapeHtml(label)}</div>
-                    <div class="occupancy-tier-breakdown-total">${escapeHtml(reportedOccupancy.toLocaleString())} total</div>
-                    <div class="occupancy-tier-breakdown-line">Standard Seats: ${escapeHtml(standardSeats.toLocaleString())}</div>
-                    <div class="occupancy-tier-breakdown-line occupancy-tier-breakdown-line--muted">Wheelchair + Companion: ${escapeHtml(accessibilityContribution.toLocaleString())}</div>
-                </div>
             `);
         });
     }
@@ -410,12 +436,38 @@ function buildOccupancyBreakdownMarkup(tiers = [], totalOccupancy = 0) {
             <div class="occupancy-bar-container">
                 <div class="occupancy-stacked-bar">${barSegments.join('')}</div>
             </div>
-            <div class="occupancy-tier-breakdown-grid">${tierCards.join('')}</div>
+            ${buildOccupancyTierSummaryGridMarkup(tiers)}
         </div>
     `;
 }
 
+function buildOccupancyTierSummaryGridMarkup(tiers = []) {
+    const tierCards = tiers.map((tier) => {
+        const reportedOccupancy = Math.max(0, Number(tier?.occupancy?.reportedOccupancy) || 0);
+        if (!(reportedOccupancy > 0)) return '';
+
+        const color = tier?.occupancy?.color || 'var(--accent-blue)';
+        const label = tier?.occupancy?.label || 'Tier';
+        const standardSeats = Math.max(0, Number(tier?.occupancy?.standardSeats) || 0);
+        const accessibilityContribution = Math.max(0, Number(tier?.occupancy?.accessibilityContribution) || 0);
+
+        return `
+            <div class="occupancy-tier-breakdown-card" style="--tier-color:${escapeHtml(color)}">
+                <div class="occupancy-tier-breakdown-header">${escapeHtml(label)}</div>
+                <div class="occupancy-tier-breakdown-line">Standard: ${escapeHtml(standardSeats.toLocaleString())}</div>
+                <div class="occupancy-tier-breakdown-line occupancy-tier-breakdown-line--muted">Accessible: ${escapeHtml(accessibilityContribution.toLocaleString())}</div>
+            </div>
+        `;
+    }).join('');
+
+    return `<div class="occupancy-tier-breakdown-grid">${tierCards}</div>`;
+}
+
 function buildAccessibilityOverviewMarkup(summary = {}) {
+    const metricsMarkup = resolveAccessibilityMetrics(summary, ACCESSIBILITY_OVERVIEW_METRIC_DEFS)
+        .map(([label, _kind, value, suffix]) => buildMetricItemMarkup(label, value, suffix))
+        .join('');
+
     return `
         <section class="accessibility-overview">
             <div class="total-occupancy-label results-section-title--center results-section-title--spaced">ACCESSIBILITY</div>
@@ -424,10 +476,7 @@ function buildAccessibilityOverviewMarkup(summary = {}) {
                 <div class="total-occupancy">${Math.max(0, Number(summary?.reportedOccupancy) || 0).toLocaleString()}</div>
             </div>
             <div class="tier-metrics-grid accessibility-overview-grid">
-                ${buildMetricItemMarkup('Wheelchair Spaces', Math.max(0, Number(summary?.wheelchairSpacesRequired) || 0))}
-                ${buildMetricItemMarkup('Companion Seats', Math.max(0, Number(summary?.companionSeatsRequired) || 0))}
-                ${buildMetricItemMarkup('Space Locations', Math.max(0, Number(summary?.wheelchairLocationsRequired) || 0))}
-                ${buildMetricItemMarkup('Occupancy Add', Math.max(0, Number(summary?.accessibilityOccupancyContribution) || 0), 'occ')}
+                ${metricsMarkup}
             </div>
         </section>
     `;
@@ -437,13 +486,9 @@ function buildAccessibilityCardMarkup(tier) {
     const accessibility = tier?.accessibility;
     if (!accessibility) return '';
 
-    const metricsMarkup = [
-        ['Wheelchair Spaces', accessibility.wheelchairSpacesRequired, ''],
-        ['Companion Seats', accessibility.companionSeatsRequired, ''],
-        ['Space Locations', accessibility.wheelchairLocationsRequired, ''],
-        ['Occupancy Add', accessibility.accessibilityOccupancyContribution, 'occ'],
-        ['Standard Seats', accessibility.baseSeatCount, '']
-    ].map(([label, value, suffix]) => buildMetricItemMarkup(label, value, suffix)).join('');
+    const metricsMarkup = resolveAccessibilityMetrics(accessibility, ACCESSIBILITY_TIER_METRIC_DEFS)
+        .map(([label, _kind, value, suffix]) => buildMetricItemMarkup(label, value, suffix))
+        .join('');
 
     return `
         <section class="tier-metrics-card tier-${escapeHtml(String(tier.tierNumber))}">
@@ -535,24 +580,6 @@ function createEgressEstimateSection(estimate, index) {
     });
 }
 
-function createDisclaimerSection() {
-    return createResultsDetailsSection({
-        title: '* Code Scope Disclaimer',
-        classes: ['results-details--disclaimer'],
-        isCollapsed: true,
-        sectionId: 'resultsCodeScopeDisclaimer',
-        contentBuilder: (panel) => {
-            panel.classList.add('results-details-body--disclaimer');
-            CODE_SCOPE_DISCLAIMER_LINES.forEach((line, index) => {
-                panel.append(document.createTextNode(line));
-                if (index < CODE_SCOPE_DISCLAIMER_LINES.length - 1) {
-                    appendLineBreak(panel);
-                }
-            });
-        }
-    });
-}
-
 function createEgressMetricCard(tier) {
     const card = cloneTemplateElement('resultsMetricCardTemplate');
     if (!card) return null;
@@ -583,7 +610,7 @@ function createEgressMetricCard(tier) {
 
     const check = card.querySelector('[data-results-card-check]');
     if (check) {
-        check.textContent = `Aisle Egress Capacity (per aisle): ${egress.occupantsPerAisleLine} occ x ${egress.egressFactor}"/occ = ${egress.capacityWidth}" Req.${egress.perSideMirrorNote}`;
+        check.textContent = `Aisle Egress Capacity (largest aisle): ${egress.occupantsPerAisleLine} occ x ${egress.egressFactor}"/occ = ${egress.capacityWidth}" Req.${egress.perSideMirrorNote}`;
     }
 
     const warning = /** @type {HTMLElement | null} */ (card.querySelector('[data-results-card-warning]'));
@@ -612,13 +639,7 @@ function createAccessibilityMetricCard(tier) {
 
     const grid = card.querySelector('[data-results-card-grid]');
     if (grid instanceof HTMLElement) {
-        [
-            ['Wheelchair Spaces', 'wheelchair', String(accessibility.wheelchairSpacesRequired)],
-            ['Companion Seats', 'companion', String(accessibility.companionSeatsRequired)],
-            ['Space Locations', 'locations', String(accessibility.wheelchairLocationsRequired)],
-            ['Occupancy Add', 'occupancy', String(accessibility.accessibilityOccupancyContribution), 'occ'],
-            ['Standard Seats', 'seats', String(accessibility.baseSeatCount)]
-        ].forEach(([label, kind, value, suffix]) => {
+        resolveAccessibilityMetrics(accessibility, ACCESSIBILITY_TIER_METRIC_DEFS).forEach(([label, kind, value, suffix]) => {
             grid.appendChild(createMetricItem(label, kind, value, suffix || ''));
         });
     }
@@ -706,7 +727,6 @@ export class StatsPanel {
             const card = createEgressMetricCard(tier);
             if (card) egressContainer.appendChild(card);
         });
-        egressContainer.appendChild(createDisclaimerSection());
         viewModel.tiers.forEach((tier, index) => {
             const estimate = tier?.egress?.estimate;
             if (!estimate) return;
@@ -722,15 +742,12 @@ export class StatsPanel {
     _buildAccessibilityContent(viewModel) {
         const root = createElement('div', 'results-summary-container');
         root.appendChild(createAccessibilityOverview(viewModel.summary?.accessibility || {}));
-        root.appendChild(createElement('div', 'results-divider results-divider--spacious'));
-        root.appendChild(createElement('div', 'total-occupancy-label results-section-title--spaced', 'PER-TIER REQUIREMENTS'));
 
         const accessibilityContainer = createElement('div', 'egress-metrics-container accessibility-metrics-container');
         viewModel.tiers.forEach((tier) => {
             const card = createAccessibilityMetricCard(tier);
             if (card) accessibilityContainer.appendChild(card);
         });
-        accessibilityContainer.appendChild(createDisclaimerSection());
         root.appendChild(accessibilityContainer);
         return root;
     }
@@ -807,7 +824,7 @@ export class StatsPanel {
                 ['Required Width', egress.capacityWidth, '"'],
                 ['Sections' + egress.countsTag, egress.displaySections, ''],
                 ['Largest Section', egress.occupantsPerSection, ''],
-                ['Max Seats/Row/Section', egress.maxSeatsPerSectionRow, ''],
+                ['Max Seats/Row', egress.maxSeatsPerSectionRow, ''],
                 ['Max Load/Aisle', egress.occupantsPerAisleLine, 'occ']
             ].map(([label, value, suffix]) => `
                 <div class="tier-metric-item">
@@ -833,15 +850,6 @@ export class StatsPanel {
                 </section>
             `;
         }).join('');
-
-        const disclaimerMarkup = `
-            <section class="results-details collapsed results-details--disclaimer">
-                <button type="button" class="accordion__trigger results-details__trigger" aria-expanded="false">* Code Scope Disclaimer</button>
-                <div class="section-body results-details__panel" hidden>
-                    ${CODE_SCOPE_DISCLAIMER_LINES.map((line) => escapeHtml(line)).join('<br>')}
-                </div>
-            </section>
-        `;
 
         const estimateMarkup = viewModel.tiers.map((tier, index) => {
             const estimate = tier?.egress?.estimate;
@@ -882,30 +890,18 @@ export class StatsPanel {
                     <div class="occupancy-breakdown">${buildOccupancyBreakdownMarkup(viewModel.tiers, totalOccupancy)}</div>
                     <div class="results-divider results-divider--spacious"></div>
                     <div class="total-occupancy-label results-section-title--spaced">EGRESS ANALYSIS</div>
-                    <div class="egress-metrics-container">${cardsMarkup}${disclaimerMarkup}${estimateMarkup}</div>
+                    <div class="egress-metrics-container">${cardsMarkup}${estimateMarkup}</div>
                 </div>
             </div>
         `;
     }
 
     _buildAccessibilityMarkup(viewModel) {
-        const disclaimerMarkup = `
-            <section class="results-details collapsed results-details--disclaimer">
-                <button type="button" class="accordion__trigger results-details__trigger" aria-expanded="false">* Code Scope Disclaimer</button>
-                <div class="section-body results-details__panel" hidden>
-                    ${CODE_SCOPE_DISCLAIMER_LINES.map((line) => escapeHtml(line)).join('<br>')}
-                </div>
-            </section>
-        `;
-
         return `
             <div class="results-summary-container">
                 ${buildAccessibilityOverviewMarkup(viewModel.summary?.accessibility || {})}
-                <div class="results-divider results-divider--spacious"></div>
-                <div class="total-occupancy-label results-section-title--spaced">PER-TIER REQUIREMENTS</div>
                 <div class="egress-metrics-container accessibility-metrics-container">
                     ${viewModel.tiers.map((tier) => buildAccessibilityCardMarkup(tier)).join('')}
-                    ${disclaimerMarkup}
                 </div>
             </div>
         `;

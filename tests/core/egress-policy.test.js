@@ -29,6 +29,8 @@ import {
 
 const ACCESSIBILITY_PARAMS = {
     companionSeatsPerWheelchairSpace: 1,
+    wheelchairSpaceAreaSqFt: 12,
+    companionSpaceAreaSqFt: 9,
     wheelchairSpaceBands: [
         { minSeats: 4, maxSeats: 25, requiredSpaces: 1 },
         { minSeats: 26, maxSeats: 50, requiredSpaces: 2 },
@@ -115,8 +117,13 @@ describe('egress policy helpers', () => {
         })).toEqual({
             baseSeatCount: 530,
             companionSeatsPerWheelchairSpace: 1,
+            wheelchairSpaceAreaSqFt: 12,
+            companionSpaceAreaSqFt: 9,
             wheelchairSpacesRequired: 7,
             companionSeatsRequired: 7,
+            wheelchairSpacesAreaSqFt: 84,
+            companionSpacesAreaSqFt: 63,
+            totalAccessibilityAreaSqFt: 147,
             wheelchairLocationsRequired: 3,
             accessibilityOccupancyContribution: 14,
             reportedOccupancy: 544,
@@ -126,6 +133,9 @@ describe('egress policy helpers', () => {
                     baseSeatCount: 265,
                     wheelchairSpacesRequired: 4,
                     companionSeatsRequired: 4,
+                    wheelchairSpacesAreaSqFt: 48,
+                    companionSpacesAreaSqFt: 36,
+                    totalAccessibilityAreaSqFt: 84,
                     wheelchairLocationsRequired: 2,
                     accessibilityOccupancyContribution: 8,
                     reportedOccupancy: 273
@@ -135,6 +145,9 @@ describe('egress policy helpers', () => {
                     baseSeatCount: 265,
                     wheelchairSpacesRequired: 3,
                     companionSeatsRequired: 3,
+                    wheelchairSpacesAreaSqFt: 36,
+                    companionSpacesAreaSqFt: 27,
+                    totalAccessibilityAreaSqFt: 63,
                     wheelchairLocationsRequired: 1,
                     accessibilityOccupancyContribution: 6,
                     reportedOccupancy: 271

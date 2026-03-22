@@ -45,6 +45,8 @@ const VALID_RESULTS_TABS = new Set(['statsTab', 'accessibilityTab', 'detailsTab'
  * }} WheelchairLocationBandState
  * @typedef {{
  *   companionSeatsPerWheelchairSpace: number,
+ *   wheelchairSpaceAreaSqFt: number,
+ *   companionSpaceAreaSqFt: number,
  *   wheelchairSpaceBands: WheelchairSpaceBandState[],
  *   wheelchairLocationBands: WheelchairLocationBandState[]
  * }} AccessibilityState
@@ -172,6 +174,8 @@ function createDefaultTier(overrides = {}) {
 function createDefaultAccessibilityState() {
     return {
         companionSeatsPerWheelchairSpace: 1,
+        wheelchairSpaceAreaSqFt: 12,
+        companionSpaceAreaSqFt: 8,
         wheelchairSpaceBands: [
             { minSeats: 4, maxSeats: 25, requiredSpaces: 1, seatsPerIncrement: 0, incrementAppliesAfter: 25 },
             { minSeats: 26, maxSeats: 50, requiredSpaces: 2, seatsPerIncrement: 0, incrementAppliesAfter: 50 },
@@ -498,6 +502,20 @@ function normalizeAccessibilityState(rawAccessibility, fallbackAccessibility = c
                 accessibility.companionSeatsPerWheelchairSpace,
                 fallback.companionSeatsPerWheelchairSpace ?? 0
             ))
+        ),
+        wheelchairSpaceAreaSqFt: Math.max(
+            0,
+            parseNumber(
+                accessibility.wheelchairSpaceAreaSqFt,
+                fallback.wheelchairSpaceAreaSqFt ?? 0
+            )
+        ),
+        companionSpaceAreaSqFt: Math.max(
+            0,
+            parseNumber(
+                accessibility.companionSpaceAreaSqFt,
+                fallback.companionSpaceAreaSqFt ?? 0
+            )
         ),
         wheelchairSpaceBands: normalizeWheelchairSpaceBands(
             accessibility.wheelchairSpaceBands,

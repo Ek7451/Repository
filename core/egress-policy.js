@@ -19,7 +19,9 @@ import {
  * @typedef {{
  *   wheelchairSpaceBands?: AccessibilityRequirementBandInput[],
  *   wheelchairLocationBands?: AccessibilityRequirementBandInput[],
- *   companionSeatsPerWheelchairSpace?: number
+ *   companionSeatsPerWheelchairSpace?: number,
+ *   wheelchairSpaceAreaSqFt?: number,
+ *   companionSpaceAreaSqFt?: number
  * }} AccessibilityParams
  * @typedef {{
  *   tierIndex?: number,
@@ -29,6 +31,10 @@ import {
 
 function toNonNegativeInteger(value) {
     return Math.max(0, Math.round(Number(value) || 0));
+}
+
+function toNonNegativeNumber(value) {
+    return Math.max(0, Number(value) || 0);
 }
 
 /**
@@ -179,11 +185,16 @@ export function buildAccessibilityRequirementSummary({
     const companionSeatsPerWheelchairSpace = toNonNegativeInteger(
         accessibilityParams?.companionSeatsPerWheelchairSpace
     );
+    const wheelchairSpaceAreaSqFt = toNonNegativeNumber(accessibilityParams?.wheelchairSpaceAreaSqFt);
+    const companionSpaceAreaSqFt = toNonNegativeNumber(accessibilityParams?.companionSpaceAreaSqFt);
     const wheelchairSpacesRequired = computeRequiredWheelchairSpaces({
         seatCount: baseSeatCount,
         accessibilityParams
     });
     const companionSeatsRequired = wheelchairSpacesRequired * companionSeatsPerWheelchairSpace;
+    const wheelchairSpacesAreaSqFt = wheelchairSpacesRequired * wheelchairSpaceAreaSqFt;
+    const companionSpacesAreaSqFt = companionSeatsRequired * companionSpaceAreaSqFt;
+    const totalAccessibilityAreaSqFt = wheelchairSpacesAreaSqFt + companionSpacesAreaSqFt;
     const wheelchairLocationsRequired = computeRequiredWheelchairLocations({
         seatCount: baseSeatCount,
         accessibilityParams
@@ -205,6 +216,8 @@ export function buildAccessibilityRequirementSummary({
     const tierSummaries = tiers.map((tier) => {
         const allocatedWheelchairSpaces = wheelchairAllocations.get(tier.tierIndex) || 0;
         const allocatedCompanionSeats = allocatedWheelchairSpaces * companionSeatsPerWheelchairSpace;
+        const allocatedWheelchairAreaSqFt = allocatedWheelchairSpaces * wheelchairSpaceAreaSqFt;
+        const allocatedCompanionAreaSqFt = allocatedCompanionSeats * companionSpaceAreaSqFt;
         const allocatedWheelchairLocations = locationAllocations.get(tier.tierIndex) || 0;
         const accessibilityOccupancyContribution = allocatedWheelchairSpaces + allocatedCompanionSeats;
 
@@ -213,6 +226,9 @@ export function buildAccessibilityRequirementSummary({
             baseSeatCount: tier.tierSeatCount,
             wheelchairSpacesRequired: allocatedWheelchairSpaces,
             companionSeatsRequired: allocatedCompanionSeats,
+            wheelchairSpacesAreaSqFt: allocatedWheelchairAreaSqFt,
+            companionSpacesAreaSqFt: allocatedCompanionAreaSqFt,
+            totalAccessibilityAreaSqFt: allocatedWheelchairAreaSqFt + allocatedCompanionAreaSqFt,
             wheelchairLocationsRequired: allocatedWheelchairLocations,
             accessibilityOccupancyContribution,
             reportedOccupancy: tier.tierSeatCount + accessibilityOccupancyContribution
@@ -227,8 +243,13 @@ export function buildAccessibilityRequirementSummary({
     return {
         baseSeatCount,
         companionSeatsPerWheelchairSpace,
+        wheelchairSpaceAreaSqFt,
+        companionSpaceAreaSqFt,
         wheelchairSpacesRequired,
         companionSeatsRequired,
+        wheelchairSpacesAreaSqFt,
+        companionSpacesAreaSqFt,
+        totalAccessibilityAreaSqFt,
         wheelchairLocationsRequired,
         accessibilityOccupancyContribution,
         reportedOccupancy: baseSeatCount + accessibilityOccupancyContribution,

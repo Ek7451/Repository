@@ -2385,8 +2385,13 @@ describe('aisle layout geometry seam', () => {
             accessibility: {
                 baseSeatCount: tierLayout.sectionSummary.tierSeatCount,
                 companionSeatsPerWheelchairSpace: 0,
+                wheelchairSpaceAreaSqFt: 0,
+                companionSpaceAreaSqFt: 0,
                 wheelchairSpacesRequired: 0,
                 companionSeatsRequired: 0,
+                wheelchairSpacesAreaSqFt: 0,
+                companionSpacesAreaSqFt: 0,
+                totalAccessibilityAreaSqFt: 0,
                 wheelchairLocationsRequired: 0,
                 accessibilityOccupancyContribution: 0,
                 reportedOccupancy: tierLayout.sectionSummary.tierSeatCount,
@@ -2395,6 +2400,9 @@ describe('aisle layout geometry seam', () => {
                     baseSeatCount: tierLayout.sectionSummary.tierSeatCount,
                     wheelchairSpacesRequired: 0,
                     companionSeatsRequired: 0,
+                    wheelchairSpacesAreaSqFt: 0,
+                    companionSpacesAreaSqFt: 0,
+                    totalAccessibilityAreaSqFt: 0,
                     wheelchairLocationsRequired: 0,
                     accessibilityOccupancyContribution: 0,
                     reportedOccupancy: tierLayout.sectionSummary.tierSeatCount

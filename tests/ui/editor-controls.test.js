@@ -151,6 +151,8 @@ function createState() {
             showSeatCubes3D: false,
             accessibility: {
                 companionSeatsPerWheelchairSpace: 1,
+                wheelchairSpaceAreaSqFt: 12,
+                companionSpaceAreaSqFt: 9,
                 wheelchairSpaceBands: [
                     { minSeats: 4, maxSeats: 25, requiredSpaces: 1, seatsPerIncrement: 0, incrementAppliesAfter: 25 },
                     { minSeats: 26, maxSeats: 50, requiredSpaces: 2, seatsPerIncrement: 0, incrementAppliesAfter: 50 },
@@ -371,6 +373,8 @@ describe('EditorControls', () => {
 
     test('syncs and commits accessibility override inputs through canonical AppState paths', () => {
         const elements = {
+            wheelchairSpaceAreaSqFtInput: createElement({ value: '12' }),
+            companionSpaceAreaSqFtInput: createElement({ value: '9' }),
             companionSeatsPerWheelchairSpaceInput: createElement({ value: '1' }),
             wheelchairSpacesBand6SeatsPerIncrementInput: createElement({ value: '150' }),
             wheelchairLocationsBand4RequiredLocationsInput: createElement({ value: '3' })
@@ -388,9 +392,19 @@ describe('EditorControls', () => {
         controls.init();
         controls.syncFromState();
 
+        expect(elements.wheelchairSpaceAreaSqFtInput.value).toBe('12');
+        expect(elements.companionSpaceAreaSqFtInput.value).toBe('9');
         expect(elements.companionSeatsPerWheelchairSpaceInput.value).toBe('1');
         expect(elements.wheelchairSpacesBand6SeatsPerIncrementInput.value).toBe('150');
         expect(elements.wheelchairLocationsBand4RequiredLocationsInput.value).toBe('3');
+
+        elements.wheelchairSpaceAreaSqFtInput.value = '12.5';
+        elements.wheelchairSpaceAreaSqFtInput.dispatch('input');
+        elements.wheelchairSpaceAreaSqFtInput.dispatch('blur');
+
+        elements.companionSpaceAreaSqFtInput.value = '9.5';
+        elements.companionSpaceAreaSqFtInput.dispatch('input');
+        elements.companionSpaceAreaSqFtInput.dispatch('blur');
 
         elements.companionSeatsPerWheelchairSpaceInput.value = '2';
         elements.companionSeatsPerWheelchairSpaceInput.dispatch('input');
@@ -404,9 +418,13 @@ describe('EditorControls', () => {
         elements.wheelchairLocationsBand4RequiredLocationsInput.dispatch('input');
         elements.wheelchairLocationsBand4RequiredLocationsInput.dispatch('blur');
 
+        expect(state.occupancy.accessibility.wheelchairSpaceAreaSqFt).toBe(12.5);
+        expect(state.occupancy.accessibility.companionSpaceAreaSqFt).toBe(9.5);
         expect(state.occupancy.accessibility.companionSeatsPerWheelchairSpace).toBe(2);
         expect(state.occupancy.accessibility.wheelchairSpaceBands[5].seatsPerIncrement).toBe(175);
         expect(state.occupancy.accessibility.wheelchairLocationBands[3].requiredLocations).toBe(4);
+        expect(onChange).toHaveBeenCalledWith({ reason: 'state', controlId: 'wheelchairSpaceAreaSqFtInput' });
+        expect(onChange).toHaveBeenCalledWith({ reason: 'state', controlId: 'companionSpaceAreaSqFtInput' });
         expect(onChange).toHaveBeenCalledWith({ reason: 'state', controlId: 'companionSeatsPerWheelchairSpaceInput' });
         expect(onChange).toHaveBeenCalledWith({ reason: 'state', controlId: 'wheelchairSpacesBand6SeatsPerIncrementInput' });
         expect(onChange).toHaveBeenCalledWith({ reason: 'state', controlId: 'wheelchairLocationsBand4RequiredLocationsInput' });

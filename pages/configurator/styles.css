@@ -906,33 +906,25 @@ body.jlg-shell {
 }
 
 .jlg-shell .code-table-shell {
-    border: 1px solid rgba(15, 23, 42, 0.12);
-    border-radius: 10px;
-    background: linear-gradient(180deg, rgba(247, 248, 250, 0.92), rgba(255, 255, 255, 0.98));
-    padding: 14px 12px 12px;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
 }
 
-.jlg-shell .code-table-kicker {
-    color: #1f3250;
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 18px;
-    font-weight: 700;
-    line-height: 1.1;
-}
 
 .jlg-shell .code-table-lead {
     color: #63748a;
-    font-size: 12px;
+    font-size: 11px;
     font-style: italic;
     line-height: 1.45;
-    margin: 8px 0 12px;
+    margin: 0px 0 12px;
 }
 
-.jlg-shell .code-table-caption,
 .jlg-shell .code-table-title {
-    color: #16345c;
+    color: #3f3f46;
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 15px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.08em;
     text-align: center;
@@ -948,23 +940,34 @@ body.jlg-shell {
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
-    font-size: 12px;
+    font-size: 11px;
 }
 
 .jlg-shell .accessibility-code-table th,
 .jlg-shell .accessibility-code-table td {
     border: 1px solid rgba(22, 52, 92, 0.18);
-    padding: 8px;
+    padding: 6px;
     vertical-align: middle;
 }
 
+.jlg-shell .accessibility-code-table th:first-child,
+.jlg-shell .accessibility-code-table td:first-child {
+    width: 46%;
+}
+
+.jlg-shell .accessibility-code-table th:last-child,
+.jlg-shell .accessibility-code-table td:last-child {
+    width: 54%;
+}
+
 .jlg-shell .accessibility-code-table th {
-    background: rgba(222, 228, 236, 0.7);
-    color: #16345c;
+    background: rgba(216, 216, 216, 0.9);
+    color: #3F3F46;
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.05em;
+    line-height: 1.2;
     text-transform: uppercase;
 }
 
@@ -972,20 +975,26 @@ body.jlg-shell {
     background: rgba(255, 255, 255, 0.92);
 }
 
-.jlg-shell .accessibility-code-table input[type="number"] {
-    width: 68px;
+.jlg-shell .accessibility-code-table td > input {
+    display: block;
+    width: 52px;
+    margin: 0 auto;
+}
+
+.jlg-shell .accessibility-code-table input {
     min-width: 0;
+    appearance: none;
     background: #ffffff;
     border: 1px solid #cfd5de;
     border-radius: 6px;
     color: #18181b;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
-    padding: 5px 6px;
+    padding: 4px 5px;
     text-align: center;
 }
 
-.jlg-shell .accessibility-code-table input[type="number"]:focus {
+.jlg-shell .accessibility-code-table input:focus {
     border-color: #7aae1a;
     box-shadow: 0 0 0 3px rgba(122, 174, 26, 0.14);
 }
@@ -994,13 +1003,21 @@ body.jlg-shell {
 .jlg-shell .accessibility-formula-inputs {
     display: flex;
     align-items: center;
+    gap: 4px;
     justify-content: center;
-    gap: 6px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    min-width: 0;
 }
 
 .jlg-shell .accessibility-range-inputs--open {
     justify-content: flex-start;
+}
+
+.jlg-shell .accessibility-range-inputs input,
+.jlg-shell .accessibility-formula-inputs input {
+    flex: 1 1 0;
+    min-width: 0;
+    width: 0;
 }
 
 .jlg-shell .accessibility-range-inputs span,
@@ -1009,6 +1026,7 @@ body.jlg-shell {
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.02em;
+    white-space: nowrap;
 }
 
 /* ==========================================================================
@@ -3163,10 +3181,9 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
 .results-summary-container {
     display: flex;
     flex-direction: column;
-    gap: var(--gap-md);
+    gap: 16px;
     margin-bottom: var(--gap-md);
     padding: 0px var(--gap-sm) var(--gap-md);
-    border-bottom: 1px solid var(--border-color);
 }
 
 .visuals-col-chart {
@@ -3296,7 +3313,7 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
 
 .results-section-title--center {
     text-align: center;
-    margin-top: 0;
+    margin-top: 6px;
 }
 
 .results-section-title--chart {
@@ -3348,48 +3365,60 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
 
 .occupancy-tier-breakdown-grid {
     display: grid;
-    gap: 10px;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 2px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
 }
 
 .occupancy-tier-breakdown-card {
-    border-radius: 10px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    border-top: 3px solid var(--tier-color, var(--border-color));
-    background: rgba(255, 255, 255, 0.9);
-    padding: 12px;
-    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+    position: relative;
+    padding: 3px 10px 0;
+    text-align: center;
+}
+
+.occupancy-tier-breakdown-card::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto auto 18%;
+    width: 64%;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--tier-color, var(--border-color));
+    opacity: 0.95;
 }
 
 .occupancy-tier-breakdown-header {
     color: var(--text-primary);
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-}
-
-.occupancy-tier-breakdown-total {
-    color: var(--text-primary);
-    font-size: 18px;
-    font-weight: 700;
-    margin: 6px 0 10px;
+    margin-top: 3px;
 }
 
 .occupancy-tier-breakdown-line {
-    color: var(--text-secondary);
-    font-size: 12px;
-    line-height: 1.5;
+    color: var(--text-primary);
+    font-size: 10px;
+    line-height: 1.45;
+    margin-top: 4px;
 }
 
 .occupancy-tier-breakdown-line--muted {
-    color: var(--text-muted);
+    color: var(--text-primary);
+}
+
+@media (max-width: 900px) {
+    .occupancy-tier-breakdown-grid {
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 14px;
+    }
 }
 
 .accessibility-overview {
     display: grid;
-    gap: 16px;
+    border-bottom: 1px solid var(--border-color);
+    gap: 10px;
 }
 
 .accessibility-total-block {
@@ -3624,18 +3653,7 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
     margin: 0;
     padding: 12px 14px;
     text-transform: uppercase;
-}
-
-.tier-metrics-header.tier-1 {
-    color: var(--accent-blue);
-}
-
-.tier-metrics-header.tier-2 {
-    color: var(--accent-cyan);
-}
-
-.tier-metrics-header.tier-3 {
-    color: var(--accent-purple);
+    text-align: left;
 }
 
 .tier-metrics-grid {
@@ -3704,6 +3722,7 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
     color: var(--text-primary);
     margin-bottom: 8px;
     padding-top: 2px;
+    text-align: center;
 }
 
 .tier-metrics-limit-note {
@@ -3740,31 +3759,14 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
     margin-bottom: 12px;
 }
 
-.results-details--disclaimer {
-    margin-top: 12px;
-    margin-bottom: 8px;
-}
-
-.results-details-header--supporting,
-.results-details-header--disclaimer {
+.results-details-header--supporting {
     font-size: 10px;
     padding: 6px 8px;
     font-weight: 500;
 }
 
-.results-details-header--disclaimer {
-    color: var(--text-muted);
-}
-
 .results-details-body--compact {
     padding: 8px;
-}
-
-.results-details-body--disclaimer {
-    padding: 8px;
-    font-size: 0.75rem;
-    line-height: 1.3;
-    color: var(--text-muted);
 }
 
 .egress-row-notes {
@@ -4525,8 +4527,7 @@ html[data-theme="dark"] .jlg-shell .accessibility-subsection {
 }
 
 html[data-theme="dark"] .jlg-shell .code-table-shell {
-    border-color: rgba(148, 163, 184, 0.16);
-    background: linear-gradient(180deg, rgba(26, 35, 49, 0.96), rgba(16, 23, 33, 0.98));
+    background: transparent;
 }
 
 html[data-theme="dark"] .jlg-shell .code-table-kicker,
@@ -4553,7 +4554,7 @@ html[data-theme="dark"] .jlg-shell .accessibility-code-table td {
     background: rgba(20, 28, 39, 0.94);
 }
 
-html[data-theme="dark"] .jlg-shell .accessibility-code-table input[type="number"] {
+html[data-theme="dark"] .jlg-shell .accessibility-code-table input {
     background: #111923;
     border-color: #334155;
     color: #f8fafc;
@@ -4565,9 +4566,7 @@ html[data-theme="dark"] .jlg-shell .accessibility-formula-inputs span {
 }
 
 html[data-theme="dark"] .occupancy-tier-breakdown-card {
-    border-color: rgba(148, 163, 184, 0.12);
-    background: rgba(17, 25, 35, 0.92);
-    box-shadow: none;
+    background: transparent;
 }
 
 html[data-theme="dark"] .jlg-shell .control-row input[type="range"] {

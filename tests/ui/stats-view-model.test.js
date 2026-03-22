@@ -33,6 +33,9 @@ function createMetrics(overrides = {}) {
         accessibilityOccupancyContribution: 0,
         wheelchairSpacesRequired: 0,
         companionSeatsRequired: 0,
+        wheelchairSpacesAreaSqFt: 0,
+        companionSpacesAreaSqFt: 0,
+        totalAccessibilityAreaSqFt: 0,
         wheelchairLocationsRequired: 0,
         totalRowLength: '120',
         totalSeatingLength: '96',
@@ -100,6 +103,9 @@ function buildStatsDto(input = {}) {
                 baseSeatCount: totalOccupancyAllTiers,
                 wheelchairSpacesRequired: 0,
                 companionSeatsRequired: 0,
+                wheelchairSpacesAreaSqFt: 0,
+                companionSpacesAreaSqFt: 0,
+                totalAccessibilityAreaSqFt: 0,
                 wheelchairLocationsRequired: 0,
                 accessibilityOccupancyContribution: Math.max(0, reportedOccupancyAllTiers - totalOccupancyAllTiers),
                 reportedOccupancy: reportedOccupancyAllTiers
@@ -180,6 +186,9 @@ describe('buildStatsViewModel', () => {
                     accessibilityOccupancyContribution: 8,
                     wheelchairSpacesRequired: 4,
                     companionSeatsRequired: 4,
+                    wheelchairSpacesAreaSqFt: 48,
+                    companionSpacesAreaSqFt: 36,
+                    totalAccessibilityAreaSqFt: 84,
                     wheelchairLocationsRequired: 2
                 })],
                 [1, createMetrics({
@@ -188,6 +197,9 @@ describe('buildStatsViewModel', () => {
                     accessibilityOccupancyContribution: 4,
                     wheelchairSpacesRequired: 2,
                     companionSeatsRequired: 2,
+                    wheelchairSpacesAreaSqFt: 24,
+                    companionSpacesAreaSqFt: 18,
+                    totalAccessibilityAreaSqFt: 42,
                     wheelchairLocationsRequired: 1
                 })]
             ]),
@@ -198,6 +210,9 @@ describe('buildStatsViewModel', () => {
                     baseSeatCount: 200,
                     wheelchairSpacesRequired: 6,
                     companionSeatsRequired: 6,
+                    wheelchairSpacesAreaSqFt: 72,
+                    companionSpacesAreaSqFt: 54,
+                    totalAccessibilityAreaSqFt: 126,
                     wheelchairLocationsRequired: 3,
                     accessibilityOccupancyContribution: 12,
                     reportedOccupancy: 212
@@ -210,6 +225,9 @@ describe('buildStatsViewModel', () => {
             baseSeatCount: 200,
             wheelchairSpacesRequired: 6,
             companionSeatsRequired: 6,
+            wheelchairSpacesAreaSqFt: 72,
+            companionSpacesAreaSqFt: 54,
+            totalAccessibilityAreaSqFt: 126,
             wheelchairLocationsRequired: 3,
             accessibilityOccupancyContribution: 12,
             reportedOccupancy: 212
@@ -222,6 +240,9 @@ describe('buildStatsViewModel', () => {
         expect(viewModel.tiers[0].accessibility).toMatchObject({
             wheelchairSpacesRequired: 4,
             companionSeatsRequired: 4,
+            wheelchairSpacesAreaSqFt: 48,
+            companionSpacesAreaSqFt: 36,
+            totalAccessibilityAreaSqFt: 84,
             wheelchairLocationsRequired: 2,
             accessibilityOccupancyContribution: 8,
             reportedOccupancy: 128,
