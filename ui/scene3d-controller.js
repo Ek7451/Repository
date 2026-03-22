@@ -41,7 +41,8 @@ export class Scene3DController {
             getSportName?: (() => string),
             download?: ((descriptor: object) => boolean | void),
             ensureContainerSize?: (() => void),
-            onLayoutChanged?: (() => void)
+            onLayoutChanged?: (() => void),
+            onBookmarksChanged?: ((change: { action: string, index: number }) => void)
         }} */ (options && typeof options === 'object' ? options : {});
 
         this.containerEl = settings.containerEl ?? getDefaultElement('scene3dContainer');
@@ -70,6 +71,9 @@ export class Scene3DController {
         this.onLayoutChanged = typeof settings.onLayoutChanged === 'function'
             ? settings.onLayoutChanged
             : () => {};
+        this.onBookmarksChanged = typeof settings.onBookmarksChanged === 'function'
+            ? settings.onBookmarksChanged
+            : null;
 
         this.scene3D = null;
         this._scene3dReady = false;
@@ -85,6 +89,7 @@ export class Scene3DController {
             getScene3D: () => this.scene3D,
             getSportName: this.getSportName,
             download: this.download,
+            onBookmarksChanged: this.onBookmarksChanged,
             onLayoutChanged: () => {
                 this.onLayoutChanged();
                 this.ensureContainerSize();

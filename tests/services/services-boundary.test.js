@@ -409,6 +409,49 @@ describe('service DTO boundaries', () => {
         await expect(projectsService.listProjects()).resolves.toHaveLength(1);
     });
 
+    it('tracks the last active local project per signed-in owner and clears stale pointers', async () => {
+        const authService = createAuthService({ devBackend: 'local' });
+        const projectsService = createProjectsService({ devBackend: 'local' });
+
+        await authService.signIn({
+            displayName: 'Pat Example',
+            email: 'pat@example.com'
+        });
+
+        const firstProject = await projectsService.createProject({
+            name: 'First Study',
+            state: { sport: 'Football' }
+        });
+        const secondProject = await projectsService.createProject({
+            name: 'Second Study',
+            state: { sport: 'Soccer' }
+        });
+
+        await expect(projectsService.getLastActiveProjectId()).resolves.toBeNull();
+
+        await expect(projectsService.setLastActiveProjectId(secondProject.id)).resolves.toBeUndefined();
+        await expect(projectsService.getLastActiveProjectId()).resolves.toBe(secondProject.id);
+
+        globalThis.localStorage.setItem('sbg-dev-auth-session', JSON.stringify({
+            userId: 'other@example.com',
+            displayName: 'Other User',
+            email: 'other@example.com'
+        }));
+        await expect(projectsService.getLastActiveProjectId()).resolves.toBeNull();
+
+        globalThis.localStorage.setItem('sbg-dev-auth-session', JSON.stringify({
+            userId: 'pat@example.com',
+            displayName: 'Pat Example',
+            email: 'pat@example.com'
+        }));
+        await expect(projectsService.deleteProject(secondProject.id)).resolves.toBeUndefined();
+        await expect(projectsService.getLastActiveProjectId()).resolves.toBeNull();
+
+        await expect(projectsService.setLastActiveProjectId(firstProject.id)).resolves.toBeUndefined();
+        globalThis.localStorage.setItem('sbg-dev-projects', JSON.stringify([]));
+        await expect(projectsService.getLastActiveProjectId()).resolves.toBeNull();
+    });
+
     it('deletes only the signed-in local project and removes it from later list results', async () => {
         const authService = createAuthService({ devBackend: 'local' });
         const projectsService = createProjectsService({ devBackend: 'local' });

@@ -1,5 +1,6 @@
 const DEV_LOCAL_SESSION_KEY = 'sbg-dev-auth-session';
 const DEV_LOCAL_PROJECTS_KEY = 'sbg-dev-projects';
+const DEV_LOCAL_LAST_ACTIVE_PROJECTS_KEY = 'sbg-dev-last-active-projects';
 
 function getBrowserStorage() {
     try {
@@ -28,6 +29,10 @@ function normalizeProjectRevision(value) {
 
     const normalizedValue = typeof value === 'string' ? value.trim() : '';
     return normalizedValue || null;
+}
+
+function normalizeProjectId(value) {
+    return typeof value === 'string' ? value.trim() : '';
 }
 
 function cloneProjectAccess(access = null) {
@@ -168,6 +173,51 @@ function readLocalProjects() {
     }
 }
 
+function readLocalLastActiveProjects() {
+    const storage = getBrowserStorage();
+    if (!storage) return {};
+
+    try {
+        const raw = storage.getItem(DEV_LOCAL_LAST_ACTIVE_PROJECTS_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+        return {};
+    }
+}
+
+function writeLocalLastActiveProjects(lastActiveProjects) {
+    const storage = getBrowserStorage();
+    if (!storage) return;
+
+    try {
+        storage.setItem(DEV_LOCAL_LAST_ACTIVE_PROJECTS_KEY, JSON.stringify(lastActiveProjects));
+    } catch {
+        // Ignore storage failures in explicit local-dev mode.
+    }
+}
+
+function getLastActiveProjectIdForSession(session) {
+    const ownerId = resolveSessionOwnerId(session);
+    if (!ownerId) return '';
+
+    return normalizeProjectId(readLocalLastActiveProjects()[ownerId]);
+}
+
+function setLastActiveProjectIdForSession(session, projectId) {
+    const ownerId = resolveSessionOwnerId(session);
+    if (!ownerId) return;
+
+    const normalizedProjectId = normalizeProjectId(projectId);
+    const lastActiveProjects = readLocalLastActiveProjects();
+    if (normalizedProjectId) {
+        lastActiveProjects[ownerId] = normalizedProjectId;
+    } else {
+        delete lastActiveProjects[ownerId];
+    }
+    writeLocalLastActiveProjects(lastActiveProjects);
+}
+
 function writeLocalProjects(projects) {
     const storage = getBrowserStorage();
     if (!storage) return;
@@ -202,9 +252,10 @@ function createApiProjectsService({ baseUrl }) {
                 }
             });
             const payload = await parseResponse(response);
-            return Array.isArray(payload?.projects)
+            return (Array.isArray(payload?.projects)
                 ? payload.projects.map(normalizeProjectSummary).filter(Boolean)
-                : [];
+                : [])
+                .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
         },
 
         async createProject(projectRequest) {
@@ -282,6 +333,18 @@ function createApiProjectsService({ baseUrl }) {
             });
 
             await parseResponse(response);
+        },
+
+        async getLastActiveProjectId() {
+            return null;
+        },
+
+        async setLastActiveProjectId(_projectId) {
+            return;
+        },
+
+        async clearLastActiveProjectId() {
+            return;
         }
     };
 }
@@ -376,6 +439,7 @@ function createLocalProjectsService() {
 
             const session = requireLocalSession();
             const projects = readLocalProjects();
+            const lastActiveProjectId = getLastActiveProjectIdForSession(session);
             const index = projects.findIndex((entry) =>
                 entry.id === projectId && matchesProjectOwner(entry, session)
             );
@@ -386,6 +450,42 @@ function createLocalProjectsService() {
 
             projects.splice(index, 1);
             writeLocalProjects(projects);
+            if (lastActiveProjectId === projectId) {
+                setLastActiveProjectIdForSession(session, '');
+            }
+        },
+
+        async getLastActiveProjectId() {
+            const session = requireLocalSession();
+            const projectId = getLastActiveProjectIdForSession(session);
+            if (!projectId) {
+                return null;
+            }
+
+            const exists = readLocalProjects().some((entry) => (
+                entry.id === projectId && matchesProjectOwner(entry, session)
+            ));
+            if (!exists) {
+                setLastActiveProjectIdForSession(session, '');
+                return null;
+            }
+
+            return projectId;
+        },
+
+        async setLastActiveProjectId(projectId) {
+            const session = requireLocalSession();
+            setLastActiveProjectIdForSession(session, projectId);
+        },
+
+        async clearLastActiveProjectId(projectId = '') {
+            const session = requireLocalSession();
+            const currentProjectId = getLastActiveProjectIdForSession(session);
+            const normalizedProjectId = normalizeProjectId(projectId);
+            if (normalizedProjectId && currentProjectId !== normalizedProjectId) {
+                return;
+            }
+            setLastActiveProjectIdForSession(session, '');
         }
     };
 }

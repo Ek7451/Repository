@@ -261,7 +261,7 @@ describe('SeatingBowlApp shell callbacks', () => {
 
     it('forwards the structured project action port into the editor shell constructor', async () => {
         const projectActions = {
-            saveCurrentProject: vi.fn()
+            renameCurrentProject: vi.fn()
         };
         const mockShell = {
             init: vi.fn(),
@@ -757,6 +757,44 @@ describe('SeatingBowlApp shell callbacks', () => {
             profileCanvas
         }));
         expect(update).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports meaningful editor changes through the project-dirty callback', () => {
+        const dirtyChanges = [];
+        const app = new SeatingBowlApp({
+            onProjectStateDirty: (change) => dirtyChanges.push(change)
+        });
+        vi.spyOn(app, '_scheduleUpdate').mockImplementation(() => {});
+
+        app.editorControls._onChange({
+            reason: 'state',
+            controlId: 'customRunoffSlider'
+        });
+
+        expect(dirtyChanges).toEqual([
+            {
+                source: 'editor',
+                reason: 'state',
+                controlId: 'customRunoffSlider'
+            }
+        ]);
+    });
+
+    it('does not treat view-tab switches as project-dirty mutations', () => {
+        const onProjectStateDirty = vi.fn();
+        const app = new SeatingBowlApp({ onProjectStateDirty });
+
+        app.editorShell = /** @type {any} */ ({
+            getViewCanvases: vi.fn(() => ({
+                fieldCanvas: {},
+                profileCanvas: {}
+            })),
+            handleViewTabChanged: vi.fn()
+        });
+
+        app.setViewTab('field');
+
+        expect(onProjectStateDirty).not.toHaveBeenCalled();
     });
 
     it('routes scene export access through the scene3d controller when building public export descriptors', async () => {

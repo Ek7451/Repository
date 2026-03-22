@@ -481,13 +481,8 @@ body.jlg-shell {
     padding: 12px 0 14px;
 }
 
-.jlg-shell .left-sidebar.collapsed .sidebar-save-btn {
-    margin-left: 0;
-    order: 1;
-}
-
 .jlg-shell .left-sidebar.collapsed .theme-toggle-btn {
-    order: 2;
+    order: 1;
 }
 
 .jlg-shell .left-sidebar.collapsed .sidebar-beta-note {
@@ -1190,7 +1185,6 @@ body.jlg-shell {
     padding: 12px 10px 13px;
 }
 
-.jlg-shell .sidebar-save-btn,
 .jlg-shell .sidebar-signout-btn {
     appearance: none;
     border: 1px solid #d6d6d2;
@@ -1208,17 +1202,6 @@ body.jlg-shell {
     flex-shrink: 0;
 }
 
-.jlg-shell .sidebar-save-btn {
-    margin-left: auto;
-}
-
-.jlg-shell .sidebar-save-btn:disabled {
-    opacity: 0.55;
-    cursor: default;
-    transform: none;
-}
-
-.jlg-shell .sidebar-save-btn:hover,
 .jlg-shell .sidebar-signout-btn:hover {
     background: #f5f6ef;
     border-color: #cfd2c6;
@@ -1226,13 +1209,11 @@ body.jlg-shell {
     transform: translateY(-1px);
 }
 
-.jlg-shell .sidebar-save-btn:focus-visible,
 .jlg-shell .sidebar-signout-btn:focus-visible {
     outline: 2px solid rgba(122, 174, 26, 0.55);
     outline-offset: 2px;
 }
 
-.jlg-shell .sidebar-save-btn svg,
 .jlg-shell .sidebar-signout-btn svg {
     width: 18px;
     height: 18px;
@@ -3929,7 +3910,6 @@ html[data-theme="dark"] .jlg-shell .theme-toggle-btn:hover {
     border-color: #45566b;
 }
 
-html[data-theme="dark"] .jlg-shell .sidebar-save-btn,
 html[data-theme="dark"] .jlg-shell .sidebar-signout-btn {
     background: #151d27;
     border-color: #324050;
@@ -3937,7 +3917,6 @@ html[data-theme="dark"] .jlg-shell .sidebar-signout-btn {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
 }
 
-html[data-theme="dark"] .jlg-shell .sidebar-save-btn:hover,
 html[data-theme="dark"] .jlg-shell .sidebar-signout-btn:hover {
     background: #1d2834;
     border-color: #45566b;

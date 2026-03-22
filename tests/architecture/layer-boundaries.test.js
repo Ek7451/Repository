@@ -203,6 +203,7 @@ function createProjectStateDocument({
 }
 
 afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
 });
 
@@ -331,7 +332,7 @@ describe('entry routing and bootstrap', () => {
         expect(fs.existsSync(path.join(repoRoot, 'ui/project-dashboard.js'))).toBe(false);
     });
 
-    it('signs in and creates one untitled project when direct entry has no project query', async () => {
+    it('signs in, creates one untitled project, and boots it in place when direct entry has no project query', async () => {
         const location = createLocation('http://localhost/pages/configurator/index.html?devBackend=local');
         const session = {
             userId: 'pat@example.com',
@@ -343,12 +344,26 @@ describe('entry routing and bootstrap', () => {
             getSession: vi.fn().mockResolvedValue(null),
             signInWithMicrosoft: vi.fn().mockResolvedValue(session)
         };
-        const projectApi = {
-            createProject: vi.fn().mockResolvedValue({
-                id: 'project-1'
+        const createdProject = {
+            id: 'project-1',
+            name: 'Untitled Project',
+            createdAt: '2026-03-16T00:00:00.000Z',
+            updatedAt: '2026-03-16T00:00:00.000Z',
+            state: createProjectStateDocument({
+                sport: 'Ice Hockey'
             })
         };
-        const appFactory = vi.fn();
+        const projectApi = {
+            createProject: vi.fn().mockResolvedValue(createdProject)
+        };
+        const app = {
+            destroy: vi.fn(),
+            init: vi.fn().mockResolvedValue(),
+            loadProject: vi.fn(),
+            setProjectStatus: vi.fn(),
+            setSession: vi.fn()
+        };
+        const appFactory = vi.fn(() => app);
 
         await bootAppShell({
             document: createRouteDocument('configurator'),
@@ -373,7 +388,13 @@ describe('entry routing and bootstrap', () => {
         expect(location.replace).toHaveBeenCalledWith(
             buildConfiguratorUrl('project-1', { devBackend: 'local' })
         );
-        expect(appFactory).not.toHaveBeenCalled();
+        expect(appFactory).toHaveBeenCalledWith(expect.objectContaining({
+            initialProject: createdProject,
+            onProjectStateDirty: expect.any(Function)
+        }));
+        expect(app.setSession).toHaveBeenCalledWith(session);
+        expect(app.init).toHaveBeenCalledTimes(1);
+        expect(app.loadProject).not.toHaveBeenCalled();
     });
 
     it('loads an existing project into the configurator when a project query is present', async () => {
@@ -433,6 +454,139 @@ describe('entry routing and bootstrap', () => {
         expect(app.init).toHaveBeenCalledTimes(1);
         expect(app.loadProject).not.toHaveBeenCalled();
         expect(location.replace).not.toHaveBeenCalled();
+    });
+
+    it('opens the last active accessible project on direct entry before falling back to creation', async () => {
+        const document = createRouteDocument('configurator');
+        const history = {
+            replaceState: vi.fn()
+        };
+        const location = createLocation(
+            'http://localhost/pages/configurator/index.html?devBackend=local'
+        );
+        const session = {
+            userId: 'pat@example.com',
+            displayName: 'Pat Example',
+            email: 'pat@example.com',
+            jobTitle: 'Design Technology Specialist II'
+        };
+        const lastActiveProject = {
+            id: 'project-9',
+            name: 'Arena Study',
+            createdAt: '2026-03-16T00:00:00.000Z',
+            updatedAt: '2026-03-16T00:05:00.000Z',
+            state: { sport: 'Football' }
+        };
+        const authService = {
+            getSession: vi.fn().mockResolvedValue(session),
+            signInWithMicrosoft: vi.fn()
+        };
+        const projectApi = {
+            getLastActiveProjectId: vi.fn().mockResolvedValue('project-9'),
+            listProjects: vi.fn().mockResolvedValue([
+                { id: 'project-9', updatedAt: '2026-03-16T00:05:00.000Z' },
+                { id: 'project-3', updatedAt: '2026-03-16T00:10:00.000Z' }
+            ]),
+            getProject: vi.fn().mockResolvedValue(lastActiveProject),
+            setLastActiveProjectId: vi.fn().mockResolvedValue(undefined),
+            createProject: vi.fn()
+        };
+        const app = {
+            destroy: vi.fn(),
+            init: vi.fn().mockResolvedValue(),
+            loadProject: vi.fn(),
+            setProjectStatus: vi.fn(),
+            setSession: vi.fn()
+        };
+        const appFactory = vi.fn(() => app);
+
+        await bootAppShell({
+            document,
+            history,
+            location,
+            runtimeConfig: { devBackend: 'local' },
+            authService,
+            projectApi,
+            appFactory
+        });
+
+        expect(projectApi.getLastActiveProjectId).toHaveBeenCalledTimes(1);
+        expect(projectApi.listProjects).toHaveBeenCalledTimes(1);
+        expect(projectApi.getProject).toHaveBeenCalledWith('project-9');
+        expect(projectApi.createProject).not.toHaveBeenCalled();
+        expect(history.replaceState).toHaveBeenCalledWith(
+            null,
+            '',
+            buildConfiguratorUrl('project-9', { devBackend: 'local' })
+        );
+        expect(projectApi.setLastActiveProjectId).toHaveBeenCalledWith('project-9');
+        expect(appFactory).toHaveBeenCalledWith(expect.objectContaining({
+            initialProject: lastActiveProject
+        }));
+    });
+
+    it('falls back to the most recently updated accessible project when the saved last-active pointer is stale', async () => {
+        const document = createRouteDocument('configurator');
+        const history = {
+            replaceState: vi.fn()
+        };
+        const location = createLocation(
+            'http://localhost/pages/configurator/index.html?devBackend=local'
+        );
+        const session = {
+            userId: 'pat@example.com',
+            displayName: 'Pat Example',
+            email: 'pat@example.com',
+            jobTitle: 'Design Technology Specialist II'
+        };
+        const recentProject = {
+            id: 'project-3',
+            name: 'Recent Study',
+            createdAt: '2026-03-16T00:00:00.000Z',
+            updatedAt: '2026-03-16T00:10:00.000Z',
+            state: { sport: 'Soccer' }
+        };
+        const authService = {
+            getSession: vi.fn().mockResolvedValue(session),
+            signInWithMicrosoft: vi.fn()
+        };
+        const projectApi = {
+            getLastActiveProjectId: vi.fn().mockResolvedValue('missing-project'),
+            listProjects: vi.fn().mockResolvedValue([
+                { id: 'project-2', updatedAt: '2026-03-16T00:05:00.000Z' },
+                { id: 'project-3', updatedAt: '2026-03-16T00:10:00.000Z' }
+            ]),
+            getProject: vi.fn().mockResolvedValue(recentProject),
+            setLastActiveProjectId: vi.fn().mockResolvedValue(undefined),
+            createProject: vi.fn()
+        };
+        const app = {
+            destroy: vi.fn(),
+            init: vi.fn().mockResolvedValue(),
+            loadProject: vi.fn(),
+            setProjectStatus: vi.fn(),
+            setSession: vi.fn()
+        };
+        const appFactory = vi.fn(() => app);
+
+        await bootAppShell({
+            document,
+            history,
+            location,
+            runtimeConfig: { devBackend: 'local' },
+            authService,
+            projectApi,
+            appFactory
+        });
+
+        expect(projectApi.getProject).toHaveBeenCalledWith('project-3');
+        expect(projectApi.createProject).not.toHaveBeenCalled();
+        expect(projectApi.setLastActiveProjectId).toHaveBeenCalledWith('project-3');
+        expect(history.replaceState).toHaveBeenCalledWith(
+            null,
+            '',
+            buildConfiguratorUrl('project-3', { devBackend: 'local' })
+        );
     });
 
     it('prefers structured auth context injection when the auth service exposes auth state', async () => {
@@ -546,6 +700,7 @@ describe('entry routing and bootstrap', () => {
 
         expect(configuratorMarkup).toContain('data-toolbar-export-kind="json"');
         expect(configuratorMarkup).toContain('id="configFileInput"');
+        expect(configuratorMarkup).not.toContain('id="saveProjectBtn"');
         expect(configuratorMarkup).not.toContain('id="loadConfigBtn"');
         expect(configuratorMarkup).not.toContain('class="export-menu-body"');
         expect(editorShellSource).not.toContain('loadConfigBtn');
@@ -575,7 +730,8 @@ describe('entry routing and bootstrap', () => {
         expect(configuratorMarkup).toContain('option value="Side1"');
     });
 
-    it('injects project actions that save, rename, and duplicate through project-document DTOs', async () => {
+    it('injects debounced autosave plus current-project rename and duplicate actions through project-document DTOs', async () => {
+        vi.useFakeTimers();
         const location = createLocation(
             'http://localhost/pages/configurator/index.html?project=project-1&devBackend=local'
         );
@@ -616,7 +772,8 @@ describe('entry routing and bootstrap', () => {
             updateProject: vi.fn()
                 .mockResolvedValueOnce(savedProject)
                 .mockResolvedValueOnce(renamedProject),
-            createProject: vi.fn().mockResolvedValue(duplicatedProject)
+            createProject: vi.fn().mockResolvedValue(duplicatedProject),
+            setLastActiveProjectId: vi.fn().mockResolvedValue(undefined)
         };
         const app = {
             destroy: vi.fn(),
@@ -630,6 +787,9 @@ describe('entry routing and bootstrap', () => {
             }),
             setProjectStatus: vi.fn(),
             setSession: vi.fn(),
+            getProjectChrome: vi.fn(() => ({
+                canSave: true
+            })),
             captureStateSnapshot: vi.fn(() => ({
                 sport: 'Football'
             })),
@@ -644,8 +804,10 @@ describe('entry routing and bootstrap', () => {
             }))
         };
         let projectActions = /** @type {any} */ (null);
+        let onProjectStateDirty = /** @type {any} */ (null);
         const appFactory = vi.fn((options) => {
             projectActions = options.projectActions;
+            onProjectStateDirty = options.onProjectStateDirty;
             return app;
         });
 
@@ -661,8 +823,24 @@ describe('entry routing and bootstrap', () => {
         if (!projectActions) {
             throw new Error('projectActions were not injected');
         }
+        if (!onProjectStateDirty) {
+            throw new Error('onProjectStateDirty was not injected');
+        }
 
-        await projectActions.saveCurrentProject();
+        onProjectStateDirty({
+            source: 'editor',
+            reason: 'state',
+            controlId: 'customRunoffSlider'
+        });
+        onProjectStateDirty({
+            source: 'editor',
+            reason: 'state',
+            controlId: 'focalZInput'
+        });
+        await vi.advanceTimersByTimeAsync(399);
+        expect(projectApi.updateProject).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(1);
         await projectActions.renameCurrentProject('  Renamed Study  ');
         await projectActions.duplicateProject('project-1');
 
@@ -682,8 +860,9 @@ describe('entry routing and bootstrap', () => {
                 sport: 'Football'
             })
         }));
-        expect(app.setProjectSaveBusy).toHaveBeenCalledWith(true);
-        expect(app.setProjectSaveBusy).toHaveBeenCalledWith(false);
+        expect(app.setProjectSaveBusy).toHaveBeenCalledTimes(2);
+        expect(app.setProjectSaveBusy).toHaveBeenNthCalledWith(1, true);
+        expect(app.setProjectSaveBusy).toHaveBeenNthCalledWith(2, false);
         expect(app.setProjectName).toHaveBeenCalledWith('  Renamed Study  ');
         expect(app.setProjectMetadata).toHaveBeenCalledWith(savedProject);
         expect(app.setProjectMetadata).toHaveBeenCalledWith(renamedProject);
@@ -693,9 +872,12 @@ describe('entry routing and bootstrap', () => {
             name: buildDuplicateProjectName(loadedProject.name),
             state: loadedProject.state
         });
+        expect(app.setProjectStatus).toHaveBeenCalledWith('Saving changes...', 'pending');
+        expect(app.setProjectStatus).toHaveBeenCalledWith('All changes saved', 'success');
         expect(app.setProjectStatus).toHaveBeenCalledWith('Saving project...', 'pending');
         expect(app.setProjectStatus).toHaveBeenCalledWith('Duplicating project...', 'pending');
         expect(app.setProjectStatus).toHaveBeenCalledWith(`Duplicated ${duplicatedProject.name}`, 'success');
+        expect(projectApi.setLastActiveProjectId).toHaveBeenCalledWith('project-1');
     });
 
     it('injects project actions that rename a non-current saved project via getProject and updateProject without loading it', async () => {

@@ -11,10 +11,13 @@ import {
     getActiveProjectStateSnapshot,
     normalizeProjectName,
     renameProjectOption,
+    resolveStartupProjectSelection,
     selectProjectOption,
     stageActiveProjectOptionState
 } from './state/project.js';
 import { SeatingBowlApp } from './ui/app.js';
+
+const AUTOSAVE_DELAY_MS = 400;
 
 function isLocalDevelopmentHost(location = window.location) {
     const url = new URL(location.href);
@@ -87,7 +90,67 @@ function replaceProjectRoute(projectId, runtimeConfig, location, history) {
         return;
     }
 
+    if (typeof location?.replace === 'function') {
+        location.replace(nextUrl);
+        return;
+    }
+
     location?.assign?.(nextUrl);
+}
+
+function getRequestedProjectId(location) {
+    const requestedProjectId = new URLSearchParams(location?.search ?? '').get('project');
+    return typeof requestedProjectId === 'string' ? requestedProjectId.trim() : '';
+}
+
+async function setLastActiveProjectId(projectApi, projectId) {
+    if (typeof projectApi?.setLastActiveProjectId !== 'function') {
+        return;
+    }
+
+    try {
+        await projectApi.setLastActiveProjectId(projectId);
+    } catch (error) {
+        console.warn('Failed to persist the last active project id:', error);
+    }
+}
+
+async function clearLastActiveProjectId(projectApi, projectId = '') {
+    if (typeof projectApi?.clearLastActiveProjectId !== 'function') {
+        return;
+    }
+
+    try {
+        await projectApi.clearLastActiveProjectId(projectId);
+    } catch (error) {
+        console.warn('Failed to clear the last active project id:', error);
+    }
+}
+
+async function getLastActiveProjectId(projectApi) {
+    if (typeof projectApi?.getLastActiveProjectId !== 'function') {
+        return '';
+    }
+
+    try {
+        return await projectApi.getLastActiveProjectId() ?? '';
+    } catch (error) {
+        console.warn('Failed to read the last active project id:', error);
+        return '';
+    }
+}
+
+async function listStartupProjects(projectApi) {
+    if (typeof projectApi?.listProjects !== 'function') {
+        return [];
+    }
+
+    try {
+        return await projectApi.listProjects();
+    } catch (error) {
+        console.warn('Failed to list startup projects:', error);
+        return [];
+    }
 }
 
 async function loadProjectIntoApp({
@@ -103,6 +166,7 @@ async function loadProjectIntoApp({
     const project = await projectApi.getProject(projectId);
     app.loadProject(project);
     replaceProjectRoute(project.id, runtimeConfig, location, history);
+    await setLastActiveProjectId(projectApi, project.id);
     return project;
 }
 
@@ -131,14 +195,17 @@ async function persistProjectStateDocument({
     pendingMessage,
     successMessage,
     failureLabel,
-    reloadActiveOption = false
+    reloadActiveOption = false,
+    setBusy = true
 }) {
     const metadata = app.getProjectMetadata();
     if (!metadata.id) {
         return null;
     }
 
-    app.setProjectSaveBusy(true);
+    if (setBusy) {
+        app.setProjectSaveBusy(true);
+    }
     app.setProjectStatus(pendingMessage, 'pending');
 
     try {
@@ -147,6 +214,7 @@ async function persistProjectStateDocument({
             app.getProjectSaveRequest(projectStateDocument)
         );
         applySavedProject(app, savedProject, { reloadActiveOption });
+        await setLastActiveProjectId(projectApi, savedProject.id);
         app.setProjectStatus(
             typeof successMessage === 'function'
                 ? successMessage(savedProject)
@@ -162,7 +230,9 @@ async function persistProjectStateDocument({
         );
         throw error;
     } finally {
-        app.setProjectSaveBusy(false);
+        if (setBusy) {
+            app.setProjectSaveBusy(false);
+        }
     }
 }
 
@@ -174,35 +244,118 @@ function createProjectActionPort({
     location,
     history
 }) {
-    async function saveCurrentProject() {
-        const app = getApp();
-        const projectStateDocument = stageCurrentProjectStateDocument(app);
-        await persistProjectStateDocument({
-            app,
-            projectApi,
-            projectStateDocument,
-            pendingMessage: 'Saving project...',
-            successMessage: (savedProject) => `Saved ${savedProject.name}`,
-            failureLabel: 'Project save'
+    let autosaveTimer = null;
+    let projectOperationChain = Promise.resolve();
+
+    function cancelPendingAutosave() {
+        if (!autosaveTimer) {
+            return;
+        }
+
+        clearTimeout(autosaveTimer);
+        autosaveTimer = null;
+    }
+
+    function canPersistCurrentProject(app) {
+        if (!app || typeof app.getProjectMetadata !== 'function' || !app.getProjectMetadata()?.id) {
+            return false;
+        }
+
+        if (typeof app.getProjectChrome !== 'function') {
+            return true;
+        }
+
+        return app.getProjectChrome()?.canSave !== false;
+    }
+
+    function enqueueProjectOperation(operation) {
+        const nextOperation = projectOperationChain.then(operation, operation);
+        projectOperationChain = nextOperation.then(
+            () => undefined,
+            () => undefined
+        );
+        return nextOperation;
+    }
+
+    async function persistCurrentProject({
+        pendingMessage,
+        successMessage,
+        failureLabel,
+        setBusy = true,
+        reloadActiveOption = false,
+        buildProjectStateDocument = null
+    }) {
+        return enqueueProjectOperation(async () => {
+            const app = getApp();
+            if (!canPersistCurrentProject(app)) {
+                return null;
+            }
+
+            const saveContext = typeof buildProjectStateDocument === 'function'
+                ? buildProjectStateDocument(app)
+                : null;
+            const projectStateDocument = saveContext
+                && typeof saveContext === 'object'
+                && Object.prototype.hasOwnProperty.call(saveContext, 'projectStateDocument')
+                ? saveContext.projectStateDocument
+                : (saveContext ?? stageCurrentProjectStateDocument(app));
+            const nextReloadActiveOption = saveContext
+                && typeof saveContext === 'object'
+                && Object.prototype.hasOwnProperty.call(saveContext, 'reloadActiveOption')
+                ? saveContext.reloadActiveOption
+                : reloadActiveOption;
+
+            return persistProjectStateDocument({
+                app,
+                projectApi,
+                projectStateDocument,
+                pendingMessage,
+                successMessage,
+                failureLabel,
+                reloadActiveOption: nextReloadActiveOption,
+                setBusy
+            });
         });
     }
 
-    async function createProject() {
+    function scheduleAutosave() {
         const app = getApp();
-        app.setProjectStatus('Creating project...', 'pending');
-
-        try {
-            const createdProject = await projectApi.createProject(buildUntitledProjectCreateRequest());
-            app.loadProject(createdProject);
-            replaceProjectRoute(createdProject.id, runtimeConfig, location, history);
-        } catch (error) {
-            console.error('Project creation failed:', error);
-            app.setProjectStatus(
-                getProjectActionErrorMessage('Project creation', error),
-                'error'
-            );
-            throw error;
+        if (!canPersistCurrentProject(app)) {
+            return;
         }
+
+        cancelPendingAutosave();
+        autosaveTimer = setTimeout(() => {
+            autosaveTimer = null;
+            void persistCurrentProject({
+                pendingMessage: 'Saving changes...',
+                successMessage: 'All changes saved',
+                failureLabel: 'Autosave',
+                setBusy: false
+            });
+        }, AUTOSAVE_DELAY_MS);
+    }
+
+    async function createProject() {
+        cancelPendingAutosave();
+        await enqueueProjectOperation(async () => {
+            const app = getApp();
+            app.setProjectStatus('Creating project...', 'pending');
+
+            try {
+                const createdProject = await projectApi.createProject(buildUntitledProjectCreateRequest());
+                app.loadProject(createdProject);
+                replaceProjectRoute(createdProject.id, runtimeConfig, location, history);
+                await setLastActiveProjectId(projectApi, createdProject.id);
+            } catch (error) {
+                console.error('Project creation failed:', error);
+                app.setProjectStatus(
+                    getProjectActionErrorMessage('Project creation', error),
+                    'error'
+                );
+                throw error;
+            }
+        });
     }
 
     /**
@@ -221,36 +374,41 @@ function createProjectActionPort({
         successMessage,
         mutate
     }) {
-        const app = getApp();
-        const stagedProjectState = stageCurrentProjectStateDocument(app);
-        const nextProjectState = mutate(stagedProjectState);
-        const shouldReloadActiveOption = typeof reloadActiveOption === 'function'
-            ? reloadActiveOption(stagedProjectState, nextProjectState)
-            : Boolean(reloadActiveOption);
-
-        return persistProjectStateDocument({
-            app,
-            projectApi,
-            projectStateDocument: nextProjectState,
+        cancelPendingAutosave();
+        return persistCurrentProject({
             pendingMessage,
             successMessage,
             failureLabel,
-            reloadActiveOption: shouldReloadActiveOption
+            buildProjectStateDocument: (app) => {
+                const stagedProjectState = stageCurrentProjectStateDocument(app);
+                const nextProjectState = mutate(stagedProjectState);
+                return {
+                    projectStateDocument: nextProjectState,
+                    reloadActiveOption: typeof reloadActiveOption === 'function'
+                        ? reloadActiveOption(stagedProjectState, nextProjectState)
+                        : Boolean(reloadActiveOption)
+                };
+            }
         });
     }
 
     return {
-        async saveCurrentProject() {
-            await saveCurrentProject();
+        handleProjectStateDirty(_change) {
+            scheduleAutosave();
         },
 
         async renameCurrentProject(name) {
+            cancelPendingAutosave();
             const app = getApp();
             const previousMetadata = app.getProjectMetadata();
             app.setProjectName(name);
 
             try {
-                await saveCurrentProject();
+                await persistCurrentProject({
+                    pendingMessage: 'Saving project...',
+                    successMessage: (savedProject) => `Saved ${savedProject.name}`,
+                    failureLabel: 'Project save'
+                });
             } catch (error) {
                 app.setProjectMetadata(previousMetadata);
                 throw error;
@@ -258,6 +416,7 @@ function createProjectActionPort({
         },
 
         async renameProject(projectId, name) {
+            cancelPendingAutosave();
             const app = getApp();
             const nextProjectId = typeof projectId === 'string' ? projectId : '';
             if (!nextProjectId) {
@@ -270,28 +429,30 @@ function createProjectActionPort({
                 return;
             }
 
-            const savedProject = await projectApi.getProject(nextProjectId);
-            const nextName = normalizeProjectName(
-                name,
-                deriveProjectNameFromSport(savedProject?.state?.sport)
-            );
-
-            app.setProjectStatus('Renaming project...', 'pending');
-
-            try {
-                await projectApi.updateProject(nextProjectId, {
-                    name: nextName,
-                    state: savedProject.state
-                });
-                app.setProjectStatus(`Renamed ${nextName}`, 'success');
-            } catch (error) {
-                console.error('Project rename failed:', error);
-                app.setProjectStatus(
-                    getProjectActionErrorMessage('Project rename', error),
-                    'error'
+            await enqueueProjectOperation(async () => {
+                const savedProject = await projectApi.getProject(nextProjectId);
+                const nextName = normalizeProjectName(
+                    name,
+                    deriveProjectNameFromSport(savedProject?.state?.sport)
                 );
-                throw error;
-            }
+
+                app.setProjectStatus('Renaming project...', 'pending');
+
+                try {
+                    await projectApi.updateProject(nextProjectId, {
+                        name: nextName,
+                        state: savedProject.state
+                    });
+                    app.setProjectStatus(`Renamed ${nextName}`, 'success');
+                } catch (error) {
+                    console.error('Project rename failed:', error);
+                    app.setProjectStatus(
+                        getProjectActionErrorMessage('Project rename', error),
+                        'error'
+                    );
+                    throw error;
+                }
+            });
         },
 
         async createOption() {
@@ -384,16 +545,17 @@ function createProjectActionPort({
 
         async openProject(projectId) {
             const app = getApp();
+            cancelPendingAutosave();
 
             try {
-                await loadProjectIntoApp({
+                await enqueueProjectOperation(() => loadProjectIntoApp({
                     app,
                     projectApi,
                     projectId,
                     runtimeConfig,
                     location,
                     history
-                });
+                }));
             } catch (error) {
                 console.error('Project open failed:', error);
                 app.setProjectStatus(
@@ -406,51 +568,60 @@ function createProjectActionPort({
 
         async duplicateProject(projectId) {
             const app = getApp();
-            app.setProjectStatus('Duplicating project...', 'pending');
+            cancelPendingAutosave();
+            await enqueueProjectOperation(async () => {
+                app.setProjectStatus('Duplicating project...', 'pending');
 
-            try {
-                const sourceProject = await projectApi.getProject(projectId);
-                const duplicatedProject = await projectApi.createProject({
-                    name: buildDuplicateProjectName(sourceProject.name),
-                    state: sourceProject.state
-                });
-                app.setProjectStatus(`Duplicated ${duplicatedProject.name}`, 'success');
-            } catch (error) {
-                console.error('Project duplicate failed:', error);
-                app.setProjectStatus(
-                    getProjectActionErrorMessage('Project duplicate', error),
-                    'error'
-                );
-                throw error;
-            }
+                try {
+                    const sourceProject = await projectApi.getProject(projectId);
+                    const duplicatedProject = await projectApi.createProject({
+                        name: buildDuplicateProjectName(sourceProject.name),
+                        state: sourceProject.state
+                    });
+                    app.setProjectStatus(`Duplicated ${duplicatedProject.name}`, 'success');
+                } catch (error) {
+                    console.error('Project duplicate failed:', error);
+                    app.setProjectStatus(
+                        getProjectActionErrorMessage('Project duplicate', error),
+                        'error'
+                    );
+                    throw error;
+                }
+            });
         },
 
         async deleteProject(projectId) {
+            cancelPendingAutosave();
             const app = getApp();
             const currentProjectId = app.getProjectMetadata().id;
-            app.setProjectStatus('Deleting project...', 'pending');
+            await enqueueProjectOperation(async () => {
+                app.setProjectStatus('Deleting project...', 'pending');
 
-            try {
-                await projectApi.deleteProject(projectId);
-                if (projectId && currentProjectId === projectId) {
-                    const replacementProject = await projectApi.createProject(buildUntitledProjectCreateRequest());
-                    app.loadProject(replacementProject);
-                    replaceProjectRoute(replacementProject.id, runtimeConfig, location, history);
-                    return;
+                try {
+                    await projectApi.deleteProject(projectId);
+                    await clearLastActiveProjectId(projectApi, projectId);
+                    if (projectId && currentProjectId === projectId) {
+                        const replacementProject = await projectApi.createProject(buildUntitledProjectCreateRequest());
+                        app.loadProject(replacementProject);
+                        replaceProjectRoute(replacementProject.id, runtimeConfig, location, history);
+                        await setLastActiveProjectId(projectApi, replacementProject.id);
+                        return;
+                    }
+
+                    app.setProjectStatus('Deleted project', 'success');
+                } catch (error) {
+                    console.error('Project delete failed:', error);
+                    app.setProjectStatus(
+                        getProjectActionErrorMessage('Project delete', error),
+                        'error'
+                    );
+                    throw error;
                 }
-
-                app.setProjectStatus('Deleted project', 'success');
-            } catch (error) {
-                console.error('Project delete failed:', error);
-                app.setProjectStatus(
-                    getProjectActionErrorMessage('Project delete', error),
-                    'error'
-                );
-                throw error;
-            }
+            });
         },
 
         async deleteProjects(projectIds) {
+            cancelPendingAutosave();
             const app = getApp();
             const currentProjectId = app.getProjectMetadata().id;
             const uniqueProjectIds = Array.isArray(projectIds)
@@ -468,30 +639,34 @@ function createProjectActionPort({
             }
 
             const count = uniqueProjectIds.length;
-            app.setProjectStatus(
-                count === 1 ? 'Deleting 1 project...' : `Deleting ${count} projects...`,
-                'pending'
-            );
+            await enqueueProjectOperation(async () => {
+                app.setProjectStatus(
+                    count === 1 ? 'Deleting 1 project...' : `Deleting ${count} projects...`,
+                    'pending'
+                );
 
-            try {
-                for (const projectId of uniqueProjectIds) {
-                    await projectApi.deleteProject(projectId);
+                try {
+                    for (const projectId of uniqueProjectIds) {
+                        await projectApi.deleteProject(projectId);
+                        await clearLastActiveProjectId(projectApi, projectId);
+                    }
+                    app.setProjectStatus(
+                        count === 1 ? 'Deleted 1 project' : `Deleted ${count} projects`,
+                        'success'
+                    );
+                } catch (error) {
+                    console.error('Project bulk delete failed:', error);
+                    app.setProjectStatus(
+                        getProjectActionErrorMessage('Project bulk delete', error),
+                        'error'
+                    );
+                    throw error;
                 }
-                app.setProjectStatus(
-                    count === 1 ? 'Deleted 1 project' : `Deleted ${count} projects`,
-                    'success'
-                );
-            } catch (error) {
-                console.error('Project bulk delete failed:', error);
-                app.setProjectStatus(
-                    getProjectActionErrorMessage('Project bulk delete', error),
-                    'error'
-                );
-                throw error;
-            }
+            });
         },
 
         async signOut() {
+            cancelPendingAutosave();
             try {
                 await authService.signOut();
             } catch (error) {
@@ -550,10 +725,44 @@ async function resolveAuthContext(authService) {
     throw new Error(authState?.reason || fallbackMessage);
 }
 
-async function ensureProjectId(projectApi, runtimeConfig, location) {
-    const projectId = new URLSearchParams(location.search).get('project');
-    if (projectId) {
-        return projectId;
+async function resolveStartupProject({
+    projectApi,
+    runtimeConfig,
+    location,
+    history
+}) {
+    const requestedProjectId = getRequestedProjectId(location);
+    if (requestedProjectId) {
+        const requestedProject = await projectApi.getProject(requestedProjectId);
+        await setLastActiveProjectId(projectApi, requestedProject.id);
+        return requestedProject;
+    }
+
+    let lastActiveProjectId = await getLastActiveProjectId(projectApi);
+    let projectSummaries = await listStartupProjects(projectApi);
+
+    while (true) {
+        const selection = resolveStartupProjectSelection({
+            lastActiveProjectId,
+            projectSummaries
+        });
+        if (!selection.projectId) {
+            break;
+        }
+
+        try {
+            const startupProject = await projectApi.getProject(selection.projectId);
+            replaceProjectRoute(startupProject.id, runtimeConfig, location, history);
+            await setLastActiveProjectId(projectApi, startupProject.id);
+            return startupProject;
+        } catch (error) {
+            console.error('Startup project load failed:', error);
+            if (selection.source === 'last-active') {
+                await clearLastActiveProjectId(projectApi, selection.projectId);
+                lastActiveProjectId = '';
+            }
+            projectSummaries = projectSummaries.filter((project) => project?.id !== selection.projectId);
+        }
     }
 
     const createdProject = await projectApi.createProject(buildUntitledProjectCreateRequest());
@@ -561,8 +770,9 @@ async function ensureProjectId(projectApi, runtimeConfig, location) {
         throw new Error('Project creation did not return a project id.');
     }
 
-    location.replace(buildConfiguratorUrl(createdProject.id, runtimeConfig));
-    return null;
+    replaceProjectRoute(createdProject.id, runtimeConfig, location, history);
+    await setLastActiveProjectId(projectApi, createdProject.id);
+    return createdProject;
 }
 
 export async function bootConfiguratorPage(runtimeConfig, authService, projectApi, options = {}) {
@@ -577,14 +787,14 @@ export async function bootConfiguratorPage(runtimeConfig, authService, projectAp
     const appFactory = options.appFactory ?? ((appOptions) => new SeatingBowlApp(appOptions));
 
     const authContext = await resolveAuthContext(authService);
-    const projectId = await ensureProjectId(projectApi, runtimeConfig, location);
-    if (!projectId) {
-        return;
-    }
-
     let initialProject = null;
     try {
-        initialProject = await projectApi.getProject(projectId);
+        initialProject = await resolveStartupProject({
+            projectApi,
+            runtimeConfig,
+            location,
+            history
+        });
     } catch (error) {
         console.error('Project load failed:', error);
         setTimeoutFn(() => {
@@ -602,7 +812,12 @@ export async function bootConfiguratorPage(runtimeConfig, authService, projectAp
         location,
         history
     });
-    app = appFactory({ projectActions, document: doc, initialProject });
+    app = appFactory({
+        projectActions,
+        document: doc,
+        initialProject,
+        onProjectStateDirty: (change) => projectActions.handleProjectStateDirty(change)
+    });
     if (typeof app.setAuthContext === 'function') {
         app.setAuthContext(authContext);
     } else {

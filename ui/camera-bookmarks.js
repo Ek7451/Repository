@@ -48,6 +48,7 @@ export class CameraBookmarks {
             getSportName?: (() => string),
             download?: ((descriptor: { filename: string, dataUrl: string }) => boolean | void),
             onLayoutChanged?: (() => void),
+            onBookmarksChanged?: ((change: { action: string, index: number }) => void),
             promptForRename?: ((currentName: string) => string | null)
         }} */ (options && typeof options === 'object' ? options : {});
 
@@ -70,6 +71,9 @@ export class CameraBookmarks {
         this.onLayoutChanged = typeof settings.onLayoutChanged === 'function'
             ? settings.onLayoutChanged
             : () => {};
+        this.onBookmarksChanged = typeof settings.onBookmarksChanged === 'function'
+            ? settings.onBookmarksChanged
+            : null;
         this.promptForRename = typeof settings.promptForRename === 'function'
             ? settings.promptForRename
             : (currentName) => window.prompt('Rename view:', currentName);
@@ -327,6 +331,10 @@ export class CameraBookmarks {
             thumbnail: this._captureBookmarkThumbnail(scene3D, 150, 150)
         };
         bookmarks.push(bookmark);
+        this.onBookmarksChanged?.({
+            action: 'create',
+            index: bookmarks.length - 1
+        });
         return bookmark;
     }
 
@@ -334,12 +342,20 @@ export class CameraBookmarks {
         const bookmark = this._getBookmark(index);
         if (!bookmark) return;
         bookmark.name = nextName;
+        this.onBookmarksChanged?.({
+            action: 'rename',
+            index
+        });
     }
 
     removeBookmark(index) {
         const bookmarks = getBookmarksArray(this.getBookmarks);
         if (!bookmarks || !bookmarks[index]) return;
         bookmarks.splice(index, 1);
+        this.onBookmarksChanged?.({
+            action: 'remove',
+            index
+        });
     }
 
     restoreBookmark(index) {

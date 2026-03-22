@@ -27,6 +27,7 @@ export class SeatingBowlApp {
                 canSave: boolean
             }) => void),
             onStatusChanged?: ((status: { message: string, tone: string }) => void),
+            onProjectStateDirty?: ((change: { source: string, reason: string, controlId: string }) => void),
             projectActions?: object | null,
             initialProject?: object | null
         }} */ (options && typeof options === 'object' ? options : {});
@@ -37,16 +38,24 @@ export class SeatingBowlApp {
         this._debounceTimer = null;
         this._projectSaveBusy = false;
         this._bootStartsWithPreloadedProject = false;
+        this._onProjectStateDirty = typeof callbacks.onProjectStateDirty === 'function'
+            ? callbacks.onProjectStateDirty
+            : null;
         this.renderRuntime = new RenderRuntime();
         this.statsPanel = null;
         this.editorControls = new EditorControls({
             state: this.state,
-            onChange: ({ reason }) => {
+            onChange: ({ reason, controlId }) => {
                 if (reason === 'sport') {
                     this._handleSportChanged();
-                    return;
+                } else {
+                    this._scheduleUpdate();
                 }
-                this._scheduleUpdate();
+                this._notifyProjectStateDirty({
+                    source: 'editor',
+                    reason,
+                    controlId
+                });
             }
         });
         this.exportController = new EditorExportController({
@@ -102,6 +111,13 @@ export class SeatingBowlApp {
                 getSportName: () => resolveSportName(this.state),
                 download: (descriptor) => this.editorShell?.download(descriptor),
                 ensureContainerSize: () => this.editorShell?.ensure3DContainerSize(),
+                onBookmarksChanged: ({ action, index }) => {
+                    this._notifyProjectStateDirty({
+                        source: 'bookmark',
+                        reason: action,
+                        controlId: `bookmark-${index}`
+                    });
+                },
                 onLayoutChanged: () => {
                     this.editorShell?.ensure3DContainerSize();
                 }
@@ -213,6 +229,20 @@ export class SeatingBowlApp {
 
     setProjectStateDocument(projectState = null) {
         this.projectShell.setProjectStateDocument(projectState);
+    }
+
+    _notifyProjectStateDirty(change = {}) {
+        this._onProjectStateDirty?.({
+            source: typeof change?.source === 'string' && change.source.trim()
+                ? change.source.trim()
+                : 'editor',
+            reason: typeof change?.reason === 'string' && change.reason.trim()
+                ? change.reason.trim()
+                : 'state',
+            controlId: typeof change?.controlId === 'string' && change.controlId.trim()
+                ? change.controlId.trim()
+                : 'unknown'
+        });
     }
 
     captureStateSnapshot() {
@@ -380,6 +410,11 @@ export class SeatingBowlApp {
         try {
             const config = JSON.parse(text);
             this.replaceLiveState(config, { logSuccess: true });
+            this._notifyProjectStateDirty({
+                source: 'config-import',
+                reason: 'import',
+                controlId: 'configFileInput'
+            });
         } catch (err) {
             console.error('Failed to load config:', err);
             throw err;

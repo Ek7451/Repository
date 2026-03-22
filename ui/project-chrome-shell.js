@@ -168,7 +168,6 @@ function normalizeProjectActions(projectActions = null) {
     }
 
     const actionNames = [
-        'saveCurrentProject',
         'renameCurrentProject',
         'renameProject',
         'createOption',
@@ -315,7 +314,6 @@ export class ProjectChromeShell {
         this._renderProjectMenu();
         this._renderOptionChrome();
         this._renderEmployeeIdentity(session);
-        this._renderSaveButton();
     }
 
     renderProjectStatus(status = {}) {
@@ -330,7 +328,6 @@ export class ProjectChromeShell {
 
     setProjectSaveBusy(isBusy = false) {
         this._projectSaveBusy = Boolean(isBusy);
-        this._renderSaveButton();
         this._renderProjectMenu();
         this._renderOptionChrome();
         this._renderOptionManager();
@@ -395,20 +392,6 @@ export class ProjectChromeShell {
     }
 
     _bindProjectChrome() {
-        const saveBtn = getButtonElement('saveProjectBtn');
-        if (saveBtn) {
-            const handleSaveClick = async () => {
-                if (!this._projectActions?.saveCurrentProject) return;
-                if (this._projectNameEditing) {
-                    await this._commitProjectNameEdit();
-                    return;
-                }
-                await this._runToolbarProjectAction('save', () => this._projectActions.saveCurrentProject());
-            };
-            saveBtn.addEventListener('click', handleSaveClick);
-            this._cleanup.push(() => saveBtn.removeEventListener('click', handleSaveClick));
-        }
-
         const projectMenuTrigger = getButtonElement('projectMenuTrigger');
         if (projectMenuTrigger) {
             const handleProjectMenuClick = (event) => {
@@ -2045,17 +2028,4 @@ export class ProjectChromeShell {
         avatarInitials.hidden = false;
     }
 
-    _renderSaveButton() {
-        const saveBtn = getButtonElement('saveProjectBtn');
-        if (!saveBtn) return;
-
-        saveBtn.dataset.busy = this._projectSaveBusy ? 'true' : 'false';
-        saveBtn.setAttribute('title', this._projectSaveBusy ? 'Saving project' : 'Save project');
-        saveBtn.setAttribute('aria-label', this._projectSaveBusy ? 'Saving project' : 'Save project');
-        const label = saveBtn.querySelector('.save-project-label');
-        if (label) {
-            label.textContent = this._projectSaveBusy ? 'Saving Project' : 'Save Project';
-        }
-        saveBtn.disabled = this._projectSaveBusy || !this._projectChrome.canSave || !this._projectActions?.saveCurrentProject;
-    }
 }

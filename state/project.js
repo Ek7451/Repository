@@ -617,6 +617,79 @@ export function buildProjectLoadSnapshot(project = null, fallbackState = null) {
     };
 }
 
+function normalizeProjectSummaryForStartup(project = null) {
+    if (!project || typeof project !== 'object') {
+        return null;
+    }
+
+    const id = normalizeString(project.id);
+    if (!id) {
+        return null;
+    }
+
+    return {
+        id,
+        updatedAt: normalizeString(project.updatedAt)
+    };
+}
+
+function compareProjectUpdatedAtDesc(left, right) {
+    const leftUpdatedAt = normalizeString(left?.updatedAt);
+    const rightUpdatedAt = normalizeString(right?.updatedAt);
+
+    if (leftUpdatedAt && rightUpdatedAt && leftUpdatedAt !== rightUpdatedAt) {
+        return rightUpdatedAt.localeCompare(leftUpdatedAt);
+    }
+
+    return normalizeString(left?.id).localeCompare(normalizeString(right?.id));
+}
+
+export function resolveStartupProjectSelection({
+    requestedProjectId = '',
+    lastActiveProjectId = '',
+    projectSummaries = []
+} = {}) {
+    const normalizedRequestedProjectId = normalizeString(requestedProjectId);
+    if (normalizedRequestedProjectId) {
+        return {
+            projectId: normalizedRequestedProjectId,
+            source: 'requested'
+        };
+    }
+
+    const normalizedProjectSummaries = Array.isArray(projectSummaries)
+        ? projectSummaries
+            .map((project) => normalizeProjectSummaryForStartup(project))
+            .filter(Boolean)
+            .sort(compareProjectUpdatedAtDesc)
+        : [];
+    const normalizedLastActiveProjectId = normalizeString(lastActiveProjectId);
+    if (normalizedLastActiveProjectId) {
+        const matchedLastActiveProject = normalizedProjectSummaries.find(
+            (project) => project.id === normalizedLastActiveProjectId
+        );
+        if (matchedLastActiveProject || !normalizedProjectSummaries.length) {
+            return {
+                projectId: normalizedLastActiveProjectId,
+                source: 'last-active'
+            };
+        }
+    }
+
+    const recentProjectId = normalizedProjectSummaries[0]?.id ?? '';
+    if (recentProjectId) {
+        return {
+            projectId: recentProjectId,
+            source: 'recent'
+        };
+    }
+
+    return {
+        projectId: '',
+        source: 'create'
+    };
+}
+
 export function buildProjectSaveRequest({ name = '', state = {}, projectMetadata = null } = {}) {
     const request = {
         name: normalizeProjectName(name),

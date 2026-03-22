@@ -16,6 +16,7 @@ import {
     getActiveProjectOption,
     normalizeProjectEnvelope,
     normalizeProjectStatus,
+    resolveStartupProjectSelection,
     selectProjectOption,
     stageActiveProjectOptionState
 } from '../../state/project.js';
@@ -255,6 +256,46 @@ describe('project state helpers', () => {
         });
         expect(envelope.state.options[0].createdAt).toBe('2026-03-16T00:00:00.000Z');
         expect(envelope.state.options[0].updatedAt).toBe('2026-03-16T00:10:00.000Z');
+    });
+
+    it('resolves startup project selection from requested, last-active, and recent project inputs', () => {
+        expect(resolveStartupProjectSelection({
+            requestedProjectId: 'project-requested',
+            lastActiveProjectId: 'project-last',
+            projectSummaries: [
+                { id: 'project-recent', updatedAt: '2026-03-20T12:00:00.000Z' }
+            ]
+        })).toEqual({
+            projectId: 'project-requested',
+            source: 'requested'
+        });
+
+        expect(resolveStartupProjectSelection({
+            lastActiveProjectId: 'project-last',
+            projectSummaries: [
+                { id: 'project-last', updatedAt: '2026-03-19T12:00:00.000Z' },
+                { id: 'project-recent', updatedAt: '2026-03-20T12:00:00.000Z' }
+            ]
+        })).toEqual({
+            projectId: 'project-last',
+            source: 'last-active'
+        });
+
+        expect(resolveStartupProjectSelection({
+            lastActiveProjectId: 'project-missing',
+            projectSummaries: [
+                { id: 'project-older', updatedAt: '2026-03-18T12:00:00.000Z' },
+                { id: 'project-recent', updatedAt: '2026-03-20T12:00:00.000Z' }
+            ]
+        })).toEqual({
+            projectId: 'project-recent',
+            source: 'recent'
+        });
+
+        expect(resolveStartupProjectSelection()).toEqual({
+            projectId: '',
+            source: 'create'
+        });
     });
 
     it('creates a new empty option from the default app-state snapshot and makes it active', () => {

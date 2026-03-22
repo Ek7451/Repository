@@ -117,6 +117,7 @@ describe('CameraBookmarks', () => {
         const bookmarks = [];
         const scene3D = createScene3D();
         const downloads = [];
+        const bookmarkChanges = [];
         const cameraBookmarks = new CameraBookmarks({
             barEl: createElementStub(),
             listEl: createElementStub(),
@@ -125,7 +126,8 @@ describe('CameraBookmarks', () => {
             getBookmarks: () => bookmarks,
             getScene3D: () => scene3D,
             getSportName: () => 'Soccer',
-            download: (descriptor) => downloads.push(descriptor)
+            download: (descriptor) => downloads.push(descriptor),
+            onBookmarksChanged: (change) => bookmarkChanges.push(change)
         });
 
         const bookmark = cameraBookmarks.createCurrentBookmark();
@@ -136,9 +138,13 @@ describe('CameraBookmarks', () => {
             thumbnail: 'data:image/png;base64,thumb'
         });
         expect(bookmarks).toEqual([bookmark]);
+        expect(bookmarkChanges).toEqual([
+            { action: 'create', index: 0 }
+        ]);
 
         cameraBookmarks.renameBookmark(0, 'Corner View');
         expect(bookmarks[0].name).toBe('Corner View');
+        expect(bookmarkChanges.at(-1)).toEqual({ action: 'rename', index: 0 });
 
         cameraBookmarks.restoreBookmark(0);
         expect(scene3D.camera.position.set).toHaveBeenCalledWith(12, 24, 36);
@@ -153,6 +159,7 @@ describe('CameraBookmarks', () => {
 
         cameraBookmarks.removeBookmark(0);
         expect(bookmarks).toEqual([]);
+        expect(bookmarkChanges.at(-1)).toEqual({ action: 'remove', index: 0 });
 
         cameraBookmarks.destroy();
     });
