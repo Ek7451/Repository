@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -13,7 +13,6 @@
         }
     }
     </script>
-    <link rel="stylesheet" href="../styles-shared.css?v=1">
     <link rel="stylesheet" href="./styles.css?v=1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -59,7 +58,7 @@
                         <div class="subtitle">Venue Feasibility + Sightline Tool</div>
                     </div>
                 </div>
-                <button id="toggleControlsBtn" class="icon-btn sidebar-header-action" title="Toggle Controls Panel">
+                <button id="toggleControlsBtn" class="btn btn--icon icon-btn sidebar-header-action" type="button" title="Toggle Controls Panel">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="15 18 9 12 15 6"></polyline>
                     </svg>
@@ -80,94 +79,100 @@
 
             <!-- Left Sidebar: Control Sections -->
             <div class="sidebar-content">
-                <div class="control-section collapsible" id="fieldSetupSection">
-                    <div class="section-header">Field Setup</div>
-                    <div class="section-body">
+                <div class="control-section control-accordion accordion collapsible" id="fieldSetupSection" data-accordion-root>
+                    <button class="accordion__trigger control-accordion__trigger" type="button" data-accordion-trigger aria-expanded="true" aria-controls="fieldSetupSectionBody">
+                        <span class="accordion__title">Field Setup</span>
+                    </button>
+                    <div class="section-body accordion__panel control-accordion__panel" id="fieldSetupSectionBody">
                         <div class="control-group">
                             <select id="sportSelect"></select>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Runoff</label>
                             <input type="range" id="customRunoffSlider" min="0" max="50" step="1" value="0">
                             <input type="number" id="customRunoffInput" placeholder="Auto" step="1" min="0">
                             <span class="unit">ft</span>
                             <span class="info-icon"
-                                data-tooltip="Field runoff distance (defaults to sport standard if Auto)">ⓘ</span>
+                                data-tooltip="Field runoff distance (defaults to sport standard if Auto)">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Focal Z</label>
                             <input type="range" id="focalZSlider" min="-10" max="20" step="0.5" value="0">
                             <input type="number" id="focalZInput" min="-10" max="20" step="0.5" value="0">
                             <span class="unit">ft</span>
                             <span class="info-icon"
-                                data-tooltip="Elevation. 0 ft field level, positive for raised surfaces, negative for sunken surfaces">ⓘ</span>
+                                data-tooltip="Elevation. 0 ft field level, positive for raised surfaces, negative for sunken surfaces">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Focal X</label>
                             <input type="range" id="focalXSlider" min="-100" max="100" step="0.1" value="0">
                             <input type="number" id="focalXInput" min="-100" max="100" step="0.1" value="0">
                             <span class="unit">ft</span>
                             <span class="info-icon"
-                                data-tooltip="Horizontal focal offset from the field edge. Positive moves outward toward seating; negative moves inward across the field.">ⓘ</span>
+                                data-tooltip="Horizontal focal offset from the field edge. Positive moves outward toward seating; negative moves inward across the field.">i</span>
                         </div>
                     </div>
                 </div>
 
-                <div class="control-section collapsible collapsed" id="occupancySection">
-                    <div class="section-header">Occupancy & Egress</div>
-                    <div class="section-body">
-                        <div class="control-row">
+                <div class="control-section control-accordion accordion collapsible collapsed" id="occupancySection" data-accordion-root>
+                    <button class="accordion__trigger control-accordion__trigger" type="button" data-accordion-trigger aria-expanded="false" aria-controls="occupancySectionBody">
+                        <span class="accordion__title">Occupancy & Egress</span>
+                    </button>
+                    <div class="section-body accordion__panel control-accordion__panel" id="occupancySectionBody" hidden>
+                        <div class="control-row control-row--slider">
                             <label>Seat Width</label>
                             <input type="range" id="seatWidthSlider" min="18" max="26" step="0.5" value="20">
                             <input type="number" id="seatWidthInput" min="18" max="30" step="0.5" value="20">
                             <span class="unit">in</span>
-                            <span class="info-icon" data-tooltip="Width per seat (center-to-center)">ⓘ</span>
+                            <span class="info-icon" data-tooltip="Width per seat (center-to-center)">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Min Aisle Width</label>
                             <input type="range" id="minAisleSlider" min="12" max="60" step="1" value="48">
                             <input type="number" id="minAisleInput" min="12" max="60" step="1" value="48">
                             <span class="unit">in</span>
-                            <span class="info-icon" data-tooltip="Min allowed aisle width">ⓘ</span>
+                            <span class="info-icon" data-tooltip="Min allowed aisle width">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Max Aisle Width</label>
                             <input type="range" id="maxAisleSlider" min="24" max="108" step="1" value="72">
                             <input type="number" id="maxAisleInput" min="24" max="108" step="1" value="72">
                             <span class="unit">in</span>
-                            <span class="info-icon" data-tooltip="Max allowed aisle width">ⓘ</span>
+                            <span class="info-icon" data-tooltip="Max allowed aisle width">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Max Seats/Row</label>
                             <input type="range" id="seatsBetweenAislesSlider" min="10" max="40" step="1" value="20">
                             <input type="number" id="seatsBetweenAislesInput" min="10" max="40" step="1" value="20">
                             <span class="unit">qty</span>
                             <span class="info-icon"
-                                data-tooltip="Max contiguous seats between aisles. Evaluated against the average tier length for aggregate baseline feasibility and block counts.">ⓘ</span>
+                                data-tooltip="Max contiguous seats between aisles. Evaluated against the average tier length for aggregate baseline feasibility and block counts.">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Egress Factor</label>
                             <input type="range" id="egressFactorSlider" min="0.1" max="0.5" step="0.01" value="0.2">
                             <input type="number" id="egressFactorInput" min="0.1" max="1.0" step="0.01" value="0.2">
                             <span class="unit">in/occ</span>
                             <span class="info-icon"
-                                data-tooltip-template="egressFactorTooltipTemplate">ⓘ</span>
+                                data-tooltip-template="egressFactorTooltipTemplate">i</span>
                         </div>
                     </div>
                 </div>
 
-                <div class="control-section collapsible collapsed" id="bowlConfigSection">
-                    <div class="section-header">Bowl Configuration</div>
-                    <div class="section-body">
+                <div class="control-section control-accordion accordion collapsible collapsed" id="bowlConfigSection" data-accordion-root>
+                    <button class="accordion__trigger control-accordion__trigger" type="button" data-accordion-trigger aria-expanded="false" aria-controls="bowlConfigSectionBody">
+                        <span class="accordion__title">Bowl Configuration</span>
+                    </button>
+                    <div class="section-body accordion__panel control-accordion__panel" id="bowlConfigSectionBody" hidden>
                         <div class="control-group">
-                            <div class="control-row">
+                            <div class="control-row control-row--select">
                                 <label>Type</label>
                                 <select id="bowlType">
                                     <option value="Full">Full Bowl</option>
@@ -180,39 +185,39 @@
                                 </select>
                             </div>
 
-                            <div class="control-row">
+                            <div class="control-row control-row--slider">
                                 <label>Chamfer Dim</label>
                                 <input type="range" id="bowlCornerRadSlider" min="0" max="200" step="1" value="10">
                                 <input type="number" id="bowlCornerRadInput" min="0" max="300" step="1" value="10">
                                 <span class="unit">ft</span>
                                 <span class="info-icon"
-                                    data-tooltip="Corner chamfer dimension measured from the intersection of the two adjacent sides of the bowl.">ⓘ</span>
+                                    data-tooltip="Corner chamfer dimension measured from the intersection of the two adjacent sides of the bowl.">i</span>
 
                             </div>
-                            <div class="control-row" id="sideLengthRow" hidden>
+                            <div class="control-row control-row--slider" id="sideLengthRow" hidden>
                                 <label id="sideLengthRowLabel">Sides Length 1/2</label>
                                 <input type="range" id="bowlSideLengthSlider" min="50" max="600" step="1" value="300">
                                 <input type="number" id="bowlSideLengthInput" min="50" max="600" step="1" value="300">
                                 <span class="unit">ft</span>
                             </div>
-                            <div class="control-row" id="sideLength34Row" hidden>
+                            <div class="control-row control-row--slider" id="sideLength34Row" hidden>
                                 <label id="sideLength34RowLabel">Sides Length 3/4</label>
                                 <input type="range" id="bowlEndLengthSlider" min="50" max="600" step="1" value="300">
                                 <input type="number" id="bowlEndLengthInput" min="50" max="600" step="1" value="300">
                                 <span class="unit">ft</span>
                                 <span class="info-icon"
-                                    data-tooltip="Length for the alternate side pair or open-end configuration, measured from the front edge of the straight seating segment to the open end.">ⓘ</span>
+                                    data-tooltip="Length for the alternate side pair or open-end configuration, measured from the front edge of the straight seating segment to the open end.">i</span>
                             </div>
 
-                            <div class="control-row">
+                            <div class="control-row control-row--slider">
                                 <label>Structural Depth</label>
                                 <input type="range" id="structuralDepthSlider" min="0" max="72" step="1" value="12">
                                 <input type="number" id="structuralDepthInput" min="0" max="72" step="1" value="12">
                                 <span class="unit">in</span>
                                 <span class="info-icon"
-                                    data-tooltip="Thickness of structural system beneath seating profile. Creates a closed profile offset downward/inward useful for DXF/OBJ export.">ⓘ</span>
+                                    data-tooltip="Thickness of structural system beneath seating profile. Creates a closed profile offset downward/inward useful for DXF/OBJ export.">i</span>
                             </div>
-                            <div class="control-row">
+                            <div class="control-row control-row--select">
                                 <label>Structural Profile</label>
                                 <select id="structuralProfileMode">
                                     <option value="stepped" selected>Stepped</option>
@@ -220,292 +225,301 @@
                                 </select>
                                 <span class="unit"></span>
                                 <span class="info-icon"
-                                    data-tooltip="Stepped follows each tread/riser offset. Sloped uses a straight underside between the front and rear structural limits.">ⓘ</span>
+                                    data-tooltip="Stepped follows each tread/riser offset. Sloped uses a straight underside between the front and rear structural limits.">i</span>
                             </div>
-                            <div class="control-row">
+                            <div class="control-row control-row--select">
                                 <label>Straight Aisle Layout</label>
                                 <select id="straightAisleMode">
                                     <option value="radial" selected>Radial</option>
                                     <option value="perpendicular">Perpendicular</option>
                                 </select>
                                 <span class="info-icon"
-                                    data-tooltip="Radial points the aisle toward the venue center. Perpendicular keeps the aisle square to the straight section.">ⓘ</span>
+                                    data-tooltip="Radial points the aisle toward the venue center. Perpendicular keeps the aisle square to the straight section.">i</span>
                                 <span class="unit"></span>
                             </div>
-                            <div class="control-row">
+                            <div class="control-row control-row--select">
                                 <label>Chamfer Aisle Layout</label>
                                 <select id="chamferAisleMode">
                                     <option value="radial" selected>Radial</option>
                                     <option value="perpendicular">Perpendicular</option>
                                 </select>
                                 <span class="info-icon"
-                                    data-tooltip="Radial points the aisle toward the venue center through the corner. Perpendicular keeps the aisle square to the chamfered corner face.">ⓘ</span>
+                                    data-tooltip="Radial points the aisle toward the venue center through the corner. Perpendicular keeps the aisle square to the chamfered corner face.">i</span>
                                 <span class="unit"></span>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="control-section collapsible collapsed tier-section-1" id="tier1Section">
-                    <div class="section-header">
-                        <span>Tier 1</span>
-                        <label class="header-toggle">
+                <div class="control-section control-accordion accordion collapsible collapsed tier-section-1" id="tier1Section" data-accordion-root>
+                    <div class="control-accordion__header control-accordion__header--toggle">
+                        <button class="accordion__trigger control-accordion__trigger control-accordion__trigger--tier" type="button" data-accordion-trigger aria-expanded="false" aria-controls="tier1Controls">
+                            <span class="accordion__title">Tier 1</span>
+                        </button>
+                        <label class="switch switch--tier">
+                            <span class="sr-only">Enable tier 1</span>
                             <input type="checkbox" id="enableTier1" checked>
                         </label>
                     </div>
-                    <div class="section-body">
-                        <div class="control-row">
+                    <div class="section-body accordion__panel control-accordion__panel" id="tier1Controls" hidden>
+                        <div class="control-row control-row--select">
                             <label>Profile Type</label>
                             <select id="profileType">
                                 <option value="Parabolic" selected>Parabolic</option>
                                 <option value="Linear">Linear</option>
                             </select>
                             <span class="info-icon"
-                                data-tooltip="Parabolic: variable risers, exact C-value per row. Linear: constant riser height/slope.">ⓘ</span>
+                                data-tooltip="Parabolic: variable risers, exact C-value per row. Linear: constant riser height/slope.">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Target C-Value</label>
                             <input type="range" id="cValueSlider" min="0.5" max="8" step="0.25" value="3.0">
                             <input type="number" id="cValueInput" min="0.5" max="8" step="0.25" value="3.0">
                             <span class="unit">in</span>
                             <span class="info-icon"
-                                data-tooltip="Sightline clearance over head in front. Excellent: ≥4.75&quot;, Good: 3.5–4.75&quot;, Acceptable: 2.4–3.5&quot;, Poor: <2.4&quot;">ⓘ</span>
+                                data-tooltip="Sightline clearance over head in front. Excellent: >=4.75&quot;, Good: 3.5-4.75&quot;, Acceptable: 2.4-3.5&quot;, Poor: <2.4&quot;">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Number of Rows</label>
                             <input type="range" id="numRowsSlider" min="3" max="80" step="1" value="30">
                             <input type="number" id="numRowsInput" min="3" max="80" step="1" value="30">
                             <span class="unit">qty</span>
                             <span class="info-icon"
-                                data-tooltip="15–20: lower bowl, 20–30: full tier, 40+: consider tier breaks">ⓘ</span>
+                                data-tooltip="15-20: lower bowl, 20-30: full tier, 40+: consider tier breaks">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Dist From Field</label>
                             <input type="range" id="firstRowDistSlider" min="0" max="200" step="5" value="50">
                             <input type="number" id="firstRowDistInput" min="0" max="200" step="1" value="50">
                             <span class="unit">ft</span>
                             <span class="info-icon"
-                                data-tooltip="Distance from field edge. 30–50 ft premium, 50–80 ft standard, 100+ ft upper">ⓘ</span>
+                                data-tooltip="Distance from field edge. 30-50 ft premium, 50-80 ft standard, 100+ ft upper">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>First Row Elev</label>
                             <input type="range" id="firstRowElevSlider" min="0" max="30" step="0.5" value="3">
                             <input type="number" id="firstRowElevInput" min="0" max="30" step="0.5" value="3">
                             <span class="unit">ft</span>
                             <span class="info-icon"
-                                data-tooltip="Height above focal point. 1–3 ft field level, 4–8 ft raised, 20+ ft upper tier">ⓘ</span>
+                                data-tooltip="Height above focal point. 1-3 ft field level, 4-8 ft raised, 20+ ft upper tier">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Tread Depth</label>
                             <input type="range" id="treadDepthSlider" min="24" max="42" step="1" value="33">
                             <input type="number" id="treadDepthInput" min="24" max="42" step="1" value="33">
                             <span class="unit">in</span>
                             <span class="info-icon"
-                                data-tooltip="Row depth front-to-back. 28–30&quot; min bench, 33–36&quot; standard, 38–42&quot; premium">ⓘ</span>
+                                data-tooltip="Row depth front-to-back. 28-30&quot; min bench, 33-36&quot; standard, 38-42&quot; premium">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Starting Riser</label>
                             <input type="range" id="riserHeightSlider" min="4" max="22" step="0.5" value="8">
                             <input type="number" id="riserHeightInput" min="4" max="22" step="0.5" value="8">
                             <span class="unit">in</span>
                             <span class="info-icon"
-                                data-tooltip="Baseline riser height. 6–8&quot; lower bowl, 10–14&quot; upper tiers. Code max ~8.25&quot; for gangways">ⓘ</span>
+                                data-tooltip="Baseline riser height. 6-8&quot; lower bowl, 10-14&quot; upper tiers. Code max ~8.25&quot; for gangways">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Eye Height</label>
                             <input type="range" id="eyeHeightSlider" min="3" max="5" step="0.1" value="3.75">
                             <input type="number" id="eyeHeightInput" min="3" max="5" step="0.1" value="3.75">
                             <span class="unit">ft</span>
                             <span class="info-icon"
-                                data-tooltip="Seated eye height. 3.75 ft (45&quot;) average adult, 3.5 ft conservative, 4.0 ft taller">ⓘ</span>
+                                data-tooltip="Seated eye height. 3.75 ft (45&quot;) average adult, 3.5 ft conservative, 4.0 ft taller">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Eye Setback</label>
                             <input type="range" id="eyeSetbackSlider" min="0" max="12" step="1" value="6">
                             <input type="number" id="eyeSetbackInput" min="0" max="12" step="1" value="6">
                             <span class="unit">in</span>
                             <span class="info-icon"
-                                data-tooltip="Distance from back riser to eyes. 6&quot; standard, 8–12&quot; premium, 4–6&quot; bench">ⓘ</span>
+                                data-tooltip="Distance from back riser to eyes. 6&quot; standard, 8-12&quot; premium, 4-6&quot; bench">i</span>
                         </div>
                     </div>
                 </div>
 
-                <div class="control-section collapsible collapsed tier-section-2" id="tier2Section">
-                    <div class="section-header">
-                        <span>Tier 2</span>
-                        <label class="header-toggle">
+                <div class="control-section control-accordion accordion collapsible collapsed tier-section-2" id="tier2Section" data-accordion-root>
+                    <div class="control-accordion__header control-accordion__header--toggle">
+                        <button class="accordion__trigger control-accordion__trigger control-accordion__trigger--tier" type="button" data-accordion-trigger aria-expanded="false" aria-controls="tier2Controls">
+                            <span class="accordion__title">Tier 2</span>
+                        </button>
+                        <label class="switch switch--tier">
+                            <span class="sr-only">Enable tier 2</span>
                             <input type="checkbox" id="enableTier2">
                         </label>
                     </div>
-                    <div class="section-body" id="tier2Controls">
-                        <div class="control-row">
+                    <div class="section-body accordion__panel control-accordion__panel" id="tier2Controls" hidden>
+                        <div class="control-row control-row--select">
                             <label>Profile Type</label>
                             <select id="t2ProfileType">
                                 <option value="Parabolic" selected>Parabolic</option>
                                 <option value="Linear">Linear</option>
                             </select>
                             <span class="info-icon"
-                                data-tooltip="Parabolic: variable risers, exact C-value per row. Linear: constant riser height/slope">ⓘ</span>
+                                data-tooltip="Parabolic: variable risers, exact C-value per row. Linear: constant riser height/slope">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Target C-Value</label>
                             <input type="range" id="t2CValueSlider" min="0.5" max="8" step="0.25" value="3.0">
                             <input type="number" id="t2CValueInput" min="0.5" max="8" step="0.25" value="3.0">
                             <span class="unit">in</span>
                             <span class="info-icon"
-                                data-tooltip="Sightline clearance over head in front. Excellent: ≥4.75&quot;, Good: 3.5–4.75&quot;, Acceptable: 2.4–3.5&quot;, Poor: <2.4&quot;">ⓘ</span>
+                                data-tooltip="Sightline clearance over head in front. Excellent: >=4.75&quot;, Good: 3.5-4.75&quot;, Acceptable: 2.4-3.5&quot;, Poor: <2.4&quot;">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Rows</label>
                             <input type="range" id="t2NumRowsSlider" min="3" max="60" step="1" value="15">
                             <input type="number" id="t2NumRowsInput" min="3" max="60" step="1" value="15">
                             <span class="unit">qty</span>
-                            <span class="info-icon" data-tooltip="Number of rows in this tier">ⓘ</span>
+                            <span class="info-icon" data-tooltip="Number of rows in this tier">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Dist From Field</label>
                             <input type="range" id="t2FirstRowDistSlider" min="-50" max="300" step="5" value="80">
                             <input type="number" id="t2FirstRowDistInput" min="-50" max="300" step="1" value="80">
                             <span class="unit">ft</span>
                             <span class="info-icon"
-                                data-tooltip="Distance from field edge. Negative overlaps toward field">ⓘ</span>
+                                data-tooltip="Distance from field edge. Negative overlaps toward field">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>First Row Elev</label>
                             <input type="range" id="t2FirstRowElevSlider" min="0" max="80" step="0.5" value="15">
                             <input type="number" id="t2FirstRowElevInput" min="0" max="80" step="0.5" value="15">
                             <span class="unit">ft</span>
-                            <span class="info-icon" data-tooltip="Height of first row relative to focal point">ⓘ</span>
+                            <span class="info-icon" data-tooltip="Height of first row relative to focal point">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Tread Depth</label>
                             <input type="range" id="t2TreadDepthSlider" min="24" max="42" step="1" value="33">
                             <input type="number" id="t2TreadDepthInput" min="24" max="42" step="1" value="33">
                             <span class="unit">in</span>
-                            <span class="info-icon" data-tooltip="Row depth front-to-back">ⓘ</span>
+                            <span class="info-icon" data-tooltip="Row depth front-to-back">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Starting Riser</label>
                             <input type="range" id="t2RiserHeightSlider" min="4" max="22" step="0.5" value="12">
                             <input type="number" id="t2RiserHeightInput" min="4" max="22" step="0.5" value="12">
                             <span class="unit">in</span>
-                            <span class="info-icon" data-tooltip="Initial riser height for this tier">ⓘ</span>
+                            <span class="info-icon" data-tooltip="Initial riser height for this tier">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Eye Height</label>
                             <input type="range" id="t2EyeHeightSlider" min="3" max="5" step="0.1" value="3.75">
                             <input type="number" id="t2EyeHeightInput" min="3" max="5" step="0.1" value="3.75">
                             <span class="unit">ft</span>
-                            <span class="info-icon" data-tooltip="Seated eye height above floor">ⓘ</span>
+                            <span class="info-icon" data-tooltip="Seated eye height above floor">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Eye Setback</label>
                             <input type="range" id="t2EyeSetbackSlider" min="0" max="12" step="1" value="6">
                             <input type="number" id="t2EyeSetbackInput" min="0" max="12" step="1" value="6">
                             <span class="unit">in</span>
-                            <span class="info-icon" data-tooltip="Distance from back riser to eyes">ⓘ</span>
+                            <span class="info-icon" data-tooltip="Distance from back riser to eyes">i</span>
                         </div>
                     </div>
                 </div>
 
-                <div class="control-section collapsible collapsed tier-section-3" id="tier3Section">
-                    <div class="section-header">
-                        <span>Tier 3</span>
-                        <label class="header-toggle">
+                <div class="control-section control-accordion accordion collapsible collapsed tier-section-3" id="tier3Section" data-accordion-root>
+                    <div class="control-accordion__header control-accordion__header--toggle">
+                        <button class="accordion__trigger control-accordion__trigger control-accordion__trigger--tier" type="button" data-accordion-trigger aria-expanded="false" aria-controls="tier3Controls">
+                            <span class="accordion__title">Tier 3</span>
+                        </button>
+                        <label class="switch switch--tier">
+                            <span class="sr-only">Enable tier 3</span>
                             <input type="checkbox" id="enableTier3">
                         </label>
                     </div>
-                    <div class="section-body" id="tier3Controls">
-                        <div class="control-row">
+                    <div class="section-body accordion__panel control-accordion__panel" id="tier3Controls" hidden>
+                        <div class="control-row control-row--select">
                             <label>Profile Type</label>
                             <select id="t3ProfileType">
                                 <option value="Parabolic" selected>Parabolic</option>
                                 <option value="Linear">Linear</option>
                             </select>
                             <span class="info-icon"
-                                data-tooltip="Parabolic: variable risers, exact C-value per row. Linear: constant riser height/slope">ⓘ</span>
+                                data-tooltip="Parabolic: variable risers, exact C-value per row. Linear: constant riser height/slope">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Target C-Value</label>
                             <input type="range" id="t3CValueSlider" min="0.5" max="8" step="0.25" value="3.0">
                             <input type="number" id="t3CValueInput" min="0.5" max="8" step="0.25" value="3.0">
                             <span class="unit">in</span>
                             <span class="info-icon"
-                                data-tooltip="Sightline clearance over head in front. Excellent: ≥4.75&quot;, Good: 3.5–4.75&quot;, Acceptable: 2.4–3.5&quot;, Poor: <2.4&quot;">ⓘ</span>
+                                data-tooltip="Sightline clearance over head in front. Excellent: >=4.75&quot;, Good: 3.5-4.75&quot;, Acceptable: 2.4-3.5&quot;, Poor: <2.4&quot;">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Rows</label>
                             <input type="range" id="t3NumRowsSlider" min="3" max="60" step="1" value="10">
                             <input type="number" id="t3NumRowsInput" min="3" max="60" step="1" value="10">
                             <span class="unit">qty</span>
-                            <span class="info-icon" data-tooltip="Number of rows in this tier">ⓘ</span>
+                            <span class="info-icon" data-tooltip="Number of rows in this tier">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Dist From Field</label>
                             <input type="range" id="t3FirstRowDistSlider" min="-50" max="300" step="5" value="120">
                             <input type="number" id="t3FirstRowDistInput" min="-50" max="300" step="1" value="120">
                             <span class="unit">ft</span>
                             <span class="info-icon"
-                                data-tooltip="Distance from field edge. Negative overlaps toward field">ⓘ</span>
+                                data-tooltip="Distance from field edge. Negative overlaps toward field">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>First Row Elev</label>
                             <input type="range" id="t3FirstRowElevSlider" min="0" max="120" step="0.5" value="35">
                             <input type="number" id="t3FirstRowElevInput" min="0" max="120" step="0.5" value="35">
                             <span class="unit">ft</span>
-                            <span class="info-icon" data-tooltip="Height of first row relative to focal point">ⓘ</span>
+                            <span class="info-icon" data-tooltip="Height of first row relative to focal point">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Tread Depth</label>
                             <input type="range" id="t3TreadDepthSlider" min="24" max="42" step="1" value="33">
                             <input type="number" id="t3TreadDepthInput" min="24" max="42" step="1" value="33">
                             <span class="unit">in</span>
-                            <span class="info-icon" data-tooltip="Row depth front-to-back">ⓘ</span>
+                            <span class="info-icon" data-tooltip="Row depth front-to-back">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Starting Riser</label>
                             <input type="range" id="t3RiserHeightSlider" min="4" max="22" step="0.5" value="12">
                             <input type="number" id="t3RiserHeightInput" min="4" max="22" step="0.5" value="12">
                             <span class="unit">in</span>
-                            <span class="info-icon" data-tooltip="Initial riser height for this tier">ⓘ</span>
+                            <span class="info-icon" data-tooltip="Initial riser height for this tier">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Eye Height</label>
                             <input type="range" id="t3EyeHeightSlider" min="3" max="5" step="0.1" value="3.75">
                             <input type="number" id="t3EyeHeightInput" min="3" max="5" step="0.1" value="3.75">
                             <span class="unit">ft</span>
-                            <span class="info-icon" data-tooltip="Seated eye height above floor">ⓘ</span>
+                            <span class="info-icon" data-tooltip="Seated eye height above floor">i</span>
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row control-row--slider">
                             <label>Eye Setback</label>
                             <input type="range" id="t3EyeSetbackSlider" min="0" max="12" step="1" value="6">
                             <input type="number" id="t3EyeSetbackInput" min="0" max="12" step="1" value="6">
                             <span class="unit">in</span>
-                            <span class="info-icon" data-tooltip="Distance from back riser to eyes">ⓘ</span>
+                            <span class="info-icon" data-tooltip="Distance from back riser to eyes">i</span>
                         </div>
                     </div>
                 </div>
@@ -518,7 +532,7 @@
                     <div class="view-tabs-note sidebar-beta-note" role="note" aria-label="Beta disclaimer">
                         <strong>Beta</strong> Results may be inaccurate.
                     </div>
-                    <button id="saveProjectBtn" class="sidebar-save-btn" type="button" title="Save project" aria-label="Save project" disabled>
+                    <button id="saveProjectBtn" class="btn btn--icon sidebar-save-btn" type="button" title="Save project" aria-label="Save project" disabled>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
                             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M5 4h11l3 3v13H5z"></path>
@@ -569,8 +583,8 @@
                         <div class="editor-toolbar-shell">
                             <div class="editor-toolbar-group">
                                 <div class="project-menu-shell">
-                                    <button id="projectMenuTrigger"
-                                        class="editor-toolbar-icon-btn"
+                    <button id="projectMenuTrigger"
+                                        class="btn btn--icon editor-toolbar-icon-btn"
                                         type="button"
                                         aria-label="Project menu"
                                         aria-haspopup="true"
@@ -665,7 +679,7 @@
                                         placeholder="Project name"
                                         readonly>
                                     <button id="projectNameEditBtn"
-                                        class="project-name-edit-btn"
+                                        class="btn btn--icon project-name-edit-btn"
                                         type="button"
                                         aria-label="Rename project"
                                         title="Rename project">
@@ -740,14 +754,14 @@
                         <div class="workspace-bottom-dock-section workspace-bottom-dock-section-left">
                             <div class="workspace-dock-view workspace-dock-scene-actions" data-dock-view="scene3d" hidden aria-hidden="true">
                                 <div class="cam-bookmarks-header">
-                                    <button id="toggleBookmarksBtn" class="icon-btn" title="Toggle Saved Views">
+                                    <button id="toggleBookmarksBtn" class="btn btn--icon icon-btn" type="button" title="Toggle Saved Views">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                             stroke-width="2">
                                             <polyline points="6 9 12 15 18 9"></polyline>
                                         </svg>
                                     </button>
                                 </div>
-                                <button class="cam-bookmark-btn cam-bookmark-primary" id="saveCameraViewBtn"
+                                <button class="btn btn--pill btn--primary cam-bookmark-btn cam-bookmark-primary" id="saveCameraViewBtn" type="button"
                                     title="Save current camera view">
                                     Save View
                                 </button>
@@ -761,7 +775,7 @@
                         <div class="workspace-bottom-dock-section workspace-bottom-dock-section-right">
                             <div class="view-overlay-controls workspace-dock-view active" data-dock-view="profile" aria-label="Section profile view toggles">
                             <div class="toggle-row sightline-toggle-row">
-                                <label class="header-toggle overlay-icon-toggle" title="Sightline Visuals" aria-label="Toggle sightline visuals">
+                                    <label class="switch switch--icon overlay-icon-toggle" title="Sightline Visuals" aria-label="Toggle sightline visuals">
                                     <input type="checkbox" id="toggleSightlinesBtn" checked>
                                     <svg class="toggle-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                         <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
@@ -772,7 +786,7 @@
                             </div>
                             <div class="view-overlay-controls workspace-dock-view" data-dock-view="field" aria-label="Field plan view toggles" hidden aria-hidden="true">
                             <div class="toggle-row sightline-toggle-row">
-                                <label class="header-toggle overlay-icon-toggle" title="Section Metrics" aria-label="Toggle section metrics overlay">
+                                    <label class="switch switch--icon overlay-icon-toggle" title="Section Metrics" aria-label="Toggle section metrics overlay">
                                     <input type="checkbox" id="toggleSectionMetricsBtn">
                                     <svg class="toggle-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                         <line x1="6" y1="19" x2="6" y2="12"></line>
@@ -782,7 +796,7 @@
                                 </label>
                             </div>
                             <div class="toggle-row sightline-toggle-row">
-                                <label class="header-toggle overlay-icon-toggle" title="Sightline Visuals" aria-label="Toggle sightline visuals">
+                                    <label class="switch switch--icon overlay-icon-toggle" title="Sightline Visuals" aria-label="Toggle sightline visuals">
                                     <input type="checkbox" id="toggleSightlinesBtnField" checked>
                                     <svg class="toggle-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                         <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
@@ -793,7 +807,7 @@
                             </div>
                             <div class="view-overlay-controls workspace-dock-view" data-dock-view="scene3d" aria-label="3D view toggles" hidden aria-hidden="true">
                             <div class="toggle-row sightline-toggle-row">
-                                <label class="header-toggle overlay-icon-toggle" title="3D Seat Cubes" aria-label="Toggle 3D seat cubes">
+                                <label class="switch switch--icon overlay-icon-toggle" title="3D Seat Cubes" aria-label="Toggle 3D seat cubes">
                                     <input type="checkbox" id="showSeatCubes3D">
                                     <svg class="toggle-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                         <path d="M12 2 4 6.5 12 11l8-4.5L12 2z"></path>
@@ -814,7 +828,7 @@
             <div class="resize-handle" id="rightSidebarResizer"></div>
             <div class="sidebar-header">
                 <h1><span>Results & Metrics</span></h1>
-                <button id="toggleResultsBtn" class="icon-btn" title="Toggle Results Panel">
+                <button id="toggleResultsBtn" class="btn btn--icon icon-btn" type="button" title="Toggle Results Panel">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="9 18 15 12 9 6"></polyline>
                     </svg>
@@ -844,7 +858,7 @@
                 </div>
                 <div class="results-tabs-content results-scroll-panel">
                     <div id="statsTab" class="results-tab-panel active">
-                        <div class="control-section stats-panel results-panel-shell" id="resultsSection">
+                        <div class="results-panel stats-panel" id="resultsSection">
                             <div id="statsContent">
                                 <div class="stat-row">
                                     <span class="stat-label stat-label--empty">Adjust parameters to see
@@ -854,7 +868,7 @@
                         </div>
                     </div>
                     <div id="detailsTab" class="results-tab-panel">
-                        <div class="control-section stats-panel results-panel-shell">
+                        <div class="results-panel stats-panel results-panel--details">
                             <div id="detailsContent">
                                 <div class="stat-row">
                                     <span class="stat-label stat-label--empty">Tier details will appear
@@ -868,12 +882,12 @@
         </aside>
 
         <!-- ========== SHELL MODALS ========== -->
-        <div id="projectPickerModal" class="project-picker-modal" hidden>
-            <div class="project-picker-backdrop" data-project-picker-close></div>
-            <section class="project-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="projectPickerTitle">
-                <div class="project-picker-header">
+        <div id="projectPickerModal" class="project-picker-modal dialog" hidden>
+            <div class="project-picker-backdrop dialog__backdrop" data-project-picker-close></div>
+            <section class="project-picker-dialog dialog__surface" role="dialog" aria-modal="true" aria-labelledby="projectPickerTitle">
+                <div class="project-picker-header dialog__header">
                     <h2 id="projectPickerTitle">Open project</h2>
-                    <button id="projectPickerCloseBtn" class="project-picker-close-btn" type="button" aria-label="Close open project dialog">
+                    <button id="projectPickerCloseBtn" class="project-picker-close-btn btn btn--icon dialog__close" type="button" aria-label="Close open project dialog">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
                             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -881,15 +895,15 @@
                         </svg>
                     </button>
                 </div>
-                <div class="project-picker-toolbar">
+                <div class="project-picker-toolbar dialog__toolbar">
                     <label class="project-picker-search-field" for="projectPickerSearchInput">
                         <span class="sr-only">Search projects</span>
                         <input id="projectPickerSearchInput" type="search" placeholder="Search projects">
                     </label>
                     <div class="project-picker-toolbar-actions">
                         <p id="projectPickerSelectionSummary" class="project-picker-selection-summary" hidden></p>
-                        <button id="projectPickerDeleteSelectedBtn" class="project-picker-delete-selected-btn" type="button">Delete selected</button>
-                        <button id="projectPickerCreateBtn" class="project-picker-create-btn" type="button">New project</button>
+                        <button id="projectPickerDeleteSelectedBtn" class="project-picker-delete-selected-btn btn btn--pill btn--danger" type="button">Delete selected</button>
+                        <button id="projectPickerCreateBtn" class="project-picker-create-btn btn btn--pill btn--primary" type="button">New project</button>
                     </div>
                 </div>
                 <p id="projectPickerError" class="project-picker-error" hidden></p>
@@ -905,12 +919,12 @@
             </section>
         </div>
 
-        <div id="projectOptionManagerModal" class="project-option-manager-modal" hidden>
-            <div class="project-option-manager-backdrop" data-project-option-manager-close></div>
-            <section class="project-option-manager-dialog" role="dialog" aria-modal="true" aria-labelledby="projectOptionManagerTitle">
-                <div class="project-option-manager-header">
+        <div id="projectOptionManagerModal" class="project-option-manager-modal dialog" hidden>
+            <div class="project-option-manager-backdrop dialog__backdrop" data-project-option-manager-close></div>
+            <section class="project-option-manager-dialog dialog__surface" role="dialog" aria-modal="true" aria-labelledby="projectOptionManagerTitle">
+                <div class="project-option-manager-header dialog__header">
                     <h2 id="projectOptionManagerTitle">Manage design options</h2>
-                    <button id="projectOptionManagerCloseBtn" class="project-option-manager-close-btn" type="button" aria-label="Close manage options dialog">
+                    <button id="projectOptionManagerCloseBtn" class="project-option-manager-close-btn btn btn--icon dialog__close" type="button" aria-label="Close manage options dialog">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
                             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -918,12 +932,12 @@
                         </svg>
                     </button>
                 </div>
-                <div class="project-option-manager-toolbar">
+                <div class="project-option-manager-toolbar dialog__toolbar">
                     <label class="project-picker-search-field" for="projectOptionManagerSearchInput">
                         <span class="sr-only">Search options</span>
                         <input id="projectOptionManagerSearchInput" type="search" placeholder="Search options">
                     </label>
-                    <button id="projectOptionManagerCreateBtn" class="project-option-manager-create-btn" type="button">Create empty option</button>
+                    <button id="projectOptionManagerCreateBtn" class="project-option-manager-create-btn btn btn--pill btn--primary" type="button">Create empty option</button>
                 </div>
                 <div class="project-option-manager-table">
                     <div id="projectOptionManagerList" class="project-option-manager-list" role="list"></div>
@@ -954,7 +968,154 @@
         </div>
     </template>
 
+    <template id="projectOptionItemTemplate">
+        <button class="project-option-item" type="button">
+            <span class="project-option-item-leading">
+                <span class="project-option-dot" aria-hidden="true"></span>
+                <span data-project-option-item-label></span>
+            </span>
+            <span class="project-option-pill" data-project-option-item-status hidden>Active</span>
+        </button>
+    </template>
+
+    <template id="projectOptionMenuActionTemplate">
+        <button class="project-option-item project-option-item--action" type="button">
+            <span class="project-option-item-leading">
+                <span class="project-option-plus" data-project-option-action-icon aria-hidden="true"></span>
+                <span data-project-option-action-label></span>
+            </span>
+        </button>
+    </template>
+
+    <template id="projectOptionManagerRowTemplate">
+        <article class="project-option-manager-row" role="listitem">
+            <div class="project-option-manager-main project-option-manager-main-editing" data-project-option-editing hidden>
+                <span class="project-option-dot" aria-hidden="true"></span>
+                <div class="project-option-manager-copy">
+                    <label class="sr-only" data-project-option-name-label></label>
+                    <input class="project-option-manager-name-input" type="text" maxlength="80" data-project-option-name-input>
+                </div>
+            </div>
+            <button class="project-option-manager-main" type="button" data-project-option-select>
+                <span class="project-option-dot" aria-hidden="true"></span>
+                <span class="project-option-manager-name" data-project-option-name></span>
+            </button>
+            <div class="project-option-manager-actions">
+                <button class="project-option-manager-icon-btn btn btn--icon" type="button" data-project-option-manager-action="edit"></button>
+                <button class="project-option-manager-icon-btn btn btn--icon" type="button" data-project-option-manager-action="duplicate"></button>
+                <button class="project-option-manager-icon-btn project-option-manager-icon-btn-danger btn btn--icon" type="button" data-project-option-manager-action="delete"></button>
+            </div>
+        </article>
+    </template>
+
+    <template id="projectPickerRowTemplate">
+        <article class="project-picker-row" role="listitem">
+            <label class="project-picker-row-select">
+                <input class="project-picker-row-checkbox" type="checkbox" data-project-picker-select-input>
+                <span class="project-picker-row-checkbox-ui" aria-hidden="true"></span>
+            </label>
+            <div class="project-picker-row-main project-picker-row-main-editing" data-project-picker-editing hidden>
+                <svg class="project-picker-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H11l2 2h4.5A2.5 2.5 0 0 1 20 9.5v8A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5v-10z"></path>
+                </svg>
+                <span class="project-picker-row-copy">
+                    <label class="sr-only" data-project-picker-name-label></label>
+                    <input class="project-picker-row-name-input" type="text" maxlength="80" data-project-picker-name-input>
+                    <span class="project-picker-row-sport">
+                        <span data-project-picker-edit-sport></span>
+                        <span class="project-picker-row-badge" data-project-picker-edit-badge hidden>Current project</span>
+                        <span class="project-picker-row-status" data-project-picker-edit-status hidden></span>
+                    </span>
+                </span>
+            </div>
+            <button class="project-picker-row-main" type="button" data-open-project-button>
+                <svg class="project-picker-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H11l2 2h4.5A2.5 2.5 0 0 1 20 9.5v8A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5v-10z"></path>
+                </svg>
+                <span class="project-picker-row-copy">
+                    <span class="project-picker-row-name" data-project-picker-name></span>
+                    <span class="project-picker-row-sport">
+                        <span data-project-picker-sport></span>
+                        <span class="project-picker-row-badge" data-project-picker-badge hidden>Current project</span>
+                        <span class="project-picker-row-status" data-project-picker-status hidden></span>
+                    </span>
+                </span>
+            </button>
+            <div class="project-picker-row-updated" data-project-picker-updated></div>
+            <div class="project-picker-row-actions">
+                <button class="project-option-manager-icon-btn btn btn--icon" type="button" data-project-picker-row-action="edit"></button>
+                <button class="project-option-manager-icon-btn btn btn--icon" type="button" data-project-picker-row-action="duplicate"></button>
+                <button class="project-option-manager-icon-btn project-option-manager-icon-btn-danger btn btn--icon" type="button" data-project-picker-row-action="delete"></button>
+            </div>
+        </article>
+    </template>
+
+    <template id="cameraBookmarkCardTemplate">
+        <article class="cam-bookmark-card" role="button" tabindex="0">
+            <img class="cam-bookmark-image" data-bookmark-image alt="">
+            <div class="cam-bookmark-label" data-bookmark-label></div>
+            <div class="cam-bookmark-menu-wrapper">
+                <button type="button" class="btn btn--icon cam-bookmark-menu-btn" title="Options" aria-haspopup="menu" aria-expanded="false">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <circle cx="12" cy="5" r="1.5"></circle>
+                        <circle cx="12" cy="12" r="1.5"></circle>
+                        <circle cx="12" cy="19" r="1.5"></circle>
+                    </svg>
+                </button>
+            </div>
+        </article>
+    </template>
+
+    <template id="cameraBookmarkDropdownTemplate">
+        <div class="cam-bookmark-dropdown" data-state="closed" hidden>
+            <button type="button" class="cam-bookmark-dropdown-action" data-bookmark-menu-action="rename">Rename</button>
+            <button type="button" class="cam-bookmark-dropdown-action" data-bookmark-menu-action="export">Export Image</button>
+            <button type="button" class="cam-bookmark-dropdown-action cam-bookmark-dropdown-action--danger" data-bookmark-menu-action="remove">Delete</button>
+        </div>
+    </template>
+
+    <template id="resultsMetricCardTemplate">
+        <section class="tier-metrics-card">
+            <div class="tier-metrics-header" data-results-card-header></div>
+            <div class="tier-metrics-grid" data-results-card-grid></div>
+            <div class="tier-capacity-check" data-results-card-check></div>
+            <div class="tier-metrics-warning" data-results-card-warning hidden>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"></path>
+                </svg>
+                <span data-results-card-warning-text></span>
+            </div>
+        </section>
+    </template>
+
+    <template id="resultsDetailsSectionTemplate">
+        <section class="accordion collapsible results-details" data-accordion-root>
+            <button type="button" class="accordion__trigger results-details__trigger" data-accordion-trigger aria-expanded="false">
+                <span class="accordion__title" data-results-details-title></span>
+            </button>
+            <div class="section-body accordion__panel results-details__panel" data-results-details-panel hidden></div>
+        </section>
+    </template>
+
+    <template id="resultsDetailRowTemplate">
+        <div class="row-table-row">
+            <span data-results-row-number></span>
+            <span data-results-row-riser></span>
+            <span data-results-row-elevation></span>
+            <span class="row-table-cell--accent" data-results-row-cvalue></span>
+            <span data-results-row-tread></span>
+            <span data-results-row-distance></span>
+            <span data-results-row-angle></span>
+            <span class="row-table-cell--muted" data-results-row-length></span>
+            <span class="row-table-cell--muted" data-results-row-seats></span>
+        </div>
+    </template>
+
     <!-- ========== APP BOOTSTRAP ========== -->
     <script type="module" src="../../app.js?v=1"></script>
 </body>
 </html>
+
+

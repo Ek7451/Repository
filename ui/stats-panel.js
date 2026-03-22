@@ -5,37 +5,88 @@ function getDefaultElement(id) {
     return document.getElementById(id);
 }
 
+function getTemplateElement(id) {
+    if (typeof document === 'undefined' || !document || typeof document.getElementById !== 'function') {
+        return null;
+    }
+    const template = document.getElementById(id);
+    if (typeof HTMLTemplateElement === 'undefined') {
+        return null;
+    }
+    return template instanceof HTMLTemplateElement ? template : null;
+}
+
+function cloneTemplateElement(id) {
+    const element = getTemplateElement(id)?.content.firstElementChild?.cloneNode(true);
+    if (typeof HTMLElement === 'undefined') {
+        return null;
+    }
+    return element instanceof HTMLElement ? element : null;
+}
+
+function createElement(tagName, className = '', text = '') {
+    const element = document.createElement(tagName);
+    if (className) element.className = className;
+    if (text) element.textContent = text;
+    return element;
+}
+
+function createSvgElement(name, attributes = {}) {
+    const element = document.createElementNS('http://www.w3.org/2000/svg', name);
+    Object.entries(attributes).forEach(([key, value]) => {
+        element.setAttribute(key, String(value));
+    });
+    return element;
+}
+
+function applyStyleVars(element, styleVars = {}) {
+    if (!element) return;
+    Object.entries(styleVars).forEach(([name, value]) => {
+        if (value === undefined || value === null || value === '') return;
+        element.style.setProperty(`--${name}`, String(value));
+    });
+}
+
+function canRenderWithDom(element = null) {
+    return Boolean(
+        element
+        && typeof element.replaceChildren === 'function'
+        && typeof document !== 'undefined'
+        && document
+        && typeof document.createElement === 'function'
+        && typeof document.createElementNS === 'function'
+        && typeof HTMLTemplateElement !== 'undefined'
+        && typeof HTMLElement !== 'undefined'
+    );
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function setAccordionState(sectionEl, triggerEl, panelEl, isCollapsed, panelId) {
+    if (!(sectionEl instanceof HTMLElement) || !(triggerEl instanceof HTMLElement) || !(panelEl instanceof HTMLElement)) {
+        return;
+    }
+
+    sectionEl.classList.toggle('collapsed', isCollapsed);
+    panelEl.hidden = isCollapsed;
+    if (panelId) {
+        panelEl.id = panelId;
+        triggerEl.setAttribute('aria-controls', panelId);
+    }
+    triggerEl.setAttribute('aria-expanded', String(!isCollapsed));
+}
+
 const QUALITY_LEGEND = [
     { label: 'Excellent', color: '#7aae1a', rangeLabel: '>= 4.75"' },
     { label: 'Good', color: '#37996e', rangeLabel: '3.5 - 4.71"' },
     { label: 'Acceptable', color: '#de850a', rangeLabel: '2.4 - 3.5"' },
     { label: 'Poor', color: '#d1433d', rangeLabel: '< 2.4"' }
 ];
-
-const TIER_METRIC_ICONS = {
-    aisles: '<svg class="tier-metric-icon icon-aisles" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 10,2 10,20 6,22"/><polygon points="14,2 18,4 18,22 14,20"/></svg>',
-    width: '<svg class="tier-metric-icon icon-width" viewBox="0 0 24 24" fill="currentColor"><path d="M8 8l-4 4 4 4v-3h8v3l4-4-4-4v3H8V8z M4 4v16h2V4H4z M18 4v16h2V4h-2z"/></svg>',
-    sections: '<svg class="tier-metric-icon icon-sections" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h6v16H4z M12 4h8v7h-8z M12 13h8v7h-8z" /></svg>',
-    seats: '<svg class="tier-metric-icon icon-seats" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4a2 2 0 012-2h6a2 2 0 012 2v10H7V4z"/><rect x="3" y="14" width="18" height="5" rx="2.5"/></svg>',
-    avg: '<svg class="tier-metric-icon icon-avg" viewBox="0 0 24 24" fill="currentColor"><path d="M2.5 8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v4h-5V8z M1 12h8v2H1z M9.5 8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v4h-5V8z M8 12h8v2H8z M16.5 8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v4h-5V8z M15 12h8v2h-8z"/></svg>',
-    load: '<svg class="tier-metric-icon icon-load" viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" /></svg>'
-};
-
-function escapeStyleValue(value) {
-    return String(value ?? '')
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;');
-}
-
-function serializeStyleVars(styleVars = {}) {
-    const declarations = Object.entries(styleVars)
-        .filter(([, value]) => value !== undefined && value !== null && value !== '')
-        .map(([name, value]) => `--${name}:${escapeStyleValue(value)}`);
-
-    return declarations.length > 0 ? ` style="${declarations.join(';')}"` : '';
-}
 
 function normalizeQualityDistribution(summary = {}) {
     const distributionByLabel = new Map(
@@ -55,18 +106,90 @@ function normalizeQualityDistribution(summary = {}) {
     });
 }
 
-function buildPieChartMarkup(summary = {}) {
+function createMetricIcon(kind) {
+    const svg = createSvgElement('svg', {
+        class: `tier-metric-icon icon-${kind}`,
+        viewBox: '0 0 24 24',
+        fill: 'currentColor',
+        'aria-hidden': 'true'
+    });
+
+    if (kind === 'aisles') {
+        svg.appendChild(createSvgElement('polygon', { points: '6,4 10,2 10,20 6,22' }));
+        svg.appendChild(createSvgElement('polygon', { points: '14,2 18,4 18,22 14,20' }));
+        return svg;
+    }
+
+    if (kind === 'width') {
+        svg.appendChild(createSvgElement('path', { d: 'M8 8l-4 4 4 4v-3h8v3l4-4-4-4v3H8V8z M4 4v16h2V4H4z M18 4v16h2V4h-2z' }));
+        return svg;
+    }
+
+    if (kind === 'sections') {
+        svg.appendChild(createSvgElement('path', { d: 'M4 4h6v16H4z M12 4h8v7h-8z M12 13h8v7h-8z' }));
+        return svg;
+    }
+
+    if (kind === 'seats') {
+        svg.appendChild(createSvgElement('path', { d: 'M7 4a2 2 0 012-2h6a2 2 0 012 2v10H7V4z' }));
+        svg.appendChild(createSvgElement('rect', { x: '3', y: '14', width: '18', height: '5', rx: '2.5' }));
+        return svg;
+    }
+
+    if (kind === 'avg') {
+        svg.appendChild(createSvgElement('path', { d: 'M2.5 8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v4h-5V8z M1 12h8v2H1z M9.5 8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v4h-5V8z M8 12h8v2H8z M16.5 8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v4h-5V8z M15 12h8v2h-8z' }));
+        return svg;
+    }
+
+    svg.appendChild(createSvgElement('path', { d: 'M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z' }));
+    return svg;
+}
+
+function createMetricValue(mainText, suffixText = '') {
+    const valueEl = createElement('div', 'tier-metric-value');
+    valueEl.append(document.createTextNode(mainText));
+    if (suffixText) {
+        valueEl.appendChild(createElement('span', 'small-text', suffixText));
+    }
+    return valueEl;
+}
+
+function createLegendItem(segment) {
+    const item = createElement('div', 'legend-item');
+    const colorEl = createElement('div', 'legend-color');
+    applyStyleVars(colorEl, { 'legend-color': segment.color });
+
+    const textEl = createElement('div', 'legend-text');
+    textEl.appendChild(createElement('span', 'legend-label', segment.label));
+    textEl.appendChild(createElement('span', 'legend-range', segment.rangeLabel));
+
+    item.append(colorEl, textEl);
+    return item;
+}
+
+function createPieChartVisual(summary = {}) {
     const chartData = normalizeQualityDistribution(summary);
     const totalPoints = chartData.reduce((sum, segment) => sum + segment.count, 0);
     let cumulativePercent = 0;
-    let svgPaths = '';
+
+    const wrapper = createElement('div', 'visuals-col-chart');
+    const chartContainer = createElement('div', 'pie-chart-container');
+    const svg = createSvgElement('svg', { viewBox: '0 0 100 100', class: 'pie-chart-svg' });
 
     const fullSegment = chartData.find((segment) => totalPoints > 0 && (segment.count / totalPoints) > 0.999);
-
     if (fullSegment) {
-        svgPaths = `<circle cx="50" cy="50" r="41" fill="none" stroke="${fullSegment.color}" stroke-width="18" class="chart-segment">
-                        <title>${fullSegment.label}: ${fullSegment.count} (100.0%)</title>
-                     </circle>`;
+        const circle = createSvgElement('circle', {
+            cx: '50',
+            cy: '50',
+            r: '41',
+            fill: 'none',
+            stroke: fullSegment.color,
+            'stroke-width': '18',
+            class: 'chart-segment'
+        });
+        circle.appendChild(createSvgElement('title'));
+        circle.querySelector('title')?.append(document.createTextNode(`${fullSegment.label}: ${fullSegment.count} (100.0%)`));
+        svg.appendChild(circle);
     } else if (totalPoints > 0) {
         chartData.forEach((segment) => {
             if (segment.count === 0) return;
@@ -83,225 +206,242 @@ function buildPieChartMarkup(summary = {}) {
             const y2 = Math.sin(2 * Math.PI * endPercent);
 
             const largeArcFlag = percent > 0.5 ? 1 : 0;
-            const r = 50;
-            const cx = 50;
-            const cy = 50;
-            const rIn = 32;
-
-            const sx = cx + r * x1;
-            const sy = cy + r * y1;
-            const ex = cx + r * x2;
-            const ey = cy + r * y2;
-            const sxIn = cx + rIn * x1;
-            const syIn = cy + rIn * y1;
-            const exIn = cx + rIn * x2;
-            const eyIn = cy + rIn * y2;
+            const radius = 50;
+            const center = 50;
+            const innerRadius = 32;
 
             const d = [
-                `M ${sx} ${sy}`,
-                `A ${r} ${r} 0 ${largeArcFlag} 1 ${ex} ${ey}`,
-                `L ${exIn} ${eyIn}`,
-                `A ${rIn} ${rIn} 0 ${largeArcFlag} 0 ${sxIn} ${syIn}`,
+                `M ${center + (radius * x1)} ${center + (radius * y1)}`,
+                `A ${radius} ${radius} 0 ${largeArcFlag} 1 ${center + (radius * x2)} ${center + (radius * y2)}`,
+                `L ${center + (innerRadius * x2)} ${center + (innerRadius * y2)}`,
+                `A ${innerRadius} ${innerRadius} 0 ${largeArcFlag} 0 ${center + (innerRadius * x1)} ${center + (innerRadius * y1)}`,
                 'Z'
             ].join(' ');
 
-            svgPaths += `<path d="${d}" fill="${segment.color}" class="chart-segment" stroke="${segment.color}" stroke-width="1">
-                            <title>${segment.label}: ${segment.count} (${(percent * 100).toFixed(1)}%)</title>
-                         </path>`;
+            const path = createSvgElement('path', {
+                d,
+                fill: segment.color,
+                class: 'chart-segment',
+                stroke: segment.color,
+                'stroke-width': '1'
+            });
+            const title = createSvgElement('title');
+            title.append(document.createTextNode(`${segment.label}: ${segment.count} (${(percent * 100).toFixed(1)}%)`));
+            path.appendChild(title);
+            svg.appendChild(path);
         });
     } else {
-        svgPaths = '<circle cx="50" cy="50" r="41" stroke="#e2e8f0" stroke-width="18" fill="none" />';
+        svg.appendChild(createSvgElement('circle', {
+            cx: '50',
+            cy: '50',
+            r: '41',
+            stroke: '#e2e8f0',
+            'stroke-width': '18',
+            fill: 'none'
+        }));
     }
 
-    const legendHtml = chartData.map((segment) => `
-        <div class="legend-item">
-            <div class="legend-color"${serializeStyleVars({ 'legend-color': segment.color })}></div>
-            <div class="legend-text">
-                <span class="legend-label">${segment.label}</span>
-                <span class="legend-range">${segment.rangeLabel}</span>
-            </div>
-        </div>
-    `).join('');
+    const centerText = createElement('div', 'chart-center-text');
+    centerText.appendChild(createElement('div', 'chart-center-value', summary.averageCValueDisplay || '0.00'));
+    centerText.appendChild(createElement('div', 'chart-center-label', 'Avg C'));
+    chartContainer.append(svg, centerText);
 
-    return `
-        <div class="pie-chart-container">
-            <svg viewBox="0 0 100 100" class="pie-chart-svg">
-                ${svgPaths}
-            </svg>
-            <div class="chart-center-text">
-                <div class="chart-center-value">${summary.averageCValueDisplay || '0.00'}</div>
-                <div class="chart-center-label">Avg C</div>
-            </div>
-        </div>
+    const legend = createElement('div', 'chart-legend');
+    chartData.forEach((segment) => {
+        legend.appendChild(createLegendItem(segment));
+    });
 
-        <div class="chart-legend">
-            ${legendHtml}
-        </div>
-    `;
+    wrapper.append(chartContainer, legend);
+    return wrapper;
 }
 
-function buildOccupancyBreakdownMarkup(tiers = [], totalOccupancy = 0) {
-    let occSegments = '';
-    let occLegends = '';
+function createOccupancyBreakdown(tiers = [], totalOccupancy = 0) {
+    const container = createElement('div', 'occupancy-bar-container');
+    const bar = createElement('div', 'occupancy-stacked-bar');
+    const legendRow = createElement('div', 'occupancy-legend-row');
 
     if (totalOccupancy > 0) {
         tiers.forEach((tier) => {
             const capacity = Math.max(0, Number(tier?.occupancy?.capacity) || 0);
             if (capacity === 0) return;
-            const pct = (capacity / totalOccupancy) * 100;
+
             const color = tier?.occupancy?.color || 'var(--accent-blue)';
             const label = tier?.occupancy?.label || 'Tier';
-            occSegments += `<div class="occupancy-bar-segment"${serializeStyleVars({
-                'segment-width': `${pct}%`,
+            const percent = `${(capacity / totalOccupancy) * 100}%`;
+
+            const segment = createElement('div', 'occupancy-bar-segment');
+            applyStyleVars(segment, {
+                'segment-width': percent,
                 'segment-color': color
-            })}></div>`;
-            occLegends += `<div class="occ-legend-item"><span class="occ-legend-dot"${serializeStyleVars({ 'legend-color': color })} aria-hidden="true">&#9679;</span>${label}: <strong>${capacity.toLocaleString()}</strong></div>`;
+            });
+            bar.appendChild(segment);
+
+            const legendItem = createElement('div', 'occ-legend-item');
+            const dot = createElement('span', 'occ-legend-dot', '\u25CF');
+            dot.setAttribute('aria-hidden', 'true');
+            applyStyleVars(dot, { 'legend-color': color });
+            const strong = createElement('strong', '', capacity.toLocaleString());
+            legendItem.append(dot, document.createTextNode(`${label}: `), strong);
+            legendRow.appendChild(legendItem);
         });
     }
 
-    return `
-        <div class="occupancy-bar-container">
-            <div class="occupancy-stacked-bar">
-                ${occSegments}
-            </div>
-            <div class="occupancy-legend-row">
-                ${occLegends}
-            </div>
-        </div>
-    `;
+    container.append(bar, legendRow);
+    return container;
 }
 
-function buildEgressMarkup(tiers = []) {
-    let cardsHtml = '';
-    let originalEgressHtml = '';
+function createMetricItem(label, iconKind, mainValue, suffixText = '') {
+    const item = createElement('div', 'tier-metric-item');
+    item.appendChild(createElement('div', 'tier-metric-label', label));
 
-    tiers.forEach((tier) => {
-        const egress = tier?.egress;
-        if (!egress) return;
+    const content = createElement('div', 'tier-metric-content');
+    content.appendChild(createMetricIcon(iconKind));
+    content.appendChild(createMetricValue(mainValue, suffixText));
+    item.appendChild(content);
+    return item;
+}
 
-        let warningHtml = '';
-        if (egress.warningText) {
-            warningHtml = `<div class="tier-metrics-warning">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
-                ${egress.warningText}
-            </div>`;
+function createResultsDetailsSection({ title, classes = [], isCollapsed = true, sectionId = '', contentBuilder = null }) {
+    const section = cloneTemplateElement('resultsDetailsSectionTemplate');
+    if (!section) return null;
+
+    classes.forEach((className) => section.classList.add(className));
+    const trigger = section.querySelector('[data-accordion-trigger]');
+    const titleEl = section.querySelector('[data-results-details-title]');
+    const panel = /** @type {HTMLElement | null} */ (section.querySelector('[data-results-details-panel]'));
+    if (titleEl) titleEl.textContent = title;
+    if (panel && typeof contentBuilder === 'function') {
+        contentBuilder(panel);
+    }
+    setAccordionState(section, trigger, panel, isCollapsed, sectionId);
+    return section;
+}
+
+function appendLineBreak(container) {
+    container.appendChild(document.createElement('br'));
+}
+
+function createEgressEstimateSection(estimate, index) {
+    return createResultsDetailsSection({
+        title: `Estimated Egress Seed (${estimate.tierLabel}${estimate.originalHeaderSuffix})`,
+        classes: ['results-details--supporting'],
+        isCollapsed: true,
+        sectionId: `resultsEgressEstimatePanel-${index}`,
+        contentBuilder: (panel) => {
+            const row = createElement('div', 'egress-tier-row compact');
+            const rowTop = createElement('div', 'egress-row-top');
+            const tierLabelGroup = createElement('div', 'tier-label-group');
+            tierLabelGroup.appendChild(createElement('span', 'tier-label', estimate.tierLabel));
+            tierLabelGroup.appendChild(createElement('span', 'tier-pct tier-pct--seating', `${estimate.totalSeatingPercentage}% Seating`));
+            tierLabelGroup.appendChild(createElement('span', 'tier-pct-sep', '/'));
+            tierLabelGroup.appendChild(createElement('span', 'tier-pct tier-pct--egress', `${estimate.totalAislePercentage}% Egress`));
+            rowTop.appendChild(tierLabelGroup);
+
+            const bar = createElement('div', 'egress-bar-compact');
+            const seating = createElement('div', 'bar-segment-seat');
+            applyStyleVars(seating, { 'segment-width': `${estimate.totalSeatingPercentage}%` });
+            const aisle = createElement('div', 'bar-segment-aisle');
+            applyStyleVars(aisle, { 'segment-width': `${estimate.totalAislePercentage}%` });
+            bar.append(seating, aisle);
+
+            const details = createElement('div', 'egress-row-details');
+            const headline = createElement('strong', '', `${estimate.displayAisles} Aisles${estimate.countsTag}`);
+            details.append(headline);
+            details.append(document.createTextNode(` (Width: ${estimate.aisleWidth}") - ${estimate.displaySeatLen.toLocaleString()}' Linear Seating vs ${estimate.displayAisleLen.toLocaleString()}' Linear Aisles${estimate.linearQuantitiesTag}`));
+
+            const notes = createElement('div', 'egress-row-notes');
+            notes.append(document.createTextNode(`-> Total Linear Seating${estimate.countsTag}: ${estimate.displayTotalLen.toLocaleString()}' (averaging ${estimate.displaySeatsPerRow} seats/row)`));
+            appendLineBreak(notes);
+            notes.append(document.createTextNode(`-> Sections${estimate.countsTag}: ${estimate.displaySections} (max ${estimate.maxSeatsPerSectionRow} seats in a section row, largest section ${estimate.occupantsPerSection} seats)`));
+            appendLineBreak(notes);
+            notes.append(document.createTextNode(`-> Max Load/Aisle (per aisle): ${estimate.occupantsPerAisleLine} occ (50/50 section split)`));
+            appendLineBreak(notes);
+            notes.append(document.createTextNode(`-> Aisle Egress Capacity Check (per aisle): ${estimate.occupantsPerAisleLine} occ x ${estimate.egressFactor}"/occ = ${estimate.capacityWidth}" required`));
+            appendLineBreak(notes);
+            notes.append(document.createTextNode(`-> Aisle Sizing: Max of Min Allowed (${estimate.minimumWidth}") vs Required (${estimate.capacityWidth}") -> `));
+            const highlight = createElement('strong', 'egress-row-details-highlight', `Governing Width = ${estimate.governingWidth}"`);
+            notes.appendChild(highlight);
+            if (estimate.blocksAddedForEgress > 0) {
+                appendLineBreak(notes);
+                const limitNote = createElement(
+                    'span',
+                    'tier-metrics-limit-note',
+                    `-> Max Width Limit Forced: Clamped to Max Aisle Width (${estimate.maximumWidth}"). Automatically added ${estimate.blocksAddedForEgress} section(s) to maintain code compliance!`
+                );
+                notes.appendChild(limitNote);
+            }
+
+            details.appendChild(notes);
+            row.append(rowTop, bar, details);
+            panel.appendChild(row);
         }
-
-        cardsHtml += `
-            <div class="tier-metrics-card tier-${tier.tierNumber}">
-                <div class="tier-metrics-header tier-${tier.tierNumber}">${egress.tierLabel}${egress.headerSuffix}</div>
-
-                <div class="tier-metrics-grid">
-                    <div class="tier-metric-item">
-                        <div class="tier-metric-label">Aisles${egress.countsTag}</div>
-                        <div class="tier-metric-content">
-                            ${TIER_METRIC_ICONS.aisles}
-                            <div class="tier-metric-value">${egress.displayAisles}</div>
-                        </div>
-                    </div>
-                    <div class="tier-metric-item">
-                        <div class="tier-metric-label">Required Width</div>
-                        <div class="tier-metric-content">
-                            ${TIER_METRIC_ICONS.width}
-                            <div class="tier-metric-value">${egress.capacityWidth}<span class="small-text">"</span></div>
-                        </div>
-                    </div>
-                    <div class="tier-metric-item">
-                        <div class="tier-metric-label">Sections${egress.countsTag}</div>
-                        <div class="tier-metric-content">
-                            ${TIER_METRIC_ICONS.sections}
-                            <div class="tier-metric-value">${egress.displaySections}</div>
-                        </div>
-                    </div>
-                    <div class="tier-metric-item">
-                        <div class="tier-metric-label">Largest Section</div>
-                        <div class="tier-metric-content">
-                            ${TIER_METRIC_ICONS.seats}
-                            <div class="tier-metric-value">${egress.occupantsPerSection}</div>
-                        </div>
-                    </div>
-                    <div class="tier-metric-item">
-                        <div class="tier-metric-label">Max Seats/Row/Section</div>
-                        <div class="tier-metric-content">
-                            ${TIER_METRIC_ICONS.avg}
-                            <div class="tier-metric-value">${egress.maxSeatsPerSectionRow}</div>
-                        </div>
-                    </div>
-                    <div class="tier-metric-item">
-                        <div class="tier-metric-label">Max Load/Aisle</div>
-                        <div class="tier-metric-content">
-                            ${TIER_METRIC_ICONS.load}
-                            <div class="tier-metric-value">${egress.occupantsPerAisleLine} <span class="small-text">occ</span></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="tier-capacity-check">
-                    Aisle Egress Capacity (per aisle): ${egress.occupantsPerAisleLine} occ &times; ${egress.egressFactor}"/occ = ${egress.capacityWidth}" Req.${egress.perSideMirrorNote}
-                </div>
-                ${warningHtml}
-            </div>
-        `;
-
-        const estimate = egress.estimate;
-        if (!estimate) return;
-
-        const limitForcedHtml = estimate.blocksAddedForEgress > 0
-            ? `<br /><span class="tier-metrics-limit-note">&#8627; <strong>Max Width Limit Forced:</strong> Clamped to Max Aisle Width (${estimate.maximumWidth}"). Automatically added ${estimate.blocksAddedForEgress} section(s) to maintain code compliance!</span>`
-            : '';
-
-        originalEgressHtml += `
-            <div class="collapsible collapsed results-details results-details--supporting">
-                <div class="section-header results-details-header--supporting">
-                    Estimated Egress Seed (${estimate.tierLabel}${estimate.originalHeaderSuffix})
-                </div>
-                <div class="section-body results-details-body--compact">
-                    <div class="egress-tier-row compact">
-                        <div class="egress-row-top">
-                            <div class="tier-label-group">
-                                <span class="tier-label">${estimate.tierLabel}</span>
-                                <span class="tier-pct tier-pct--seating">${estimate.totalSeatingPercentage}% Seating</span>
-                                <span class="tier-pct-sep">/</span>
-                                <span class="tier-pct tier-pct--egress">${estimate.totalAislePercentage}% Egress</span>
-                            </div>
-                        </div>
-                        <div class="egress-bar-compact">
-                            <div class="bar-segment-seat"${serializeStyleVars({ 'segment-width': `${estimate.totalSeatingPercentage}%` })}></div>
-                            <div class="bar-segment-aisle"${serializeStyleVars({ 'segment-width': `${estimate.totalAislePercentage}%` })}></div>
-                        </div>
-                        <div class="egress-row-details">
-                            <strong>${estimate.displayAisles} Aisles${estimate.countsTag}</strong> (Width: ${estimate.aisleWidth}") &bull; ${estimate.displaySeatLen.toLocaleString()}' Linear Seating vs ${estimate.displayAisleLen.toLocaleString()}' Linear Aisles${estimate.linearQuantitiesTag}
-                            <div class="egress-row-notes">
-                                &#8627; Total Linear Seating${estimate.countsTag}: ${estimate.displayTotalLen.toLocaleString()}' (averaging ${estimate.displaySeatsPerRow} seats/row)<br/>
-                                &#8627; Sections${estimate.countsTag}: ${estimate.displaySections} (max ${estimate.maxSeatsPerSectionRow} seats in a section row, largest section ${estimate.occupantsPerSection} seats)<br/>
-                                &#8627; Max Load/Aisle (per aisle): ${estimate.occupantsPerAisleLine} occ (50/50 section split)<br/>
-                                &#8627; Aisle Egress Capacity Check (per aisle): ${estimate.occupantsPerAisleLine} occ &times; ${estimate.egressFactor}"/occ = ${estimate.capacityWidth}" required<br/>
-                                &#8627; Aisle Sizing: Max of Min Allowed (${estimate.minimumWidth}") vs Required (${estimate.capacityWidth}") &rarr; <strong class="egress-row-details-highlight">Governing Width = ${estimate.governingWidth}"</strong>${limitForcedHtml}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
     });
+}
 
-    return `
-        ${cardsHtml}
-        <div class="collapsible collapsed results-details results-details--disclaimer">
-            <div class="section-header results-details-header--disclaimer">
-                * Code Scope Disclaimer
-            </div>
-            <div class="section-body results-details-body--disclaimer">
-                Early stage geometric simplification only. The following code egress requirements are EXCLUDED from current results and must be evaluated in later phases:<br />
-                &bull; 30 ft rules and dead end row access conditions<br />
-                &bull; Vomitory, concourse, door bank, exit stair, discharge capacity and merging flows<br />
-                &bull; Exit loss checks and exit separation<br />
-                &bull; Accessibility and wheelchair locations affecting seating blocks and aisle widths<br />
-                &bull; Handrail and guard encroachment rules
-            </div>
-        </div>
-        ${originalEgressHtml}
-    `;
+function createDisclaimerSection() {
+    return createResultsDetailsSection({
+        title: '* Code Scope Disclaimer',
+        classes: ['results-details--disclaimer'],
+        isCollapsed: true,
+        sectionId: 'resultsCodeScopeDisclaimer',
+        contentBuilder: (panel) => {
+            panel.classList.add('results-details-body--disclaimer');
+            panel.append(document.createTextNode('Early stage geometric simplification only. The following code egress requirements are excluded from current results and must be evaluated in later phases:'));
+            appendLineBreak(panel);
+            panel.append(document.createTextNode('- 30 ft rules and dead end row access conditions'));
+            appendLineBreak(panel);
+            panel.append(document.createTextNode('- Vomitory, concourse, door bank, exit stair, discharge capacity and merging flows'));
+            appendLineBreak(panel);
+            panel.append(document.createTextNode('- Exit loss checks and exit separation'));
+            appendLineBreak(panel);
+            panel.append(document.createTextNode('- Accessibility and wheelchair locations affecting seating blocks and aisle widths'));
+            appendLineBreak(panel);
+            panel.append(document.createTextNode('- Handrail and guard encroachment rules'));
+        }
+    });
+}
+
+function createEgressMetricCard(tier) {
+    const card = cloneTemplateElement('resultsMetricCardTemplate');
+    if (!card) return null;
+
+    const egress = tier?.egress;
+    if (!egress) return null;
+
+    card.classList.add(`tier-${tier.tierNumber}`);
+    const header = card.querySelector('[data-results-card-header]');
+    if (header instanceof HTMLElement) {
+        header.classList.add(`tier-${tier.tierNumber}`);
+        header.textContent = `${egress.tierLabel}${egress.headerSuffix}`;
+    }
+
+    const grid = card.querySelector('[data-results-card-grid]');
+    if (grid instanceof HTMLElement) {
+        [
+            ['Aisles' + egress.countsTag, 'aisles', String(egress.displayAisles)],
+            ['Required Width', 'width', String(egress.capacityWidth), '"'],
+            ['Sections' + egress.countsTag, 'sections', String(egress.displaySections)],
+            ['Largest Section', 'seats', String(egress.occupantsPerSection)],
+            ['Max Seats/Row/Section', 'avg', String(egress.maxSeatsPerSectionRow)],
+            ['Max Load/Aisle', 'load', String(egress.occupantsPerAisleLine), 'occ']
+        ].forEach(([label, kind, value, suffix]) => {
+            grid.appendChild(createMetricItem(label, kind, value, suffix || ''));
+        });
+    }
+
+    const check = card.querySelector('[data-results-card-check]');
+    if (check) {
+        check.textContent = `Aisle Egress Capacity (per aisle): ${egress.occupantsPerAisleLine} occ x ${egress.egressFactor}"/occ = ${egress.capacityWidth}" Req.${egress.perSideMirrorNote}`;
+    }
+
+    const warning = /** @type {HTMLElement | null} */ (card.querySelector('[data-results-card-warning]'));
+    const warningText = card.querySelector('[data-results-card-warning-text]');
+    if (warning && warningText) {
+        warning.hidden = !egress.warningText;
+        warningText.textContent = egress.warningText || '';
+    }
+
+    return card;
 }
 
 export class StatsPanel {
@@ -317,10 +457,17 @@ export class StatsPanel {
 
         this._captureOpenDetailSections();
 
-        this.statsEl.innerHTML = this._buildStatsMarkup(viewModel);
-
+        if (canRenderWithDom(this.statsEl)) {
+            this.statsEl.replaceChildren(this._buildStatsContent(viewModel));
+        } else {
+            this.statsEl.innerHTML = this._buildStatsMarkup(viewModel);
+        }
         if (this.detailsEl) {
-            this.detailsEl.innerHTML = this._buildDetailsMarkup(viewModel);
+            if (canRenderWithDom(this.detailsEl)) {
+                this.detailsEl.replaceChildren(this._buildDetailsContent(viewModel));
+            } else {
+                this.detailsEl.innerHTML = this._buildDetailsMarkup(viewModel);
+            }
         }
     }
 
@@ -336,76 +483,229 @@ export class StatsPanel {
         });
     }
 
+    _buildStatsContent(viewModel) {
+        const summary = viewModel.summary || {};
+        const totalOccupancy = Math.max(0, Number(summary.totalOccupancy) || 0);
+        const root = createElement('div', 'results-summary-container');
+        root.appendChild(createElement('div', 'total-occupancy-label results-section-title--center results-section-title--chart', 'C-VALUE ANALYSIS'));
+        root.appendChild(createPieChartVisual(summary));
+
+        const occupancySection = createElement('div', 'occupancy-section');
+        occupancySection.appendChild(createElement('div', 'total-occupancy-label', 'TOTAL OCCUPANCY'));
+        occupancySection.appendChild(createElement('div', 'total-occupancy', totalOccupancy.toLocaleString()));
+
+        const breakdown = createElement('div', 'occupancy-breakdown');
+        breakdown.appendChild(createOccupancyBreakdown(viewModel.tiers, totalOccupancy));
+        occupancySection.appendChild(breakdown);
+
+        occupancySection.appendChild(createElement('div', 'results-divider results-divider--spacious'));
+        occupancySection.appendChild(createElement('div', 'total-occupancy-label results-section-title--spaced', 'EGRESS ANALYSIS'));
+
+        const egressContainer = createElement('div', 'egress-metrics-container');
+        viewModel.tiers.forEach((tier) => {
+            const card = createEgressMetricCard(tier);
+            if (card) egressContainer.appendChild(card);
+        });
+        egressContainer.appendChild(createDisclaimerSection());
+        viewModel.tiers.forEach((tier, index) => {
+            const estimate = tier?.egress?.estimate;
+            if (!estimate) return;
+            const section = createEgressEstimateSection(estimate, index);
+            if (section) egressContainer.appendChild(section);
+        });
+        occupancySection.appendChild(egressContainer);
+
+        root.appendChild(occupancySection);
+        return root;
+    }
+
+    _buildDetailsContent(viewModel) {
+        const root = createElement('div', 'results-summary-container');
+        root.appendChild(createElement('div', 'total-occupancy-label results-section-title--center results-section-title--spaced', 'TIER ROW DETAILS'));
+
+        viewModel.tiers.forEach((tier, index) => {
+            const section = createResultsDetailsSection({
+                title: tier.title,
+                classes: [tier.sectionClass],
+                isCollapsed: !this.openDetailSections.has(tier.sectionClass),
+                sectionId: `resultsTierPanel-${index + 1}`,
+                contentBuilder: (panel) => {
+                    const header = createElement('div', 'row-table-header');
+                    ['Row', 'Riser', 'Elev', 'C-Value', 'Tread', 'Dist->Focal', 'Angle', 'Length', 'Seats']
+                        .forEach((label) => header.appendChild(createElement('span', '', label)));
+                    panel.appendChild(header);
+
+                    (tier.rows || []).forEach((row) => {
+                        const rowEl = cloneTemplateElement('resultsDetailRowTemplate');
+                        if (!rowEl) return;
+
+                        rowEl.querySelector('[data-results-row-number]')?.replaceChildren(document.createTextNode(String(row.rowNumber)));
+
+                        const riserEl = /** @type {HTMLElement | null} */ (rowEl.querySelector('[data-results-row-riser]'));
+                        if (riserEl) {
+                            riserEl.textContent = row.riserDisplay;
+                            riserEl.classList.toggle('row-table-cell--warning', !!row.riserWarning);
+                            if (row.riserWarning) {
+                                riserEl.title = 'Riser is 22 inches or greater!';
+                            } else {
+                                riserEl.removeAttribute('title');
+                            }
+                        }
+
+                        rowEl.querySelector('[data-results-row-elevation]')?.replaceChildren(document.createTextNode(row.elevationDisplay));
+
+                        const cValueEl = /** @type {HTMLElement | null} */ (rowEl.querySelector('[data-results-row-cvalue]'));
+                        if (cValueEl) {
+                            cValueEl.textContent = row.cValueDisplay;
+                            applyStyleVars(cValueEl, { 'row-cell-color': row.cValueColor });
+                        }
+
+                        rowEl.querySelector('[data-results-row-tread]')?.replaceChildren(document.createTextNode(row.treadDisplay));
+                        rowEl.querySelector('[data-results-row-distance]')?.replaceChildren(document.createTextNode(row.distToFocalDisplay));
+                        rowEl.querySelector('[data-results-row-angle]')?.replaceChildren(document.createTextNode(row.angleDisplay));
+                        rowEl.querySelector('[data-results-row-length]')?.replaceChildren(document.createTextNode(row.rowLengthDisplay));
+                        rowEl.querySelector('[data-results-row-seats]')?.replaceChildren(document.createTextNode(row.rowSeatsDisplay));
+
+                        panel.appendChild(rowEl);
+                    });
+                }
+            });
+
+            if (section) {
+                root.appendChild(section);
+            }
+        });
+
+        return root;
+    }
+
     _buildStatsMarkup(viewModel) {
         const summary = viewModel.summary || {};
         const totalOccupancy = Math.max(0, Number(summary.totalOccupancy) || 0);
+        const cardsMarkup = viewModel.tiers.map((tier) => {
+            const egress = tier?.egress;
+            if (!egress) return '';
+
+            const metricsMarkup = [
+                ['Aisles' + egress.countsTag, egress.displayAisles, ''],
+                ['Required Width', egress.capacityWidth, '"'],
+                ['Sections' + egress.countsTag, egress.displaySections, ''],
+                ['Largest Section', egress.occupantsPerSection, ''],
+                ['Max Seats/Row/Section', egress.maxSeatsPerSectionRow, ''],
+                ['Max Load/Aisle', egress.occupantsPerAisleLine, 'occ']
+            ].map(([label, value, suffix]) => `
+                <div class="tier-metric-item">
+                    <div class="tier-metric-label">${escapeHtml(label)}</div>
+                    <div class="tier-metric-value">${escapeHtml(String(value))}${suffix ? `<span class="small-text">${escapeHtml(suffix)}</span>` : ''}</div>
+                </div>
+            `).join('');
+
+            const warningMarkup = egress.warningText
+                ? `<div class="tier-metrics-warning"><span data-results-card-warning-text>${escapeHtml(egress.warningText)}</span></div>`
+                : '';
+
+            return `
+                <section class="tier-metrics-card tier-${escapeHtml(String(tier.tierNumber))}">
+                    <div class="tier-metrics-header tier-${escapeHtml(String(tier.tierNumber))}">${escapeHtml(`${egress.tierLabel}${egress.headerSuffix}`)}</div>
+                    <div class="tier-metrics-grid">${metricsMarkup}</div>
+                    <div class="tier-metrics-check">${escapeHtml(`Aisle Egress Capacity (per aisle): ${egress.occupantsPerAisleLine} occ x ${egress.egressFactor}"/occ = ${egress.capacityWidth}" Req.${egress.perSideMirrorNote}`)}</div>
+                    ${warningMarkup}
+                </section>
+            `;
+        }).join('');
+
+        const disclaimerMarkup = `
+            <section class="results-details collapsed results-details--disclaimer">
+                <button type="button" class="accordion__trigger results-details__trigger" aria-expanded="false">* Code Scope Disclaimer</button>
+                <div class="section-body results-details__panel" hidden>
+                    Early stage geometric simplification only. The following code egress requirements are excluded from current results and must be evaluated in later phases:<br>
+                    - 30 ft rules and dead end row access conditions<br>
+                    - Vomitory, concourse, door bank, exit stair, discharge capacity and merging flows<br>
+                    - Exit loss checks and exit separation<br>
+                    - Accessibility and wheelchair locations affecting seating blocks and aisle widths<br>
+                    - Handrail and guard encroachment rules
+                </div>
+            </section>
+        `;
+
+        const estimateMarkup = viewModel.tiers.map((tier, index) => {
+            const estimate = tier?.egress?.estimate;
+            if (!estimate) return '';
+
+            const limitMarkup = estimate.blocksAddedForEgress > 0
+                ? `<br><span class="tier-metrics-limit-note">-> Max Width Limit Forced: Clamped to Max Aisle Width (${escapeHtml(String(estimate.maximumWidth))}"). Automatically added ${escapeHtml(String(estimate.blocksAddedForEgress))} section(s) to maintain code compliance!</span>`
+                : '';
+
+            return `
+                <section class="results-details collapsed results-details--supporting" id="resultsEgressEstimatePanel-${index}">
+                    <button type="button" class="accordion__trigger results-details__trigger" aria-expanded="false">Estimated Egress Seed (${escapeHtml(`${estimate.tierLabel}${estimate.originalHeaderSuffix}`)})</button>
+                    <div class="section-body results-details__panel" hidden>
+                        <div class="egress-tier-row compact">
+                            <div class="egress-row-details">
+                                <strong>${escapeHtml(`${estimate.displayAisles} Aisles${estimate.countsTag}`)}</strong>
+                                ${escapeHtml(` (Width: ${estimate.aisleWidth}") - ${estimate.displaySeatLen.toLocaleString()}' Linear Seating vs ${estimate.displayAisleLen.toLocaleString()}' Linear Aisles${estimate.linearQuantitiesTag}`)}
+                                <div class="egress-row-notes">
+                                    ${escapeHtml(`-> Total Linear Seating${estimate.countsTag}: ${estimate.displayTotalLen.toLocaleString()}' (averaging ${estimate.displaySeatsPerRow} seats/row)`)}<br>
+                                    ${escapeHtml(`-> Sections${estimate.countsTag}: ${estimate.displaySections} (max ${estimate.maxSeatsPerSectionRow} seats in a section row, largest section ${estimate.occupantsPerSection} seats)`)}<br>
+                                    ${escapeHtml(`-> Max Load/Aisle (per aisle): ${estimate.occupantsPerAisleLine} occ (50/50 section split)`)}<br>
+                                    ${escapeHtml(`-> Aisle Egress Capacity Check (per aisle): ${estimate.occupantsPerAisleLine} occ x ${estimate.egressFactor}"/occ = ${estimate.capacityWidth}" required`)}<br>
+                                    ${escapeHtml(`-> Aisle Sizing: Max of Min Allowed (${estimate.minimumWidth}") vs Required (${estimate.capacityWidth}") -> `)}<strong class="egress-row-details-highlight">${escapeHtml(`Governing Width = ${estimate.governingWidth}"`)}</strong>${limitMarkup}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            `;
+        }).join('');
 
         return `
             <div class="results-summary-container">
                 <div class="total-occupancy-label results-section-title--center results-section-title--chart">C-VALUE ANALYSIS</div>
-                <div class="visuals-col-chart">
-                    ${buildPieChartMarkup(summary)}
-                </div>
-
                 <div class="occupancy-section">
                     <div class="total-occupancy-label">TOTAL OCCUPANCY</div>
                     <div class="total-occupancy">${totalOccupancy.toLocaleString()}</div>
-                    <div class="occupancy-breakdown">
-                        ${buildOccupancyBreakdownMarkup(viewModel.tiers, totalOccupancy)}
-                    </div>
-
                     <div class="results-divider results-divider--spacious"></div>
-
                     <div class="total-occupancy-label results-section-title--spaced">EGRESS ANALYSIS</div>
-                    <div class="egress-metrics-container">
-                        ${buildEgressMarkup(viewModel.tiers)}
-                    </div>
+                    <div class="egress-metrics-container">${cardsMarkup}${disclaimerMarkup}${estimateMarkup}</div>
                 </div>
             </div>
         `;
     }
 
     _buildDetailsMarkup(viewModel) {
-        const rowTableHtml = viewModel.tiers.map((tier) => {
-            const isCollapsed = this.openDetailSections.has(tier.sectionClass) ? '' : 'collapsed';
-            const rowsHtml = (tier.rows || []).map((row) => {
-                const riserClass = row.riserWarning ? ' class="row-table-cell--warning"' : '';
-                const riserTitle = row.riserWarning ? ' title="Riser is 22 inches or greater!"' : '';
-
-                return `
-                    <div class="row-table-row">
-                        <span>${row.rowNumber}</span>
-                        <span${riserClass}${riserTitle}>${row.riserDisplay}</span>
-                        <span>${row.elevationDisplay}</span>
-                        <span class="row-table-cell--accent"${serializeStyleVars({ 'row-cell-color': row.cValueColor })}>${row.cValueDisplay}</span>
-                        <span>${row.treadDisplay}</span>
-                        <span>${row.distToFocalDisplay}</span>
-                        <span>${row.angleDisplay}</span>
-                        <span class="row-table-cell--muted">${row.rowLengthDisplay}</span>
-                        <span class="row-table-cell--muted">${row.rowSeatsDisplay}</span>
-                    </div>
-                `;
-            }).join('');
+        const sectionsMarkup = viewModel.tiers.map((tier) => {
+            const isCollapsed = !this.openDetailSections.has(tier.sectionClass);
+            const rowsMarkup = (tier.rows || []).map((row) => `
+                <div class="row-table-row">
+                    <span>${escapeHtml(String(row.rowNumber))}</span>
+                    <span${row.riserWarning ? ' class="row-table-cell--warning" title="Riser is 22 inches or greater!"' : ''}>${escapeHtml(row.riserDisplay)}</span>
+                    <span>${escapeHtml(row.elevationDisplay)}</span>
+                    <span class="row-table-cell--accent">${escapeHtml(row.cValueDisplay)}</span>
+                    <span>${escapeHtml(row.treadDisplay)}</span>
+                    <span>${escapeHtml(row.distToFocalDisplay)}</span>
+                    <span>${escapeHtml(row.angleDisplay)}</span>
+                    <span class="row-table-cell--muted">${escapeHtml(row.rowLengthDisplay)}</span>
+                    <span class="row-table-cell--muted">${escapeHtml(row.rowSeatsDisplay)}</span>
+                </div>
+            `).join('');
 
             return `
-                <div class="collapsible ${isCollapsed} ${tier.sectionClass} results-details">
-                    <div class="section-header">
-                        ${tier.title}
-                    </div>
-                    <div class="section-body">
+                <section class="results-details ${escapeHtml(tier.sectionClass)}${isCollapsed ? ' collapsed' : ''}">
+                    <button type="button" class="accordion__trigger results-details__trigger" aria-expanded="${isCollapsed ? 'false' : 'true'}">${escapeHtml(tier.title)}</button>
+                    <div class="section-body results-details__panel"${isCollapsed ? ' hidden' : ''}>
                         <div class="row-table-header">
                             <span>Row</span><span>Riser</span><span>Elev</span><span>C-Value</span><span>Tread</span><span>Dist-&gt;Focal</span><span>Angle</span><span>Length</span><span>Seats</span>
                         </div>
-                        ${rowsHtml}
+                        ${rowsMarkup}
                     </div>
-                </div>
+                </section>
             `;
         }).join('');
 
         return `
             <div class="results-summary-container">
                 <div class="total-occupancy-label results-section-title--center results-section-title--spaced">TIER ROW DETAILS</div>
-                ${rowTableHtml}
+                ${sectionsMarkup}
             </div>
         `;
     }

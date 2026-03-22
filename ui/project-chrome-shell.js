@@ -16,6 +16,23 @@ function getInputElement(id) {
     return /** @type {HTMLInputElement | null} */ (document.getElementById(id));
 }
 
+function getTemplateElement(id) {
+    if (typeof document === 'undefined' || !document || typeof document.getElementById !== 'function') {
+        return null;
+    }
+    const template = document.getElementById(id);
+    if (typeof HTMLTemplateElement === 'undefined') {
+        return null;
+    }
+    return template instanceof HTMLTemplateElement ? template : null;
+}
+
+function cloneTemplateElement(id) {
+    const template = getTemplateElement(id);
+    const element = template?.content.firstElementChild?.cloneNode(true);
+    return element instanceof HTMLElement ? element : null;
+}
+
 function getTargetElement(target) {
     return target instanceof Element ? target : null;
 }
@@ -48,6 +65,70 @@ function deriveAvatarInitials(value = '') {
     return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
 }
 
+function createSvgElement(name, attributes = {}) {
+    const element = document.createElementNS('http://www.w3.org/2000/svg', name);
+    Object.entries(attributes).forEach(([key, value]) => {
+        element.setAttribute(key, String(value));
+    });
+    return element;
+}
+
+function createProjectActionIcon(action) {
+    const svg = createSvgElement('svg', {
+        viewBox: '0 0 24 24',
+        fill: 'none',
+        stroke: 'currentColor',
+        'stroke-width': '1.9',
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+        'aria-hidden': 'true'
+    });
+
+    if (action === 'edit') {
+        svg.appendChild(createSvgElement('path', { d: 'M12 20h9' }));
+        svg.appendChild(createSvgElement('path', { d: 'M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z' }));
+        return svg;
+    }
+
+    if (action === 'duplicate') {
+        svg.appendChild(createSvgElement('rect', { x: '9', y: '9', width: '10', height: '10', rx: '2' }));
+        svg.appendChild(createSvgElement('path', { d: 'M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2' }));
+        return svg;
+    }
+
+    svg.appendChild(createSvgElement('path', { d: 'M3 6h18' }));
+    svg.appendChild(createSvgElement('path', { d: 'M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2' }));
+    svg.appendChild(createSvgElement('path', { d: 'M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6' }));
+    svg.appendChild(createSvgElement('path', { d: 'M10 11v6' }));
+    svg.appendChild(createSvgElement('path', { d: 'M14 11v6' }));
+    return svg;
+}
+
+function setOptionDotColor(element, color) {
+    if (!element) return;
+    element.style.setProperty('--option-color', color);
+}
+
+function createTextElement(tagName, text, className = '') {
+    const element = document.createElement(tagName);
+    if (className) element.className = className;
+    element.textContent = text;
+    return element;
+}
+
+function canUseDomTemplates(container = null) {
+    return Boolean(
+        container
+        && typeof container.replaceChildren === 'function'
+        && typeof document !== 'undefined'
+        && document
+        && typeof document.createElement === 'function'
+        && typeof document.getElementById === 'function'
+        && typeof HTMLTemplateElement !== 'undefined'
+        && typeof HTMLElement !== 'undefined'
+    );
+}
+
 function escapeHtml(value) {
     return String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -57,37 +138,13 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
-function renderProjectActionIcon(action) {
-    if (action === 'edit') {
-        return `
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
-                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M12 20h9"></path>
-                <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
-            </svg>
-        `;
-    }
+function serializeDisabled(disabled) {
+    return disabled ? ' disabled' : '';
+}
 
-    if (action === 'duplicate') {
-        return `
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
-                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="9" y="9" width="10" height="10" rx="2"></rect>
-                <path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path>
-            </svg>
-        `;
-    }
-
-    return `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
-            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M3 6h18"></path>
-            <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"></path>
-            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
-            <path d="M10 11v6"></path>
-            <path d="M14 11v6"></path>
-        </svg>
-    `;
+function replaceChildren(element, children = []) {
+    if (!element) return;
+    element.replaceChildren(...children.filter(Boolean));
 }
 
 function formatProjectListUpdatedAt(value) {
@@ -1039,50 +1096,61 @@ export class ProjectChromeShell {
         if (!projectOptionMenu) return;
 
         projectOptionMenu.hidden = !this._projectOptionMenuOpen;
-        projectOptionMenu.innerHTML = [
-            ...this._optionChrome.items.map((item) => `
-                <button
-                    class="project-option-item ${item.isActive ? 'active' : ''}"
-                    type="button"
-                    data-project-option-action="select"
-                    data-project-option-id="${escapeHtml(item.id)}"
-                    ${this._projectSaveBusy || item.isActive || !this._projectActions?.selectOption ? 'disabled' : ''}
-                >
-                    <span class="project-option-item-leading">
-                        <span class="project-option-dot" style="--option-color:${escapeHtml(item.color)}" aria-hidden="true"></span>
-                        <span>${escapeHtml(item.label)}</span>
-                    </span>
-                    ${item.isActive ? '<span class="project-option-pill">Active</span>' : ''}
-                </button>
-            `),
-            '<div class="project-menu-divider"></div>',
-            `
-                <button
-                    class="project-option-item"
-                    type="button"
-                    data-project-option-action="create"
-                    ${this._projectSaveBusy || !this._optionChrome.canCreate || !this._projectActions?.createOption ? 'disabled' : ''}
-                >
-                    <span class="project-option-item-leading">
-                        <span class="project-option-plus" aria-hidden="true">+</span>
-                        <span>Option</span>
-                    </span>
-                </button>
-            `,
-            `
-                <button
-                    class="project-option-item"
-                    type="button"
-                    data-project-option-action="manage"
-                    ${this._projectSaveBusy || !this._optionChrome.canManage ? 'disabled' : ''}
-                >
-                    <span class="project-option-item-leading">
-                        <span class="project-option-plus" aria-hidden="true">&#9881;</span>
-                        <span>Manage</span>
-                    </span>
-                </button>
-            `
-        ].join('');
+        if (!canUseDomTemplates(projectOptionMenu)) {
+            projectOptionMenu.innerHTML = this._buildOptionMenuMarkup();
+            return;
+        }
+        const menuChildren = [];
+
+        this._optionChrome.items.forEach((item) => {
+            const optionButton = /** @type {HTMLButtonElement | null} */ (cloneTemplateElement('projectOptionItemTemplate'));
+            if (!optionButton) return;
+
+            optionButton.dataset.projectOptionAction = 'select';
+            optionButton.dataset.projectOptionId = item.id;
+            optionButton.disabled = this._projectSaveBusy || item.isActive || !this._projectActions?.selectOption;
+            optionButton.classList.toggle('active', item.isActive);
+            optionButton.querySelector('[data-project-option-item-label]')?.replaceChildren(document.createTextNode(item.label));
+
+            const statusPill = optionButton.querySelector('[data-project-option-item-status]');
+            if (statusPill instanceof HTMLElement) {
+                statusPill.hidden = !item.isActive;
+            }
+
+            setOptionDotColor(optionButton.querySelector('.project-option-dot'), item.color);
+            menuChildren.push(optionButton);
+        });
+
+        const divider = document.createElement('div');
+        divider.className = 'project-menu-divider';
+        divider.setAttribute('role', 'presentation');
+        menuChildren.push(divider);
+
+        [
+            {
+                action: 'create',
+                label: 'Option',
+                icon: '+',
+                disabled: this._projectSaveBusy || !this._optionChrome.canCreate || !this._projectActions?.createOption
+            },
+            {
+                action: 'manage',
+                label: 'Manage',
+                icon: '\u2699',
+                disabled: this._projectSaveBusy || !this._optionChrome.canManage
+            }
+        ].forEach((descriptor) => {
+            const actionButton = /** @type {HTMLButtonElement | null} */ (cloneTemplateElement('projectOptionMenuActionTemplate'));
+            if (!actionButton) return;
+
+            actionButton.dataset.projectOptionAction = descriptor.action;
+            actionButton.disabled = descriptor.disabled;
+            actionButton.querySelector('[data-project-option-action-label]')?.replaceChildren(document.createTextNode(descriptor.label));
+            actionButton.querySelector('[data-project-option-action-icon]')?.replaceChildren(document.createTextNode(descriptor.icon));
+            menuChildren.push(actionButton);
+        });
+
+        replaceChildren(projectOptionMenu, menuChildren);
     }
 
     _renderOptionManager() {
@@ -1121,79 +1189,89 @@ export class ProjectChromeShell {
             return item.label.toLowerCase().includes(searchValue);
         });
 
-        if (!visibleItems.length) {
-            projectOptionManagerList.innerHTML = '<div class="project-option-manager-empty">No options match your search.</div>';
+        if (!canUseDomTemplates(projectOptionManagerList)) {
+            projectOptionManagerList.innerHTML = this._buildOptionManagerMarkup(visibleItems);
             return;
         }
 
-        projectOptionManagerList.innerHTML = visibleItems.map((item) => `
-            <div class="project-option-manager-row ${item.isActive ? 'active' : ''}" role="listitem">
-                ${this._projectOptionEditingId === item.id ? `
-                    <div class="project-option-manager-main project-option-manager-main-editing">
-                        <span class="project-option-dot" style="--option-color:${escapeHtml(item.color)}" aria-hidden="true"></span>
-                        <div class="project-option-manager-copy">
-                            <label class="sr-only" for="projectOptionNameInput-${escapeHtml(item.id)}">${escapeHtml(item.label)} option name</label>
-                            <input
-                                id="projectOptionNameInput-${escapeHtml(item.id)}"
-                                class="project-option-manager-name-input"
-                                type="text"
-                                maxlength="80"
-                                value="${escapeHtml(this._projectOptionNameDrafts[item.id] ?? item.label)}"
-                                data-project-option-name-id="${escapeHtml(item.id)}"
-                                ${this._projectSaveBusy || !this._projectActions?.renameOption ? 'disabled' : ''}
-                            >
-                        </div>
-                    </div>
-                ` : `
-                    <button
-                        class="project-option-manager-main"
-                        type="button"
-                        data-project-option-manager-row-action="select"
-                        data-project-option-id="${escapeHtml(item.id)}"
-                        aria-label="Open ${escapeHtml(item.label)}"
-                        ${this._projectSaveBusy || item.isActive || !this._projectActions?.selectOption ? 'disabled' : ''}
-                    >
-                        <span class="project-option-dot" style="--option-color:${escapeHtml(item.color)}" aria-hidden="true"></span>
-                        <span class="project-option-manager-name">${escapeHtml(item.label)}</span>
-                    </button>
-                `}
-                <div class="project-option-manager-actions">
-                    <button
-                        class="project-option-manager-icon-btn"
-                        type="button"
-                        data-project-option-manager-action="edit"
-                        data-project-option-id="${escapeHtml(item.id)}"
-                        aria-label="Rename ${escapeHtml(item.label)}"
-                        title="Rename ${escapeHtml(item.label)}"
-                        ${this._projectSaveBusy || !this._projectActions?.renameOption ? 'disabled' : ''}
-                    >
-                        ${renderProjectActionIcon('edit')}
-                    </button>
-                    <button
-                        class="project-option-manager-icon-btn"
-                        type="button"
-                        data-project-option-manager-action="duplicate"
-                        data-project-option-id="${escapeHtml(item.id)}"
-                        aria-label="Duplicate ${escapeHtml(item.label)}"
-                        title="Duplicate ${escapeHtml(item.label)}"
-                        ${this._projectSaveBusy || !this._projectActions?.duplicateOption ? 'disabled' : ''}
-                    >
-                        ${renderProjectActionIcon('duplicate')}
-                    </button>
-                    <button
-                        class="project-option-manager-icon-btn project-option-manager-icon-btn-danger"
-                        type="button"
-                        data-project-option-manager-action="delete"
-                        data-project-option-id="${escapeHtml(item.id)}"
-                        aria-label="Delete ${escapeHtml(item.label)}"
-                        title="Delete ${escapeHtml(item.label)}"
-                        ${this._projectSaveBusy || !item.canDelete || !this._projectActions?.deleteOption ? 'disabled' : ''}
-                    >
-                        ${renderProjectActionIcon('delete')}
-                    </button>
-                </div>
-            </div>
-        `).join('');
+        if (!visibleItems.length) {
+            replaceChildren(projectOptionManagerList, [
+                createTextElement('div', 'No options match your search.', 'project-option-manager-empty')
+            ]);
+            return;
+        }
+
+        const rows = visibleItems.map((item) => {
+            const row = cloneTemplateElement('projectOptionManagerRowTemplate');
+            if (!row) return null;
+
+            row.classList.toggle('active', item.isActive);
+
+            const isEditing = this._projectOptionEditingId === item.id;
+            const editingShell = row.querySelector('[data-project-option-editing]');
+            const editingInput = /** @type {HTMLInputElement | null} */ (row.querySelector('[data-project-option-name-input]'));
+            const editingLabel = /** @type {HTMLLabelElement | null} */ (row.querySelector('[data-project-option-name-label]'));
+            const selectButton = /** @type {HTMLButtonElement | null} */ (row.querySelector('[data-project-option-select]'));
+            const displayName = row.querySelector('[data-project-option-name]');
+
+            row.querySelectorAll('.project-option-dot').forEach((dot) => setOptionDotColor(dot, item.color));
+
+            if (editingShell instanceof HTMLElement) {
+                editingShell.hidden = !isEditing;
+            }
+            if (selectButton) {
+                selectButton.hidden = isEditing;
+                selectButton.dataset.projectOptionManagerRowAction = 'select';
+                selectButton.dataset.projectOptionId = item.id;
+                selectButton.setAttribute('aria-label', `Open ${item.label}`);
+                selectButton.disabled = this._projectSaveBusy || item.isActive || !this._projectActions?.selectOption;
+            }
+            displayName?.replaceChildren(document.createTextNode(item.label));
+
+            if (editingInput) {
+                const inputId = `projectOptionNameInput-${item.id}`;
+                editingInput.id = inputId;
+                editingInput.dataset.projectOptionNameId = item.id;
+                editingInput.value = this._projectOptionNameDrafts[item.id] ?? item.label;
+                editingInput.disabled = this._projectSaveBusy || !this._projectActions?.renameOption;
+            }
+            if (editingLabel && editingInput) {
+                editingLabel.htmlFor = editingInput.id;
+                editingLabel.textContent = `${item.label} option name`;
+            }
+
+            [
+                {
+                    action: 'edit',
+                    label: `Rename ${item.label}`,
+                    disabled: this._projectSaveBusy || !this._projectActions?.renameOption
+                },
+                {
+                    action: 'duplicate',
+                    label: `Duplicate ${item.label}`,
+                    disabled: this._projectSaveBusy || !this._projectActions?.duplicateOption
+                },
+                {
+                    action: 'delete',
+                    label: `Delete ${item.label}`,
+                    disabled: this._projectSaveBusy || !item.canDelete || !this._projectActions?.deleteOption
+                }
+            ].forEach((descriptor) => {
+                const button = /** @type {HTMLButtonElement | null} */ (
+                    row.querySelector(`[data-project-option-manager-action="${descriptor.action}"]`)
+                );
+                if (!button) return;
+                button.dataset.projectOptionId = item.id;
+                button.setAttribute('aria-label', descriptor.label);
+                button.setAttribute('title', descriptor.label);
+                button.disabled = descriptor.disabled;
+                button.replaceChildren(createProjectActionIcon(descriptor.action));
+            });
+
+            return row;
+        });
+
+        replaceChildren(projectOptionManagerList, rows);
     }
 
     _renderProjectMenu() {
@@ -1581,121 +1659,274 @@ export class ProjectChromeShell {
             return `${project.name} ${project.sport}`.toLowerCase().includes(searchValue);
         });
 
+        if (!canUseDomTemplates(projectPickerList)) {
+            projectPickerList.innerHTML = this._buildProjectPickerMarkup(visibleProjects, searchValue, isInteractionLocked);
+            return;
+        }
+
         if (this._projectPicker.isLoading && !visibleProjects.length) {
-            projectPickerList.innerHTML = '<div class="project-picker-row-status">Loading projects...</div>';
+            replaceChildren(projectPickerList, [
+                createTextElement('div', 'Loading projects...', 'project-picker-row-status')
+            ]);
             return;
         }
 
         if (!visibleProjects.length) {
-            projectPickerList.innerHTML = searchValue
-                ? '<div class="project-picker-empty">No projects match your search.</div>'
-                : '<div class="project-picker-empty">No saved projects yet.</div>';
+            replaceChildren(projectPickerList, [
+                createTextElement(
+                    'div',
+                    searchValue ? 'No projects match your search.' : 'No saved projects yet.',
+                    'project-picker-empty'
+                )
+            ]);
             return;
         }
 
-        projectPickerList.innerHTML = visibleProjects.map((project) => {
-            const projectId = escapeHtml(project.id);
-            const projectName = escapeHtml(project.name || 'Untitled Project');
+        const rows = visibleProjects.map((project) => {
+            const row = cloneTemplateElement('projectPickerRowTemplate');
+            if (!row) return null;
+
+            const projectId = project.id;
+            const projectName = project.name || 'Untitled Project';
             const isCurrentProject = this._isCurrentProjectPickerProject(project.id);
             const isEditing = this._projectPicker.editingProjectId === project.id;
-            const projectDraftName = escapeHtml(this._projectPicker.projectNameDrafts[project.id] ?? project.name);
+            const projectDraftName = this._projectPicker.projectNameDrafts[project.id] ?? project.name;
             const isBusyRename = this._projectPicker.busyAction === 'rename' && this._projectPicker.busyProjectId === project.id;
             const isBusyDuplicate = this._projectPicker.busyAction === 'duplicate' && this._projectPicker.busyProjectId === project.id;
             const isBusyDelete = this._projectPicker.busyAction === 'delete' && this._projectPicker.busyProjectId === project.id;
             const isBusyOpen = this._projectPicker.busyAction === 'open' && this._projectPicker.busyProjectId === project.id;
             const isSelected = this._projectPicker.selectedProjectIds.includes(project.id);
-            const isDisabled = isInteractionLocked ? 'disabled' : '';
             const isSelectionDisabled = isInteractionLocked || isCurrentProject;
-            const selectionDisabled = isSelectionDisabled ? 'disabled' : '';
-            const selectionChecked = isSelected ? 'checked' : '';
             const selectionLabel = isSelected ? 'Deselect project' : 'Select project';
 
+            row.classList.toggle('project-picker-row-selected', isSelected);
+
+            const selectionLabelEl = /** @type {HTMLLabelElement | null} */ (row.querySelector('.project-picker-row-select'));
+            const selectionInput = /** @type {HTMLInputElement | null} */ (row.querySelector('[data-project-picker-select-input]'));
+            if (selectionLabelEl) {
+                selectionLabelEl.setAttribute('aria-label', `${selectionLabel} ${projectName}`);
+            }
+            if (selectionInput) {
+                selectionInput.dataset.projectPickerSelect = projectId;
+                selectionInput.checked = isSelected;
+                selectionInput.disabled = isSelectionDisabled;
+            }
+
+            const editingShell = /** @type {HTMLElement | null} */ (row.querySelector('[data-project-picker-editing]'));
+            const displayButton = /** @type {HTMLButtonElement | null} */ (row.querySelector('[data-open-project-button]'));
+            if (editingShell) editingShell.hidden = !isEditing;
+            if (displayButton) {
+                displayButton.hidden = isEditing;
+                displayButton.dataset.openProjectId = projectId;
+                displayButton.disabled = isInteractionLocked;
+            }
+
+            const displayName = row.querySelector('[data-project-picker-name]');
+            const displaySport = row.querySelector('[data-project-picker-sport]');
+            const displayBadge = /** @type {HTMLElement | null} */ (row.querySelector('[data-project-picker-badge]'));
+            const displayStatus = /** @type {HTMLElement | null} */ (row.querySelector('[data-project-picker-status]'));
+            displayName?.replaceChildren(document.createTextNode(projectName));
+            displaySport?.replaceChildren(document.createTextNode(project.sport || 'Football'));
+            if (displayBadge) displayBadge.hidden = !isCurrentProject;
+
+            const displayStatusText = isBusyOpen
+                ? 'Opening...'
+                : isBusyDuplicate
+                    ? 'Duplicating...'
+                    : isBusyDelete
+                        ? 'Deleting...'
+                        : '';
+            if (displayStatus) {
+                displayStatus.hidden = !displayStatusText;
+                displayStatus.textContent = displayStatusText;
+            }
+
+            const editingInput = /** @type {HTMLInputElement | null} */ (row.querySelector('[data-project-picker-name-input]'));
+            const editingLabel = /** @type {HTMLLabelElement | null} */ (row.querySelector('[data-project-picker-name-label]'));
+            const editingSport = row.querySelector('[data-project-picker-edit-sport]');
+            const editingBadge = /** @type {HTMLElement | null} */ (row.querySelector('[data-project-picker-edit-badge]'));
+            const editingStatus = /** @type {HTMLElement | null} */ (row.querySelector('[data-project-picker-edit-status]'));
+            if (editingInput) {
+                const inputId = `projectPickerNameInput-${projectId}`;
+                editingInput.id = inputId;
+                editingInput.dataset.projectPickerNameId = projectId;
+                editingInput.value = projectDraftName;
+                editingInput.disabled = isInteractionLocked;
+            }
+            if (editingLabel && editingInput) {
+                editingLabel.htmlFor = editingInput.id;
+                editingLabel.textContent = `${projectName} project name`;
+            }
+            editingSport?.replaceChildren(document.createTextNode(project.sport || 'Football'));
+            if (editingBadge) editingBadge.hidden = !isCurrentProject;
+            if (editingStatus) {
+                editingStatus.hidden = !isBusyRename;
+                editingStatus.textContent = isBusyRename ? 'Renaming...' : '';
+            }
+
+            row.querySelector('[data-project-picker-updated]')?.replaceChildren(
+                document.createTextNode(formatProjectListUpdatedAt(project.updatedAt))
+            );
+
+            [
+                {
+                    action: 'edit',
+                    label: `Rename ${projectName}`,
+                    disabled: isInteractionLocked || !this._projectActions?.renameProject
+                },
+                {
+                    action: 'duplicate',
+                    label: `Duplicate ${projectName}`,
+                    disabled: isInteractionLocked || !this._projectActions?.duplicateProject
+                },
+                {
+                    action: 'delete',
+                    label: `Delete ${projectName}`,
+                    disabled: isInteractionLocked || !this._projectActions?.deleteProject
+                }
+            ].forEach((descriptor) => {
+                const button = /** @type {HTMLButtonElement | null} */ (
+                    row.querySelector(`[data-project-picker-row-action="${descriptor.action}"]`)
+                );
+                if (!button) return;
+                button.dataset.projectId = projectId;
+                button.setAttribute('aria-label', descriptor.label);
+                button.setAttribute('title', descriptor.label);
+                button.disabled = descriptor.disabled;
+                button.replaceChildren(createProjectActionIcon(descriptor.action));
+            });
+
+            return row;
+        });
+
+        replaceChildren(projectPickerList, rows);
+    }
+
+    _buildOptionMenuMarkup() {
+        const optionItemsMarkup = this._optionChrome.items.map((item) => {
+            const isDisabled = this._projectSaveBusy || item.isActive || !this._projectActions?.selectOption;
             return `
-                <article class="project-picker-row ${isSelected ? 'project-picker-row-selected' : ''}" role="listitem">
-                    <label class="project-picker-row-select" aria-label="${selectionLabel} ${projectName}">
-                        <input
-                            class="project-picker-row-checkbox"
-                            type="checkbox"
-                            data-project-picker-select="${projectId}"
-                            ${selectionChecked}
-                            ${selectionDisabled}>
-                        <span class="project-picker-row-checkbox-ui" aria-hidden="true"></span>
+                <button class="project-option-item${item.isActive ? ' active' : ''}" type="button" data-project-option-action="select" data-project-option-id="${escapeHtml(item.id)}"${serializeDisabled(isDisabled)}>
+                    <span class="project-option-item-leading">
+                        <span class="project-option-dot" style="--option-color: ${escapeHtml(item.color)}"></span>
+                        <span class="project-option-item-label">${escapeHtml(item.label)}</span>
+                    </span>
+                    <span class="project-option-item-status"${item.isActive ? '' : ' hidden'}>Active</span>
+                </button>
+            `;
+        }).join('');
+
+        const actionItemsMarkup = [
+            {
+                action: 'create',
+                label: 'Option',
+                icon: '+',
+                disabled: this._projectSaveBusy || !this._optionChrome.canCreate || !this._projectActions?.createOption
+            },
+            {
+                action: 'manage',
+                label: 'Manage',
+                icon: '&#9881;',
+                disabled: this._projectSaveBusy || !this._optionChrome.canManage
+            }
+        ].map((descriptor) => `
+            <button class="project-option-item project-option-item--action" type="button" data-project-option-action="${descriptor.action}"${serializeDisabled(descriptor.disabled)}>
+                <span class="project-option-item-leading">
+                    <span class="project-option-action-icon">${descriptor.icon}</span>
+                    <span class="project-option-item-label">${descriptor.label}</span>
+                </span>
+            </button>
+        `).join('');
+
+        return `${optionItemsMarkup}<div class="project-menu-divider" role="presentation"></div>${actionItemsMarkup}`;
+    }
+
+    _buildOptionManagerMarkup(visibleItems) {
+        if (!visibleItems.length) {
+            return '<div class="project-option-manager-empty">No options match your search.</div>';
+        }
+
+        return visibleItems.map((item) => {
+            const isEditing = this._projectOptionEditingId === item.id;
+            const inputValue = this._projectOptionNameDrafts[item.id] ?? item.label;
+            return `
+                <article class="project-option-manager-row${item.isActive ? ' active' : ''}" role="listitem">
+                    <div class="project-option-manager-main project-option-manager-main-editing" data-project-option-editing${isEditing ? '' : ' hidden'}>
+                        <span class="project-option-dot" style="--option-color: ${escapeHtml(item.color)}"></span>
+                        <label class="sr-only" for="projectOptionNameInput-${escapeHtml(item.id)}">${escapeHtml(item.label)} option name</label>
+                        <input id="projectOptionNameInput-${escapeHtml(item.id)}" type="text" data-project-option-name-id="${escapeHtml(item.id)}" value="${escapeHtml(inputValue)}"${serializeDisabled(this._projectSaveBusy || !this._projectActions?.renameOption)}>
+                    </div>
+                    <button class="project-option-manager-main" type="button" data-project-option-select data-project-option-manager-row-action="select" data-project-option-id="${escapeHtml(item.id)}" aria-label="Open ${escapeHtml(item.label)}"${isEditing ? ' hidden' : ''}${serializeDisabled(this._projectSaveBusy || item.isActive || !this._projectActions?.selectOption)}>
+                        <span class="project-option-dot" style="--option-color: ${escapeHtml(item.color)}"></span>
+                        <span class="project-option-manager-name">${escapeHtml(item.label)}</span>
+                    </button>
+                    <div class="project-option-manager-actions">
+                        <button class="project-option-manager-icon-btn btn btn--icon" type="button" data-project-option-manager-action="edit" data-project-option-id="${escapeHtml(item.id)}" aria-label="Rename ${escapeHtml(item.label)}" title="Rename ${escapeHtml(item.label)}"${serializeDisabled(this._projectSaveBusy || !this._projectActions?.renameOption)}></button>
+                        <button class="project-option-manager-icon-btn btn btn--icon" type="button" data-project-option-manager-action="duplicate" data-project-option-id="${escapeHtml(item.id)}" aria-label="Duplicate ${escapeHtml(item.label)}" title="Duplicate ${escapeHtml(item.label)}"${serializeDisabled(this._projectSaveBusy || !this._projectActions?.duplicateOption)}></button>
+                        <button class="project-option-manager-icon-btn project-option-manager-icon-btn-danger btn btn--icon" type="button" data-project-option-manager-action="delete" data-project-option-id="${escapeHtml(item.id)}" aria-label="Delete ${escapeHtml(item.label)}" title="Delete ${escapeHtml(item.label)}"${serializeDisabled(this._projectSaveBusy || !item.canDelete || !this._projectActions?.deleteOption)}></button>
+                    </div>
+                </article>
+            `;
+        }).join('');
+    }
+
+    _buildProjectPickerMarkup(visibleProjects, searchValue, isInteractionLocked) {
+        if (this._projectPicker.isLoading && !visibleProjects.length) {
+            return '<div class="project-picker-row-status">Loading projects...</div>';
+        }
+
+        if (!visibleProjects.length) {
+            return searchValue
+                ? '<div class="project-picker-empty">No projects match your search.</div>'
+                : '<div class="project-picker-empty">No saved projects yet.</div>';
+        }
+
+        return visibleProjects.map((project) => {
+            const projectId = project.id;
+            const projectName = project.name || 'Untitled Project';
+            const isCurrentProject = this._isCurrentProjectPickerProject(project.id);
+            const isEditing = this._projectPicker.editingProjectId === project.id;
+            const projectDraftName = this._projectPicker.projectNameDrafts[project.id] ?? project.name;
+            const isBusyRename = this._projectPicker.busyAction === 'rename' && this._projectPicker.busyProjectId === project.id;
+            const isBusyDuplicate = this._projectPicker.busyAction === 'duplicate' && this._projectPicker.busyProjectId === project.id;
+            const isBusyDelete = this._projectPicker.busyAction === 'delete' && this._projectPicker.busyProjectId === project.id;
+            const isBusyOpen = this._projectPicker.busyAction === 'open' && this._projectPicker.busyProjectId === project.id;
+            const isSelected = this._projectPicker.selectedProjectIds.includes(project.id);
+            const isSelectionDisabled = isInteractionLocked || isCurrentProject;
+            const selectionLabel = isSelected ? 'Deselect project' : 'Select project';
+            const displayStatusText = isBusyOpen
+                ? 'Opening...'
+                : isBusyDuplicate
+                    ? 'Duplicating...'
+                    : isBusyDelete
+                        ? 'Deleting...'
+                        : '';
+
+            return `
+                <article class="project-picker-row${isSelected ? ' project-picker-row-selected' : ''}" role="listitem">
+                    <label class="project-picker-row-select" aria-label="${escapeHtml(selectionLabel)} ${escapeHtml(projectName)}">
+                        <input type="checkbox" data-project-picker-select="${escapeHtml(projectId)}"${isSelected ? ' checked' : ''}${serializeDisabled(isSelectionDisabled)}>
                     </label>
-                    ${isEditing
-                        ? `
-                            <div class="project-picker-row-main project-picker-row-main-editing">
-                                <svg class="project-picker-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
-                                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H11l2 2h4.5A2.5 2.5 0 0 1 20 9.5v8A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5v-10z"></path>
-                                </svg>
-                                <span class="project-picker-row-copy">
-                                    <label class="sr-only" for="projectPickerNameInput-${projectId}">${projectName} project name</label>
-                                    <input
-                                        id="projectPickerNameInput-${projectId}"
-                                        class="project-picker-row-name-input"
-                                        type="text"
-                                        maxlength="80"
-                                        value="${projectDraftName}"
-                                        data-project-picker-name-id="${projectId}"
-                                        ${isDisabled}>
-                                    <span class="project-picker-row-sport">
-                                        <span>${escapeHtml(project.sport || 'Football')}</span>
-                                        ${isCurrentProject ? '<span class="project-picker-row-badge">Current project</span>' : ''}
-                                        ${isBusyRename ? '<span class="project-picker-row-status">Renaming...</span>' : ''}
-                                    </span>
-                                </span>
-                            </div>
-                        `
-                        : `
-                            <button class="project-picker-row-main" type="button" data-open-project-id="${projectId}" ${isDisabled}>
-                                <svg class="project-picker-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
-                                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H11l2 2h4.5A2.5 2.5 0 0 1 20 9.5v8A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5v-10z"></path>
-                                </svg>
-                                <span class="project-picker-row-copy">
-                                    <span class="project-picker-row-name">${projectName}</span>
-                                    <span class="project-picker-row-sport">
-                                        <span>${escapeHtml(project.sport || 'Football')}</span>
-                                        ${isCurrentProject ? '<span class="project-picker-row-badge">Current project</span>' : ''}
-                                        ${isBusyOpen ? '<span class="project-picker-row-status">Opening...</span>' : ''}
-                                        ${isBusyDuplicate ? '<span class="project-picker-row-status">Duplicating...</span>' : ''}
-                                        ${isBusyDelete ? '<span class="project-picker-row-status">Deleting...</span>' : ''}
-                                    </span>
-                                </span>
-                            </button>
-                        `}
-                    <div class="project-picker-row-updated">${escapeHtml(formatProjectListUpdatedAt(project.updatedAt))}</div>
+                    <div class="project-picker-row-content">
+                        <button class="project-picker-row-main" type="button" data-open-project-button data-open-project-id="${escapeHtml(projectId)}"${isEditing ? ' hidden' : ''}${serializeDisabled(isInteractionLocked)}>
+                            <span class="project-picker-row-name">${escapeHtml(projectName)}</span>
+                            <span class="project-picker-row-sport">${escapeHtml(project.sport || 'Football')}</span>
+                            <span class="project-picker-row-badge"${isCurrentProject ? '' : ' hidden'}>Current project</span>
+                            <span class="project-picker-row-status"${displayStatusText ? '' : ' hidden'}>${escapeHtml(displayStatusText)}</span>
+                        </button>
+                        <div class="project-picker-row-editing" data-project-picker-editing${isEditing ? '' : ' hidden'}>
+                            <label class="sr-only" for="projectPickerNameInput-${escapeHtml(projectId)}">${escapeHtml(projectName)} project name</label>
+                            <input id="projectPickerNameInput-${escapeHtml(projectId)}" type="text" data-project-picker-name-id="${escapeHtml(projectId)}" value="${escapeHtml(projectDraftName)}"${serializeDisabled(isInteractionLocked)}>
+                            <span class="project-picker-row-sport">${escapeHtml(project.sport || 'Football')}</span>
+                            <span class="project-picker-row-badge"${isCurrentProject ? '' : ' hidden'}>Current project</span>
+                            <span class="project-picker-row-status"${isBusyRename ? '' : ' hidden'}>${isBusyRename ? 'Renaming...' : ''}</span>
+                        </div>
+                    </div>
+                    <span class="project-picker-row-updated">${escapeHtml(formatProjectListUpdatedAt(project.updatedAt))}</span>
                     <div class="project-picker-row-actions">
-                        <button
-                            class="project-option-manager-icon-btn"
-                            type="button"
-                            data-project-picker-row-action="edit"
-                            data-project-id="${projectId}"
-                            aria-label="Rename ${projectName}"
-                            title="Rename ${projectName}"
-                            ${isDisabled || !this._projectActions?.renameProject ? 'disabled' : ''}>
-                            ${renderProjectActionIcon('edit')}
-                        </button>
-                        <button
-                            class="project-option-manager-icon-btn"
-                            type="button"
-                            data-project-picker-row-action="duplicate"
-                            data-project-id="${projectId}"
-                            aria-label="Duplicate ${projectName}"
-                            title="Duplicate ${projectName}"
-                            ${isDisabled || !this._projectActions?.duplicateProject ? 'disabled' : ''}>
-                            ${renderProjectActionIcon('duplicate')}
-                        </button>
-                        <button
-                            class="project-option-manager-icon-btn project-option-manager-icon-btn-danger"
-                            type="button"
-                            data-project-picker-row-action="delete"
-                            data-project-id="${projectId}"
-                            aria-label="Delete ${projectName}"
-                            title="Delete ${projectName}"
-                            ${isDisabled || !this._projectActions?.deleteProject ? 'disabled' : ''}>
-                            ${renderProjectActionIcon('delete')}
-                        </button>
+                        <button class="project-option-manager-icon-btn btn btn--icon" type="button" data-project-picker-row-action="edit" data-project-id="${escapeHtml(projectId)}" aria-label="Rename ${escapeHtml(projectName)}" title="Rename ${escapeHtml(projectName)}"${serializeDisabled(isInteractionLocked || !this._projectActions?.renameProject)}></button>
+                        <button class="project-option-manager-icon-btn btn btn--icon" type="button" data-project-picker-row-action="duplicate" data-project-id="${escapeHtml(projectId)}" aria-label="Duplicate ${escapeHtml(projectName)}" title="Duplicate ${escapeHtml(projectName)}"${serializeDisabled(isInteractionLocked || !this._projectActions?.duplicateProject)}></button>
+                        <button class="project-option-manager-icon-btn project-option-manager-icon-btn-danger btn btn--icon" type="button" data-project-picker-row-action="delete" data-project-id="${escapeHtml(projectId)}" aria-label="Delete ${escapeHtml(projectName)}" title="Delete ${escapeHtml(projectName)}"${serializeDisabled(isInteractionLocked || !this._projectActions?.deleteProject)}></button>
                     </div>
                 </article>
             `;

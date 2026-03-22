@@ -122,6 +122,21 @@ function syncSharedDockState(activeView = 'profile') {
     });
 }
 
+function syncAccordionState(section) {
+    if (!(section instanceof HTMLElement)) return;
+
+    const trigger = /** @type {HTMLElement | null} */ (section.querySelector('[data-accordion-trigger]'));
+    const panel = /** @type {HTMLElement | null} */ (section.querySelector('.accordion__panel'));
+    const isCollapsed = section.classList.contains('collapsed');
+
+    if (trigger) {
+        trigger.setAttribute('aria-expanded', String(!isCollapsed));
+    }
+    if (panel) {
+        panel.hidden = isCollapsed;
+    }
+}
+
 export class WorkspaceShell {
     constructor(options = {}) {
         const settings = /** @type {{
@@ -171,6 +186,7 @@ export class WorkspaceShell {
         this._bindWindowResize();
         this._bindCollapsibleSections();
         this._initTooltips();
+        this._syncAccordions();
         syncSharedDockState();
     }
 
@@ -648,16 +664,29 @@ export class WorkspaceShell {
         const handleClick = (event) => {
             const target = getTargetElement(event.target);
             if (!target) return;
-            if (target.closest('.header-toggle')) return;
+            if (target.closest('.switch')) return;
 
-            const header = target.closest('.section-header');
-            if (header && header.parentElement?.classList.contains('collapsible')) {
-                header.parentElement.classList.toggle('collapsed');
-            }
+            const trigger = target.closest('[data-accordion-trigger]');
+            if (!trigger) return;
+
+            const section = trigger.closest('[data-accordion-root]');
+            if (!(section instanceof HTMLElement)) return;
+
+            section.classList.toggle('collapsed');
+            syncAccordionState(section);
         };
 
         document.body.addEventListener('click', handleClick);
         this._cleanup.push(() => document.body.removeEventListener('click', handleClick));
+    }
+
+    _syncAccordions() {
+        if (typeof document === 'undefined' || !document || typeof document.querySelectorAll !== 'function') {
+            return;
+        }
+        document.querySelectorAll('[data-accordion-root]').forEach((section) => {
+            syncAccordionState(section);
+        });
     }
 
     _initTooltips() {

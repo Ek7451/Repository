@@ -1,23 +1,25 @@
 // @ts-nocheck
-function escapeHtml(value) {
-    return String(value ?? '')
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;');
-}
-
 function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
 }
 
-function createDropdownMarkup() {
-    return `
-        <button type="button" data-bookmark-menu-action="rename">Rename</button>
-        <button type="button" data-bookmark-menu-action="export">Export Image</button>
-        <button type="button" class="cam-bookmark-remove" data-bookmark-menu-action="remove">Delete</button>
-    `;
+function getTemplateElement(id) {
+    if (typeof document === 'undefined' || !document || typeof document.getElementById !== 'function') {
+        return null;
+    }
+    const template = document.getElementById(id);
+    if (typeof HTMLTemplateElement === 'undefined') {
+        return null;
+    }
+    return template instanceof HTMLTemplateElement ? template : null;
+}
+
+function cloneTemplateElement(id) {
+    const element = getTemplateElement(id)?.content.firstElementChild?.cloneNode(true);
+    if (typeof HTMLElement === 'undefined') {
+        return null;
+    }
+    return element instanceof HTMLElement ? element : null;
 }
 
 function getBookmarksArray(getBookmarks) {
@@ -95,11 +97,10 @@ export class CameraBookmarks {
     }
 
     _createDropdownElement() {
-        const dropdownEl = document.createElement('div');
-        dropdownEl.className = 'cam-bookmark-dropdown';
+        const dropdownEl = cloneTemplateElement('cameraBookmarkDropdownTemplate') ?? document.createElement('div');
+        dropdownEl.classList.add('cam-bookmark-dropdown');
         dropdownEl.dataset.state = 'closed';
         dropdownEl.hidden = true;
-        dropdownEl.innerHTML = createDropdownMarkup();
         document.body.appendChild(dropdownEl);
         return dropdownEl;
     }
@@ -124,35 +125,36 @@ export class CameraBookmarks {
         this.closeDropdown();
 
         const bookmarks = Array.isArray(this.getBookmarks()) ? this.getBookmarks() : [];
-        this.listEl.innerHTML = bookmarks.map((bookmark, index) => this._renderBookmarkCard(bookmark, index)).join('');
+        const cards = bookmarks
+            .map((bookmark, index) => this._createBookmarkCard(bookmark, index))
+            .filter(Boolean);
+        this.listEl.replaceChildren(...cards);
 
         if (notifyLayout) this.onLayoutChanged();
     }
 
-    _renderBookmarkCard(bookmark, index) {
-        const name = escapeHtml(bookmark?.name ?? `View ${index + 1}`);
-        const thumbnail = escapeHtml(bookmark?.thumbnail ?? '');
-        return `
-            <div class="cam-bookmark-card" data-bookmark-index="${index}" role="button" tabindex="0">
-                <img class="cam-bookmark-image" src="${thumbnail}" alt="${name}">
-                <div class="cam-bookmark-label">${name}</div>
-                <div class="cam-bookmark-menu-wrapper">
-                    <button
-                        type="button"
-                        class="cam-bookmark-menu-btn"
-                        title="Options"
-                        aria-haspopup="menu"
-                        aria-expanded="${this._openDropdownIndex === index ? 'true' : 'false'}"
-                    >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="5" r="1.5"></circle>
-                            <circle cx="12" cy="12" r="1.5"></circle>
-                            <circle cx="12" cy="19" r="1.5"></circle>
-                        </svg>
-                    </button>
-                </div>
-            </div>
-        `;
+    _createBookmarkCard(bookmark, index) {
+        const cardEl = cloneTemplateElement('cameraBookmarkCardTemplate');
+        if (!cardEl) return null;
+
+        const name = bookmark?.name ?? `View ${index + 1}`;
+        const thumbnail = bookmark?.thumbnail ?? '';
+        cardEl.dataset.bookmarkIndex = String(index);
+
+        const imageEl = /** @type {HTMLImageElement | null} */ (cardEl.querySelector('[data-bookmark-image]'));
+        if (imageEl) {
+            imageEl.src = thumbnail;
+            imageEl.alt = name;
+        }
+
+        cardEl.querySelector('[data-bookmark-label]')?.replaceChildren(document.createTextNode(name));
+
+        const menuButton = /** @type {HTMLButtonElement | null} */ (cardEl.querySelector('.cam-bookmark-menu-btn'));
+        if (menuButton) {
+            menuButton.setAttribute('aria-expanded', this._openDropdownIndex === index ? 'true' : 'false');
+        }
+
+        return cardEl;
     }
 
     _handleSaveClick() {
