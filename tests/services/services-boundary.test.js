@@ -1,6 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAuthService } from '../../services/auth-service.js';
-import { createProjectsService } from '../../services/project-api.js';
+import {
+    createAuthService,
+    ensureSession,
+    resolveAuthContext
+} from '../../services/auth-service.js';
+import {
+    clearLastActiveProjectId,
+    createProjectsService,
+    getLastActiveProjectId,
+    listStartupProjects,
+    setLastActiveProjectId
+} from '../../services/project-api.js';
 
 class MemoryStorage {
     constructor() {
@@ -154,6 +164,41 @@ describe('service DTO boundaries', () => {
         await expect(service.signInWithMicrosoft()).rejects.toThrow(
             'Microsoft SSO is not implemented in this build.'
         );
+    });
+
+    it('reuses an existing session when ensuring an authenticated auth context', async () => {
+        const existingSession = {
+            userId: 'user-1',
+            displayName: 'Pat Example',
+            email: 'pat@example.com'
+        };
+        const authService = {
+            getSession: vi.fn().mockResolvedValue(existingSession),
+            signInWithMicrosoft: vi.fn()
+        };
+
+        await expect(ensureSession(authService)).resolves.toEqual(existingSession);
+        expect(authService.signInWithMicrosoft).not.toHaveBeenCalled();
+    });
+
+    it('promotes an unauthenticated auth state into an authenticated auth context', async () => {
+        const session = {
+            userId: 'user-1',
+            displayName: 'Pat Example',
+            email: 'pat@example.com'
+        };
+        const authService = {
+            getAuthState: vi.fn().mockResolvedValue({
+                status: 'unauthenticated'
+            }),
+            signInWithMicrosoft: vi.fn().mockResolvedValue(session)
+        };
+
+        await expect(resolveAuthContext(authService)).resolves.toEqual({
+            status: 'authenticated',
+            session
+        });
+        expect(authService.signInWithMicrosoft).toHaveBeenCalledTimes(1);
     });
 
     it('returns an unauthenticated auth state on a 401 session response', async () => {
@@ -450,6 +495,40 @@ describe('service DTO boundaries', () => {
         await expect(projectsService.setLastActiveProjectId(firstProject.id)).resolves.toBeUndefined();
         globalThis.localStorage.setItem('sbg-dev-projects', JSON.stringify([]));
         await expect(projectsService.getLastActiveProjectId()).resolves.toBeNull();
+    });
+
+    it('exposes safe project-api helpers for last-active persistence and startup listing', async () => {
+        const projectApi = {
+            setLastActiveProjectId: vi.fn().mockResolvedValue(undefined),
+            clearLastActiveProjectId: vi.fn().mockResolvedValue(undefined),
+            getLastActiveProjectId: vi.fn().mockResolvedValue('project-2'),
+            listProjects: vi.fn().mockResolvedValue([
+                { id: 'project-2', updatedAt: '2026-03-20T00:00:00.000Z' }
+            ])
+        };
+
+        await expect(setLastActiveProjectId(projectApi, 'project-2')).resolves.toBeUndefined();
+        await expect(clearLastActiveProjectId(projectApi, 'project-2')).resolves.toBeUndefined();
+        await expect(getLastActiveProjectId(projectApi)).resolves.toBe('project-2');
+        await expect(listStartupProjects(projectApi)).resolves.toEqual([
+            { id: 'project-2', updatedAt: '2026-03-20T00:00:00.000Z' }
+        ]);
+
+        expect(projectApi.setLastActiveProjectId).toHaveBeenCalledWith('project-2');
+        expect(projectApi.clearLastActiveProjectId).toHaveBeenCalledWith('project-2');
+    });
+
+    it('fails closed when startup helper calls reject', async () => {
+        const projectApi = {
+            getLastActiveProjectId: vi.fn().mockRejectedValue(new Error('offline')),
+            listProjects: vi.fn().mockRejectedValue(new Error('offline'))
+        };
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        await expect(getLastActiveProjectId(projectApi)).resolves.toBe('');
+        await expect(listStartupProjects(projectApi)).resolves.toEqual([]);
+
+        expect(warnSpy).toHaveBeenCalledTimes(2);
     });
 
     it('deletes only the signed-in local project and removes it from later list results', async () => {

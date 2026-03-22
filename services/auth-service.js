@@ -330,6 +330,51 @@ function createLocalAuthService() {
     };
 }
 
+export async function ensureSession(authService) {
+    const existingSession = await authService.getSession();
+    if (existingSession) {
+        return existingSession;
+    }
+
+    const session = await authService.signInWithMicrosoft();
+    if (!session) {
+        throw new Error('Microsoft sign-in did not return a session.');
+    }
+
+    return session;
+}
+
+export async function resolveAuthContext(authService) {
+    if (typeof authService?.getAuthState !== 'function') {
+        return {
+            status: 'authenticated',
+            session: await ensureSession(authService)
+        };
+    }
+
+    const authState = await authService.getAuthState();
+    if (authState?.status === 'authenticated' && authState.session) {
+        return authState;
+    }
+
+    if (authState?.status === 'unauthenticated') {
+        const session = await authService.signInWithMicrosoft();
+        if (!session) {
+            throw new Error('Microsoft sign-in did not return a session.');
+        }
+
+        return {
+            status: 'authenticated',
+            session
+        };
+    }
+
+    const fallbackMessage = authState?.status === 'forbidden'
+        ? 'Access denied.'
+        : 'Authentication failed.';
+    throw new Error(authState?.reason || fallbackMessage);
+}
+
 export function createAuthService({ baseUrl = '/api/auth', devBackend = null } = {}) {
     return devBackend === 'local'
         ? createLocalAuthService()

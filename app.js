@@ -1,5 +1,11 @@
-import { createAuthService } from './services/auth-service.js';
-import { createProjectsService } from './services/project-api.js';
+import { createAuthService, resolveAuthContext } from './services/auth-service.js';
+import {
+    clearLastActiveProjectId,
+    createProjectsService,
+    getLastActiveProjectId,
+    listStartupProjects,
+    setLastActiveProjectId
+} from './services/project-api.js';
 import {
     buildDuplicateProjectName,
     buildUntitledProjectCreateRequest,
@@ -101,56 +107,6 @@ function replaceProjectRoute(projectId, runtimeConfig, location, history) {
 function getRequestedProjectId(location) {
     const requestedProjectId = new URLSearchParams(location?.search ?? '').get('project');
     return typeof requestedProjectId === 'string' ? requestedProjectId.trim() : '';
-}
-
-async function setLastActiveProjectId(projectApi, projectId) {
-    if (typeof projectApi?.setLastActiveProjectId !== 'function') {
-        return;
-    }
-
-    try {
-        await projectApi.setLastActiveProjectId(projectId);
-    } catch (error) {
-        console.warn('Failed to persist the last active project id:', error);
-    }
-}
-
-async function clearLastActiveProjectId(projectApi, projectId = '') {
-    if (typeof projectApi?.clearLastActiveProjectId !== 'function') {
-        return;
-    }
-
-    try {
-        await projectApi.clearLastActiveProjectId(projectId);
-    } catch (error) {
-        console.warn('Failed to clear the last active project id:', error);
-    }
-}
-
-async function getLastActiveProjectId(projectApi) {
-    if (typeof projectApi?.getLastActiveProjectId !== 'function') {
-        return '';
-    }
-
-    try {
-        return await projectApi.getLastActiveProjectId() ?? '';
-    } catch (error) {
-        console.warn('Failed to read the last active project id:', error);
-        return '';
-    }
-}
-
-async function listStartupProjects(projectApi) {
-    if (typeof projectApi?.listProjects !== 'function') {
-        return [];
-    }
-
-    try {
-        return await projectApi.listProjects();
-    } catch (error) {
-        console.warn('Failed to list startup projects:', error);
-        return [];
-    }
 }
 
 async function loadProjectIntoApp({
@@ -678,51 +634,6 @@ function createProjectActionPort({
             }
         }
     };
-}
-
-async function ensureSession(authService) {
-    const existingSession = await authService.getSession();
-    if (existingSession) {
-        return existingSession;
-    }
-
-    const session = await authService.signInWithMicrosoft();
-    if (!session) {
-        throw new Error('Microsoft sign-in did not return a session.');
-    }
-
-    return session;
-}
-
-async function resolveAuthContext(authService) {
-    if (typeof authService?.getAuthState !== 'function') {
-        return {
-            status: 'authenticated',
-            session: await ensureSession(authService)
-        };
-    }
-
-    const authState = await authService.getAuthState();
-    if (authState?.status === 'authenticated' && authState.session) {
-        return authState;
-    }
-
-    if (authState?.status === 'unauthenticated') {
-        const session = await authService.signInWithMicrosoft();
-        if (!session) {
-            throw new Error('Microsoft sign-in did not return a session.');
-        }
-
-        return {
-            status: 'authenticated',
-            session
-        };
-    }
-
-    const fallbackMessage = authState?.status === 'forbidden'
-        ? 'Access denied.'
-        : 'Authentication failed.';
-    throw new Error(authState?.reason || fallbackMessage);
 }
 
 async function resolveStartupProject({

@@ -490,6 +490,56 @@ function createLocalProjectsService() {
     };
 }
 
+export async function setLastActiveProjectId(projectApi, projectId) {
+    if (typeof projectApi?.setLastActiveProjectId !== 'function') {
+        return;
+    }
+
+    try {
+        await projectApi.setLastActiveProjectId(projectId);
+    } catch (error) {
+        console.warn('Failed to persist the last active project id:', error);
+    }
+}
+
+export async function clearLastActiveProjectId(projectApi, projectId = '') {
+    if (typeof projectApi?.clearLastActiveProjectId !== 'function') {
+        return;
+    }
+
+    try {
+        await projectApi.clearLastActiveProjectId(projectId);
+    } catch (error) {
+        console.warn('Failed to clear the last active project id:', error);
+    }
+}
+
+export async function getLastActiveProjectId(projectApi) {
+    if (typeof projectApi?.getLastActiveProjectId !== 'function') {
+        return '';
+    }
+
+    try {
+        return await projectApi.getLastActiveProjectId() ?? '';
+    } catch (error) {
+        console.warn('Failed to read the last active project id:', error);
+        return '';
+    }
+}
+
+export async function listStartupProjects(projectApi) {
+    if (typeof projectApi?.listProjects !== 'function') {
+        return [];
+    }
+
+    try {
+        return await projectApi.listProjects();
+    } catch (error) {
+        console.warn('Failed to list startup projects:', error);
+        return [];
+    }
+}
+
 export function createProjectsService({ baseUrl = '/api/projects', devBackend = null } = {}) {
     return devBackend === 'local'
         ? createLocalProjectsService()
