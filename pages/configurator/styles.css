@@ -418,7 +418,7 @@ body.jlg-shell {
     gap: 0px;
     padding: 0 0 0 10px;
     justify-content: flex-end;
-    min-height: 50px;
+    min-height: 66px;
 }
 
 .jlg-shell .left-sidebar.collapsed .brand-lockup {
@@ -4711,8 +4711,8 @@ html[data-theme="dark"] .jlg-shell .cam-bookmarks-header {
     }
 
     .jlg-shell .right-sidebar {
-        width: 360px;
-        min-width: 360px;
+        width: 400px;
+        min-width: 400px;
     }
 }
 

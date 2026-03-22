@@ -8,7 +8,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     bootAppShell,
     buildConfiguratorUrl,
-    getCurrentPage
+    getCurrentPage,
+    resolveRuntimeConfig
 } from '../../app.js';
 import {
     buildDuplicateProjectName
@@ -307,6 +308,22 @@ describe('entry routing and bootstrap', () => {
         expect(getCurrentPage(/** @type {Document} */ (/** @type {unknown} */ (createRouteDocument('dashboard'))))).toBeNull();
     });
 
+    it('allows the explicit local backend switch on localhost routes only', () => {
+        expect(resolveRuntimeConfig(/** @type {Location} */ (/** @type {unknown} */ (createLocation(
+            'http://localhost/pages/configurator/index.html?devBackend=local'
+        ))))).toEqual({
+            devBackend: 'local'
+        });
+    });
+
+    it('ignores the explicit local backend switch on non-local hosts', () => {
+        expect(resolveRuntimeConfig(/** @type {Location} */ (/** @type {unknown} */ (createLocation(
+            'https://example.com/pages/configurator/index.html?devBackend=local'
+        ))))).toEqual({
+            devBackend: null
+        });
+    });
+
     it('removes the legacy dashboard route artifacts from the live application path', () => {
         expect(fs.existsSync(path.join(repoRoot, 'pages/dashboard/dashboard.html'))).toBe(false);
         expect(fs.existsSync(path.join(repoRoot, 'pages/dashboard/dashboard.css'))).toBe(false);
@@ -416,6 +433,63 @@ describe('entry routing and bootstrap', () => {
         expect(app.init).toHaveBeenCalledTimes(1);
         expect(app.loadProject).not.toHaveBeenCalled();
         expect(location.replace).not.toHaveBeenCalled();
+    });
+
+    it('prefers structured auth context injection when the auth service exposes auth state', async () => {
+        const document = createRouteDocument('configurator');
+        const location = createLocation(
+            'http://localhost/pages/configurator/index.html?project=project-1&devBackend=local'
+        );
+        const authContext = {
+            status: 'authenticated',
+            reason: '',
+            session: {
+                userId: 'pat@example.com',
+                displayName: 'Pat Example',
+                email: 'pat@example.com',
+                jobTitle: 'Design Technology Specialist II'
+            },
+            capabilities: {
+                canSaveProject: false,
+                canManageProjectOptions: false
+            }
+        };
+        const project = {
+            id: 'project-1',
+            name: 'Arena Study',
+            createdAt: '2026-03-16T00:00:00.000Z',
+            updatedAt: '2026-03-16T00:00:00.000Z',
+            state: { sport: 'Football' }
+        };
+        const authService = {
+            getAuthState: vi.fn().mockResolvedValue(authContext),
+            signInWithMicrosoft: vi.fn()
+        };
+        const projectApi = {
+            getProject: vi.fn().mockResolvedValue(project)
+        };
+        const app = {
+            destroy: vi.fn(),
+            init: vi.fn().mockResolvedValue(),
+            loadProject: vi.fn(),
+            setProjectStatus: vi.fn(),
+            setAuthContext: vi.fn()
+        };
+        const appFactory = vi.fn(() => app);
+
+        await bootAppShell({
+            document,
+            location,
+            runtimeConfig: { devBackend: 'local' },
+            authService,
+            projectApi,
+            appFactory
+        });
+
+        expect(authService.getAuthState).toHaveBeenCalledTimes(1);
+        expect(authService.signInWithMicrosoft).not.toHaveBeenCalled();
+        expect(app.setAuthContext).toHaveBeenCalledWith(authContext);
+        expect(app.init).toHaveBeenCalledTimes(1);
     });
 
     it('redirects without creating the app when the initial project preload fails', async () => {

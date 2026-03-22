@@ -1,9 +1,9 @@
 import {
+    cloneAuthContext,
     buildProjectChromeSnapshot,
     buildProjectSaveRequest,
     cloneProjectMetadata,
     cloneProjectStateDocument,
-    cloneSessionDto,
     deriveProjectNameFromSport,
     getActiveProjectOption,
     normalizeProjectStateDocument,
@@ -31,7 +31,7 @@ export class ProjectShellController {
         this._onStatusChanged = typeof config.onStatusChanged === 'function'
             ? config.onStatusChanged
             : null;
-        this._session = null;
+        this._authContext = cloneAuthContext();
         this._projectMetadata = cloneProjectMetadata();
         this._projectStateDocument = normalizeProjectStateDocument();
         this._projectStatus = normalizeProjectStatus();
@@ -49,7 +49,14 @@ export class ProjectShellController {
     }
 
     setSession(session) {
-        this._session = cloneSessionDto(session);
+        this.setAuthContext({
+            status: session ? 'authenticated' : 'unauthenticated',
+            session
+        });
+    }
+
+    setAuthContext(authContext = null) {
+        this._authContext = cloneAuthContext(authContext);
         this.refreshProjectChrome();
     }
 
@@ -84,7 +91,7 @@ export class ProjectShellController {
             ...buildProjectChromeSnapshot({
                 name: this._projectMetadata.name || deriveProjectNameFromSport(fallbackSport),
                 projectMetadata: this._projectMetadata,
-                session: this._session
+                authContext: this._authContext
             }),
             activeOptionId: optionChrome.activeOptionId,
             options: optionChrome.items.map((item) => ({
@@ -102,7 +109,10 @@ export class ProjectShellController {
     getProjectOptionChrome() {
         const projectStateDocument = normalizeProjectStateDocument(this._projectStateDocument);
         const activeOption = getActiveProjectOption(projectStateDocument);
-        const canPersist = Boolean(this._projectMetadata.id && this._session);
+        const authContext = cloneAuthContext(this._authContext);
+        const canManageProjectOptions = Boolean(
+            this._projectMetadata.id && authContext.capabilities.canManageProjectOptions
+        );
 
         return {
             activeOptionId: activeOption?.id ?? '',
@@ -115,9 +125,9 @@ export class ProjectShellController {
                 isActive: option.id === projectStateDocument.activeOptionId,
                 canDelete: projectStateDocument.options.length > 1
             })),
-            canCreate: canPersist,
-            canManage: canPersist && projectStateDocument.options.length > 0,
-            canDelete: canPersist && projectStateDocument.options.length > 1
+            canCreate: canManageProjectOptions,
+            canManage: canManageProjectOptions && projectStateDocument.options.length > 0,
+            canDelete: canManageProjectOptions && projectStateDocument.options.length > 1
         };
     }
 
@@ -135,7 +145,8 @@ export class ProjectShellController {
 
         return buildProjectSaveRequest({
             name,
-            state: cloneProjectStateDocument(projectState)
+            state: cloneProjectStateDocument(projectState),
+            projectMetadata: this._projectMetadata
         });
     }
 

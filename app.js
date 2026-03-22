@@ -16,15 +16,27 @@ import {
 } from './state/project.js';
 import { SeatingBowlApp } from './ui/app.js';
 
-function normalizeDevBackend(value) {
-    return value === 'local' ? 'local' : null;
+function isLocalDevelopmentHost(location = window.location) {
+    const url = new URL(location.href);
+    const hostname = url.hostname.toLowerCase();
+    return url.protocol === 'file:'
+        || hostname === 'localhost'
+        || hostname === '127.0.0.1'
+        || hostname === '::1'
+        || hostname === '[::1]';
+}
+
+function normalizeDevBackend(value, location = window.location) {
+    return value === 'local' && isLocalDevelopmentHost(location)
+        ? 'local'
+        : null;
 }
 
 export function resolveRuntimeConfig(location = window.location) {
     const url = new URL(location.href);
 
     return {
-        devBackend: normalizeDevBackend(url.searchParams.get('devBackend'))
+        devBackend: normalizeDevBackend(url.searchParams.get('devBackend'), location)
     };
 }
 
@@ -507,6 +519,37 @@ async function ensureSession(authService) {
     return session;
 }
 
+async function resolveAuthContext(authService) {
+    if (typeof authService?.getAuthState !== 'function') {
+        return {
+            status: 'authenticated',
+            session: await ensureSession(authService)
+        };
+    }
+
+    const authState = await authService.getAuthState();
+    if (authState?.status === 'authenticated' && authState.session) {
+        return authState;
+    }
+
+    if (authState?.status === 'unauthenticated') {
+        const session = await authService.signInWithMicrosoft();
+        if (!session) {
+            throw new Error('Microsoft sign-in did not return a session.');
+        }
+
+        return {
+            status: 'authenticated',
+            session
+        };
+    }
+
+    const fallbackMessage = authState?.status === 'forbidden'
+        ? 'Access denied.'
+        : 'Authentication failed.';
+    throw new Error(authState?.reason || fallbackMessage);
+}
+
 async function ensureProjectId(projectApi, runtimeConfig, location) {
     const projectId = new URLSearchParams(location.search).get('project');
     if (projectId) {
@@ -533,7 +576,7 @@ export async function bootConfiguratorPage(runtimeConfig, authService, projectAp
             : globalThis.setTimeout.bind(globalThis));
     const appFactory = options.appFactory ?? ((appOptions) => new SeatingBowlApp(appOptions));
 
-    const session = await ensureSession(authService);
+    const authContext = await resolveAuthContext(authService);
     const projectId = await ensureProjectId(projectApi, runtimeConfig, location);
     if (!projectId) {
         return;
@@ -560,7 +603,11 @@ export async function bootConfiguratorPage(runtimeConfig, authService, projectAp
         history
     });
     app = appFactory({ projectActions, document: doc, initialProject });
-    app.setSession(session);
+    if (typeof app.setAuthContext === 'function') {
+        app.setAuthContext(authContext);
+    } else {
+        app.setSession(authContext.session);
+    }
     await app.init();
 }
 

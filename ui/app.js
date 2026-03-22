@@ -163,8 +163,15 @@ export class SeatingBowlApp {
         this._projectSaveBusy = false;
     }
 
+    setAuthContext(authContext) {
+        this.projectShell.setAuthContext(authContext);
+    }
+
     setSession(session) {
-        this.projectShell.setSession(session);
+        this.setAuthContext({
+            status: session ? 'authenticated' : 'unauthenticated',
+            session
+        });
     }
 
     setProjectMetadata(project = null) {

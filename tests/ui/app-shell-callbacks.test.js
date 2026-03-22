@@ -6,6 +6,19 @@ import * as statsPanelModule from '../../ui/stats-panel.js';
 import * as fieldRendererModule from '../../viz/field-renderer.js';
 import * as profileRendererModule from '../../viz/profile-renderer.js';
 
+function createExpectedCapabilities(value) {
+    return {
+        canCreateProject: value,
+        canListProjects: value,
+        canOpenProject: value,
+        canRenameProject: value,
+        canDuplicateProject: value,
+        canDeleteProject: value,
+        canSaveProject: value,
+        canManageProjectOptions: value
+    };
+}
+
 afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -68,7 +81,9 @@ describe('SeatingBowlApp shell callbacks', () => {
         const lastUpdate = chromeUpdates.at(-1);
         expect(lastUpdate).toMatchObject({
             name: 'Soccer Study',
+            authStatus: 'authenticated',
             canSave: true,
+            capabilities: createExpectedCapabilities(true),
             metadata: { id: 'project-1' },
             session: { displayName: 'Pat Example' }
         });
@@ -89,6 +104,9 @@ describe('SeatingBowlApp shell callbacks', () => {
                 createdAt: '',
                 updatedAt: ''
             },
+            authStatus: 'unauthenticated',
+            authReason: '',
+            capabilities: createExpectedCapabilities(false),
             session: null,
             canSave: false,
             activeOptionId: 'option-1',
@@ -127,7 +145,9 @@ describe('SeatingBowlApp shell callbacks', () => {
 
         expect(chrome).toMatchObject({
             name: 'Custom Study',
+            authStatus: 'authenticated',
             metadata: { id: 'project-1', name: 'Custom Study' },
+            capabilities: createExpectedCapabilities(true),
             session: { displayName: 'Pat Example' },
             canSave: true
         });
@@ -155,6 +175,43 @@ describe('SeatingBowlApp shell callbacks', () => {
             { message: 'Project persistence ready', tone: 'default' },
             { message: 'Saved project', tone: 'success' }
         ]);
+    });
+
+    it('allows explicit auth context updates without requiring session-only wiring', () => {
+        const app = new SeatingBowlApp();
+
+        app.setAuthContext({
+            status: 'authenticated',
+            reason: '',
+            session: {
+                userId: 'user-1',
+                displayName: 'Pat Example',
+                email: 'pat@example.com'
+            },
+            capabilities: {
+                canSaveProject: false,
+                canManageProjectOptions: false
+            }
+        });
+        app.setProjectMetadata({
+            id: 'project-1',
+            name: 'Arena Study',
+            createdAt: '2026-03-14T00:00:00.000Z',
+            updatedAt: '2026-03-14T01:00:00.000Z'
+        });
+
+        expect(app.getProjectChrome()).toMatchObject({
+            authStatus: 'authenticated',
+            canSave: false,
+            canCreateOption: false,
+            canManageOptions: false,
+            canDeleteOption: false,
+            capabilities: {
+                ...createExpectedCapabilities(true),
+                canSaveProject: false,
+                canManageProjectOptions: false
+            }
+        });
     });
 
     it('routes project chrome, status, and save-busy updates through the editor shell API', () => {

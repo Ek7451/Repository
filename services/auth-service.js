@@ -7,6 +7,17 @@ const LOCAL_DEV_MICROSOFT_SESSION = Object.freeze({
     email: 'pat@example.com',
     jobTitle: LOCAL_DEV_JOB_TITLE
 });
+const AUTH_STATUS_VALUES = new Set(['authenticated', 'unauthenticated', 'forbidden', 'error']);
+const AUTH_CAPABILITY_KEYS = [
+    'canCreateProject',
+    'canListProjects',
+    'canOpenProject',
+    'canRenameProject',
+    'canDuplicateProject',
+    'canDeleteProject',
+    'canSaveProject',
+    'canManageProjectOptions'
+];
 
 function getBrowserStorage() {
     try {
@@ -42,6 +53,86 @@ function normalizeSession(rawSession) {
     }
 
     return session;
+}
+
+function normalizeAuthStatus(status, fallback = 'unauthenticated') {
+    const normalizedFallback = AUTH_STATUS_VALUES.has(fallback) ? fallback : 'unauthenticated';
+    const normalizedStatus = typeof status === 'string' ? status.trim() : '';
+    return AUTH_STATUS_VALUES.has(normalizedStatus) ? normalizedStatus : normalizedFallback;
+}
+
+function createDefaultCapabilities({ authenticated = false } = {}) {
+    const isAuthenticated = Boolean(authenticated);
+    return {
+        canCreateProject: isAuthenticated,
+        canListProjects: isAuthenticated,
+        canOpenProject: isAuthenticated,
+        canRenameProject: isAuthenticated,
+        canDuplicateProject: isAuthenticated,
+        canDeleteProject: isAuthenticated,
+        canSaveProject: isAuthenticated,
+        canManageProjectOptions: isAuthenticated
+    };
+}
+
+function normalizeCapabilities(rawCapabilities = null, { authenticated = false } = {}) {
+    const capabilities = createDefaultCapabilities({ authenticated });
+
+    if (!rawCapabilities || typeof rawCapabilities !== 'object') {
+        return capabilities;
+    }
+
+    AUTH_CAPABILITY_KEYS.forEach((key) => {
+        if (typeof rawCapabilities[key] === 'boolean') {
+            capabilities[key] = rawCapabilities[key];
+        }
+    });
+
+    return capabilities;
+}
+
+function buildAuthState({ status = 'unauthenticated', session = null, capabilities = null, reason = '' } = {}) {
+    const normalizedSession = normalizeSession(session);
+    const fallbackStatus = normalizedSession ? 'authenticated' : 'unauthenticated';
+    const normalizedStatus = normalizeAuthStatus(status, fallbackStatus);
+    const resolvedStatus = normalizedStatus === 'authenticated' && !normalizedSession
+        ? 'unauthenticated'
+        : normalizedStatus;
+
+    return {
+        status: resolvedStatus,
+        reason: typeof reason === 'string' ? reason.trim() : '',
+        session: normalizedSession,
+        capabilities: normalizeCapabilities(capabilities, {
+            authenticated: resolvedStatus === 'authenticated'
+        })
+    };
+}
+
+function extractAuthStatePayload(payload = null, fallbackStatus = 'authenticated') {
+    const authPayload = payload?.auth && typeof payload.auth === 'object'
+        ? payload.auth
+        : null;
+    const source = authPayload ?? payload;
+    const session = source?.session ?? payload?.session ?? null;
+    const capabilities = source?.capabilities ?? payload?.capabilities ?? null;
+    const reason = source?.reason ?? payload?.reason ?? payload?.error ?? '';
+    const status = source?.status ?? payload?.status ?? fallbackStatus;
+
+    return buildAuthState({
+        status,
+        session,
+        capabilities,
+        reason
+    });
+}
+
+async function readJsonPayload(response) {
+    try {
+        return await response.json();
+    } catch {
+        return null;
+    }
 }
 
 async function parseResponse(response) {
@@ -115,26 +206,36 @@ function buildLocalMicrosoftSession() {
 }
 
 function createApiAuthService({ baseUrl }) {
-    return {
-        async getSession() {
-            const response = await fetch(`${baseUrl}/session`, {
-                credentials: 'same-origin',
-                headers: {
-                    Accept: 'application/json'
-                }
+    async function getAuthState() {
+        const response = await fetch(`${baseUrl}/session`, {
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json'
+            }
+        });
+
+        if (response.status === 401) {
+            return buildAuthState({
+                status: 'unauthenticated'
             });
+        }
 
-            if (response.status === 401) {
-                return null;
-            }
+        if (response.status === 403) {
+            return extractAuthStatePayload(await readJsonPayload(response), 'forbidden');
+        }
 
-            const payload = await parseResponse(response);
-            const session = normalizeSession(payload?.session);
-            if (!session) {
-                throw new Error('Session payload was invalid.');
-            }
+        const payload = await parseResponse(response);
+        return extractAuthStatePayload(payload, 'authenticated');
+    }
 
-            return session;
+    return {
+        async getAuthState() {
+            return getAuthState();
+        },
+
+        async getSession() {
+            const authState = await getAuthState();
+            return authState.session;
         },
 
         async signIn(credentials) {
@@ -177,9 +278,22 @@ function createApiAuthService({ baseUrl }) {
 }
 
 function createLocalAuthService() {
+    async function getAuthState() {
+        const session = readLocalSession();
+        return buildAuthState({
+            status: session ? 'authenticated' : 'unauthenticated',
+            session
+        });
+    }
+
     return {
+        async getAuthState() {
+            return getAuthState();
+        },
+
         async getSession() {
-            return readLocalSession();
+            const authState = await getAuthState();
+            return authState.session;
         },
 
         async signIn(credentials) {

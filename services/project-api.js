@@ -13,6 +13,44 @@ function cloneJson(value) {
     return JSON.parse(JSON.stringify(value ?? null));
 }
 
+function normalizeOwnerId(value) {
+    return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeEmail(value) {
+    return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function normalizeProjectRevision(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+
+    const normalizedValue = typeof value === 'string' ? value.trim() : '';
+    return normalizedValue || null;
+}
+
+function cloneProjectAccess(access = null) {
+    return access && typeof access === 'object'
+        ? cloneJson(access)
+        : null;
+}
+
+function resolveSessionOwnerId(session) {
+    const userId = normalizeOwnerId(session?.userId);
+    const email = normalizeEmail(session?.email);
+    return userId || email;
+}
+
+function matchesProjectOwner(project, session) {
+    const ownerId = normalizeOwnerId(project?.ownerId);
+    if (!ownerId) return false;
+
+    const sessionOwnerId = resolveSessionOwnerId(session);
+    const sessionEmail = normalizeEmail(session?.email);
+    return ownerId === sessionOwnerId || (Boolean(sessionEmail) && ownerId === sessionEmail);
+}
+
 function readLocalSession() {
     const storage = getBrowserStorage();
     if (!storage) return null;
@@ -37,13 +75,37 @@ function normalizeProjectSummary(rawProject) {
 
     if (!id || !name || !createdAt || !updatedAt) return null;
 
-    return {
+    const summary = {
         id,
         name,
         sport: sport || stateSport || 'Football',
         createdAt,
         updatedAt
     };
+
+    const ownerId = normalizeOwnerId(rawProject.ownerId);
+    const tenantId = typeof rawProject.tenantId === 'string' ? rawProject.tenantId.trim() : '';
+    const lastSyncedAt = typeof rawProject.lastSyncedAt === 'string' ? rawProject.lastSyncedAt : '';
+    const revision = normalizeProjectRevision(rawProject.revision);
+    const access = cloneProjectAccess(rawProject.access);
+
+    if (ownerId) {
+        summary.ownerId = ownerId;
+    }
+    if (tenantId) {
+        summary.tenantId = tenantId;
+    }
+    if (lastSyncedAt) {
+        summary.lastSyncedAt = lastSyncedAt;
+    }
+    if (revision !== null) {
+        summary.revision = revision;
+    }
+    if (access) {
+        summary.access = access;
+    }
+
+    return summary;
 }
 
 function normalizeProjectDetail(rawProject) {
@@ -62,10 +124,17 @@ function normalizeSaveRequest(payload = {}) {
         throw new Error('Project name is required.');
     }
 
-    return {
+    const request = {
         name,
         state: cloneJson(payload.state ?? {})
     };
+
+    const revision = normalizeProjectRevision(payload.revision);
+    if (revision !== null) {
+        request.revision = revision;
+    }
+
+    return request;
 }
 
 async function parseResponse(response) {
@@ -112,7 +181,7 @@ function writeLocalProjects(projects) {
 
 function requireLocalSession() {
     const session = readLocalSession();
-    if (!session?.email) {
+    if (!resolveSessionOwnerId(session)) {
         throw new Error('You must sign in before working with projects.');
     }
     return session;
@@ -222,7 +291,7 @@ function createLocalProjectsService() {
         async listProjects() {
             const session = requireLocalSession();
             return readLocalProjects()
-                .filter((project) => project.ownerId === session.email)
+                .filter((project) => matchesProjectOwner(project, session))
                 .map(normalizeProjectSummary)
                 .filter(Boolean)
                 .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
@@ -231,15 +300,17 @@ function createLocalProjectsService() {
         async createProject(projectRequest) {
             const payload = normalizeSaveRequest(projectRequest);
             const session = requireLocalSession();
+            const ownerId = resolveSessionOwnerId(session);
             const now = new Date().toISOString();
             const projects = readLocalProjects();
             const project = {
                 id: createLocalProjectId(),
-                ownerId: session.email,
+                ownerId,
                 name: payload.name,
                 sport: typeof payload.state?.sport === 'string' ? payload.state.sport : 'Football',
                 createdAt: now,
                 updatedAt: now,
+                revision: 1,
                 state: payload.state
             };
 
@@ -255,7 +326,7 @@ function createLocalProjectsService() {
 
             const session = requireLocalSession();
             const project = readLocalProjects().find((entry) =>
-                entry.id === projectId && entry.ownerId === session.email
+                entry.id === projectId && matchesProjectOwner(entry, session)
             );
             const normalized = normalizeProjectDetail(project);
             if (!normalized) {
@@ -273,7 +344,7 @@ function createLocalProjectsService() {
             const session = requireLocalSession();
             const projects = readLocalProjects();
             const index = projects.findIndex((entry) =>
-                entry.id === projectId && entry.ownerId === session.email
+                entry.id === projectId && matchesProjectOwner(entry, session)
             );
 
             if (index < 0) {
@@ -287,6 +358,9 @@ function createLocalProjectsService() {
                     ? payload.state.sport
                     : projects[index].sport,
                 updatedAt: new Date().toISOString(),
+                revision: typeof projects[index].revision === 'number'
+                    ? projects[index].revision + 1
+                    : 1,
                 state: payload.state
             };
 
@@ -303,7 +377,7 @@ function createLocalProjectsService() {
             const session = requireLocalSession();
             const projects = readLocalProjects();
             const index = projects.findIndex((entry) =>
-                entry.id === projectId && entry.ownerId === session.email
+                entry.id === projectId && matchesProjectOwner(entry, session)
             );
 
             if (index < 0) {

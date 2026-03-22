@@ -2,6 +2,19 @@ import { describe, expect, it } from 'vitest';
 
 import { ProjectShellController } from '../../ui/project-shell-controller.js';
 
+function createExpectedCapabilities(value) {
+    return {
+        canCreateProject: value,
+        canListProjects: value,
+        canOpenProject: value,
+        canRenameProject: value,
+        canDuplicateProject: value,
+        canDeleteProject: value,
+        canSaveProject: value,
+        canManageProjectOptions: value
+    };
+}
+
 describe('ProjectShellController', () => {
     it('stores project shell state and emits immutable chrome snapshots', () => {
         const chromeUpdates = [];
@@ -58,6 +71,9 @@ describe('ProjectShellController', () => {
                 createdAt: '2026-03-15T00:00:00.000Z',
                 updatedAt: '2026-03-15T01:00:00.000Z'
             },
+            authStatus: 'authenticated',
+            authReason: '',
+            capabilities: createExpectedCapabilities(true),
             session: {
                 userId: 'user-1',
                 displayName: 'Pat Example',
@@ -122,6 +138,87 @@ describe('ProjectShellController', () => {
         });
         expect(controller.getProjectChrome().session.displayName).toBe('Pat Example');
         expect(controller.getProjectOptionChrome().items[0].label).toBe('Option 1');
+    });
+
+    it('honors auth capabilities in project chrome and preserves revision in save requests', () => {
+        const controller = new ProjectShellController({
+            getSportName: () => 'Baseball'
+        });
+
+        controller.setAuthContext({
+            status: 'authenticated',
+            session: {
+                userId: 'user-1',
+                displayName: 'Pat Example',
+                email: 'pat@example.com'
+            },
+            capabilities: {
+                canSaveProject: false,
+                canManageProjectOptions: false
+            }
+        });
+        controller.setProjectMetadata({
+            id: 'project-1',
+            name: '   ',
+            createdAt: '2026-03-15T00:00:00.000Z',
+            updatedAt: '2026-03-15T01:00:00.000Z',
+            revision: 'rev-9'
+        });
+        controller.setProjectStateDocument({
+            _projectVersion: 'dashboard-cutover-v1',
+            sport: 'Basketball',
+            activeOptionId: 'option-1',
+            options: [
+                {
+                    id: 'option-1',
+                    name: 'Option 1',
+                    color: '#7aae1a',
+                    createdAt: '2026-03-15T00:00:00.000Z',
+                    updatedAt: '2026-03-15T00:00:00.000Z',
+                    state: { sport: 'Basketball' }
+                }
+            ]
+        });
+
+        expect(controller.getProjectChrome()).toMatchObject({
+            authStatus: 'authenticated',
+            authReason: '',
+            capabilities: {
+                ...createExpectedCapabilities(true),
+                canSaveProject: false,
+                canManageProjectOptions: false
+            },
+            canSave: false,
+            canCreateOption: false,
+            canManageOptions: false,
+            canDeleteOption: false
+        });
+        expect(controller.getProjectOptionChrome()).toMatchObject({
+            canCreate: false,
+            canManage: false,
+            canDelete: false
+        });
+        expect(controller.getProjectSaveRequest()).toEqual({
+            name: 'Baseball Study',
+            state: {
+                _projectVersion: 'dashboard-cutover-v1',
+                sport: 'Basketball',
+                activeOptionId: 'option-1',
+                options: [
+                    {
+                        id: 'option-1',
+                        name: 'Option 1',
+                        color: '#7aae1a',
+                        createdAt: '2026-03-15T00:00:00.000Z',
+                        updatedAt: '2026-03-15T00:00:00.000Z',
+                        state: expect.objectContaining({
+                            sport: 'Basketball'
+                        })
+                    }
+                ]
+            },
+            revision: 'rev-9'
+        });
     });
 
     it('builds save requests from project metadata plus the current project state document', () => {

@@ -139,19 +139,30 @@ async function readJsonBody(request) {
 
 function sanitizeProjectRequest(payload = {}) {
     const name = typeof payload.name === 'string' ? payload.name.trim() : '';
+    const revision = typeof payload.revision === 'number' && Number.isFinite(payload.revision)
+        ? payload.revision
+        : (typeof payload.revision === 'string' && payload.revision.trim()
+            ? payload.revision.trim()
+            : null);
 
     if (!name) {
         throw new Error('Project name is required.');
     }
 
-    return {
+    const request = {
         name,
         state: JSON.parse(JSON.stringify(payload.state ?? {}))
     };
+
+    if (revision !== null) {
+        request.revision = revision;
+    }
+
+    return request;
 }
 
 function toProjectSummary(project) {
-    return {
+    const summary = {
         id: project.id,
         name: project.name,
         sport: typeof project.sport === 'string' && project.sport
@@ -162,6 +173,15 @@ function toProjectSummary(project) {
         createdAt: project.createdAt,
         updatedAt: project.updatedAt
     };
+
+    if (typeof project.ownerId === 'string' && project.ownerId) {
+        summary.ownerId = project.ownerId;
+    }
+    if (typeof project.revision === 'number' && Number.isFinite(project.revision)) {
+        summary.revision = project.revision;
+    }
+
+    return summary;
 }
 
 function toProjectDetail(project) {
@@ -261,6 +281,7 @@ async function handleProjectsRequest(request, response, pathname) {
             sport: typeof payload.state?.sport === 'string' ? payload.state.sport : 'Football',
             createdAt: timestamp,
             updatedAt: timestamp,
+            revision: 1,
             state: payload.state
         };
 
@@ -303,6 +324,9 @@ async function handleProjectsRequest(request, response, pathname) {
         project.sport = typeof payload.state?.sport === 'string' ? payload.state.sport : project.sport;
         project.state = payload.state;
         project.updatedAt = new Date().toISOString();
+        project.revision = typeof project.revision === 'number'
+            ? project.revision + 1
+            : 1;
 
         await writeStore(store);
         sendJson(response, 200, { project: toProjectDetail(project) });

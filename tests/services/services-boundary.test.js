@@ -42,6 +42,19 @@ function createJsonResponse(status, payload) {
     };
 }
 
+function createExpectedCapabilities(value) {
+    return {
+        canCreateProject: value,
+        canListProjects: value,
+        canOpenProject: value,
+        canRenameProject: value,
+        canDuplicateProject: value,
+        canDeleteProject: value,
+        canSaveProject: value,
+        canManageProjectOptions: value
+    };
+}
+
 describe('service DTO boundaries', () => {
     const originalFetch = globalThis.fetch;
     const originalLocalStorage = globalThis.localStorage;
@@ -97,9 +110,21 @@ describe('service DTO boundaries', () => {
             email: 'pat@example.com',
             jobTitle: 'Design Technology Specialist II'
         });
+        await expect(service.getAuthState()).resolves.toEqual({
+            status: 'authenticated',
+            reason: '',
+            session,
+            capabilities: createExpectedCapabilities(true)
+        });
         await expect(service.getSession()).resolves.toEqual(session);
 
         await service.signOut();
+        await expect(service.getAuthState()).resolves.toEqual({
+            status: 'unauthenticated',
+            reason: '',
+            session: null,
+            capabilities: createExpectedCapabilities(false)
+        });
         await expect(service.getSession()).resolves.toBeNull();
     });
 
@@ -114,6 +139,12 @@ describe('service DTO boundaries', () => {
             email: 'pat@example.com',
             jobTitle: 'Design Technology Specialist II'
         });
+        await expect(service.getAuthState()).resolves.toEqual({
+            status: 'authenticated',
+            reason: '',
+            session,
+            capabilities: createExpectedCapabilities(true)
+        });
         await expect(service.getSession()).resolves.toEqual(session);
     });
 
@@ -123,6 +154,45 @@ describe('service DTO boundaries', () => {
         await expect(service.signInWithMicrosoft()).rejects.toThrow(
             'Microsoft SSO is not implemented in this build.'
         );
+    });
+
+    it('returns an unauthenticated auth state on a 401 session response', async () => {
+        /** @type {any} */ (globalThis.fetch).mockResolvedValue(createJsonResponse(401, {
+            error: 'No active session.'
+        }));
+
+        const service = createAuthService();
+
+        await expect(service.getAuthState()).resolves.toEqual({
+            status: 'unauthenticated',
+            reason: '',
+            session: null,
+            capabilities: createExpectedCapabilities(false)
+        });
+    });
+
+    it('preserves forbidden auth status and capability overrides from the auth API', async () => {
+        /** @type {any} */ (globalThis.fetch).mockResolvedValue(createJsonResponse(403, {
+            auth: {
+                status: 'forbidden',
+                reason: 'Managed device required.',
+                capabilities: {
+                    canListProjects: true
+                }
+            }
+        }));
+
+        const service = createAuthService();
+
+        await expect(service.getAuthState()).resolves.toEqual({
+            status: 'forbidden',
+            reason: 'Managed device required.',
+            session: null,
+            capabilities: {
+                ...createExpectedCapabilities(false),
+                canListProjects: true
+            }
+        });
     });
 
     it('accepts optional profile fields from the auth API without changing the required contract', async () => {
@@ -138,6 +208,18 @@ describe('service DTO boundaries', () => {
 
         const service = createAuthService();
 
+        await expect(service.getAuthState()).resolves.toEqual({
+            status: 'authenticated',
+            reason: '',
+            session: {
+                userId: 'user-1',
+                displayName: 'Pat Example',
+                email: 'pat@example.com',
+                jobTitle: 'Design Technology Specialist II',
+                photoUrl: 'https://example.com/avatar.png'
+            },
+            capabilities: createExpectedCapabilities(true)
+        });
         await expect(service.getSession()).resolves.toEqual({
             userId: 'user-1',
             displayName: 'Pat Example',
@@ -147,7 +229,7 @@ describe('service DTO boundaries', () => {
         });
     });
 
-    it('keeps project API mode strict and returns only DTO data from fetch', async () => {
+    it('preserves optional server metadata on project summary DTOs in API mode', async () => {
         /** @type {any} */ (globalThis.fetch).mockResolvedValue(createJsonResponse(200, {
             projects: [
                 {
@@ -156,7 +238,14 @@ describe('service DTO boundaries', () => {
                     sport: 'Football',
                     createdAt: '2026-03-14T12:00:00.000Z',
                     updatedAt: '2026-03-14T15:45:00.000Z',
-                    ownerId: 'ignore-me'
+                    ownerId: 'user-1',
+                    tenantId: 'tenant-1',
+                    lastSyncedAt: '2026-03-14T15:44:00.000Z',
+                    revision: 'rev-7',
+                    access: {
+                        role: 'owner',
+                        canShare: true
+                    }
                 }
             ]
         }));
@@ -168,9 +257,60 @@ describe('service DTO boundaries', () => {
                 name: 'Lower Bowl Study',
                 sport: 'Football',
                 createdAt: '2026-03-14T12:00:00.000Z',
-                updatedAt: '2026-03-14T15:45:00.000Z'
+                updatedAt: '2026-03-14T15:45:00.000Z',
+                ownerId: 'user-1',
+                tenantId: 'tenant-1',
+                lastSyncedAt: '2026-03-14T15:44:00.000Z',
+                revision: 'rev-7',
+                access: {
+                    role: 'owner',
+                    canShare: true
+                }
             }
         ]);
+    });
+
+    it('round-trips revision metadata through API project updates', async () => {
+        /** @type {any} */ (globalThis.fetch).mockResolvedValue(createJsonResponse(200, {
+            project: {
+                id: 'project-1',
+                name: 'Lower Bowl Study',
+                sport: 'Football',
+                createdAt: '2026-03-14T12:00:00.000Z',
+                updatedAt: '2026-03-14T16:00:00.000Z',
+                revision: 4,
+                state: { sport: 'Football' }
+            }
+        }));
+
+        const service = createProjectsService();
+        await expect(service.updateProject('project-1', {
+            name: 'Lower Bowl Study',
+            state: { sport: 'Football' },
+            revision: 3
+        })).resolves.toEqual({
+            id: 'project-1',
+            name: 'Lower Bowl Study',
+            sport: 'Football',
+            createdAt: '2026-03-14T12:00:00.000Z',
+            updatedAt: '2026-03-14T16:00:00.000Z',
+            revision: 4,
+            state: { sport: 'Football' }
+        });
+
+        expect(globalThis.fetch).toHaveBeenCalledWith('/api/projects/project-1', expect.objectContaining({
+            method: 'PUT',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json'
+            }
+        }));
+        expect(JSON.parse(/** @type {any} */ (globalThis.fetch).mock.calls[0][1].body)).toEqual({
+            name: 'Lower Bowl Study',
+            state: { sport: 'Football' },
+            revision: 3
+        });
     });
 
     it('sends delete requests to the project detail endpoint in API mode', async () => {
@@ -254,7 +394,10 @@ describe('service DTO boundaries', () => {
             state: projectStateDocument
         });
 
-        expect(created.name).toBe('Local Study');
+        expect(created).toMatchObject({
+            name: 'Local Study',
+            revision: 1
+        });
         expect(created.state).toEqual(projectStateDocument);
         expect(created.state).not.toBe(projectStateDocument);
 
@@ -299,6 +442,57 @@ describe('service DTO boundaries', () => {
         const rawProjects = JSON.parse(globalThis.localStorage.getItem('sbg-dev-projects') ?? '[]');
         expect(rawProjects).toHaveLength(1);
         expect(rawProjects[0].id).toBe('other-project');
+    });
+
+    it('keys local project ownership off the session principal id while keeping legacy email-owned records readable', async () => {
+        globalThis.localStorage.setItem('sbg-dev-auth-session', JSON.stringify({
+            userId: 'entra-user-1',
+            displayName: 'Pat Example',
+            email: 'pat@example.com'
+        }));
+        const projectsService = createProjectsService({ devBackend: 'local' });
+
+        const created = await projectsService.createProject({
+            name: 'Scoped Study',
+            state: { sport: 'Football' }
+        });
+
+        const rawProjects = JSON.parse(globalThis.localStorage.getItem('sbg-dev-projects') ?? '[]');
+        expect(rawProjects).toHaveLength(1);
+        expect(rawProjects[0].ownerId).toBe('entra-user-1');
+
+        globalThis.localStorage.setItem('sbg-dev-projects', JSON.stringify([
+            {
+                id: 'legacy-project',
+                ownerId: 'pat@example.com',
+                name: 'Legacy Study',
+                sport: 'Soccer',
+                createdAt: '2026-03-15T00:00:00.000Z',
+                updatedAt: '2026-03-15T00:00:00.000Z',
+                state: { sport: 'Soccer' }
+            },
+            {
+                id: 'other-project',
+                ownerId: 'other@example.com',
+                name: 'Other Study',
+                sport: 'Baseball',
+                createdAt: '2026-03-15T01:00:00.000Z',
+                updatedAt: '2026-03-15T01:00:00.000Z',
+                state: { sport: 'Baseball' }
+            },
+            ...rawProjects
+        ]));
+
+        await expect(projectsService.listProjects()).resolves.toEqual(expect.arrayContaining([
+            expect.objectContaining({ id: created.id, name: 'Scoped Study', ownerId: 'entra-user-1' }),
+            expect.objectContaining({ id: 'legacy-project', name: 'Legacy Study' })
+        ]));
+        await expect(projectsService.listProjects()).resolves.toHaveLength(2);
+        await expect(projectsService.getProject('legacy-project')).resolves.toMatchObject({
+            id: 'legacy-project',
+            name: 'Legacy Study'
+        });
+        await expect(projectsService.getProject('other-project')).rejects.toThrow('Project not found.');
     });
 
     it('throws when deleting a missing local project id', async () => {

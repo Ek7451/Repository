@@ -33,3 +33,10 @@
 - `viz/field-renderer.js`, `viz/scene3d.js`, `ui/render-runtime.js`, `ui/stats-view-model.js`, and `export/obj-csv-exporter.js` must consume authoritative analysis outputs only. They may format, label, render, or export summary data, but they must not perform fallback width math, occupancy math, seat counting, or total reductions as competing truth paths.
 - When a legacy scalar field still expects one aisle width, the compatibility value is the authoritative maximum rendered or governing value from core summary data rather than a UI-, viz-, or export-side recomputation.
 - This decision preserves the current layering intent: domain interpretation stays in `core/`, rendering stays in `viz/`, presentation stays in `ui/`, export shaping stays in `export/`, and `ui/app.js` remains unchanged as the thin composition root instead of becoming a coordination point for aisle or egress truth.
+
+## 2026-03-22: Enterprise-Readiness Seams Stay Explicit And Dev-Only
+
+- The explicit local auth and local project backends remain available only as a localhost or file-based development seam. Runtime query switches must not enable local auth or browser-backed storage on non-local hosts.
+- Project DTOs may now carry optional server-owned metadata such as `ownerId`, `tenantId`, `lastSyncedAt`, `revision`, and `access`. Those fields stay opaque to `ui/` and are normalized at the service and `state/project.js` seams.
+- Auth flows should move through an auth-context DTO with `status`, `reason`, `session`, and capability flags rather than treating “session exists” as the only runtime state.
+- The Employee Strip continues to consume session/profile DTO fields like `displayName`, `email`, `jobTitle`, and `photoUrl`. Provider-specific identity behavior should stay behind the auth service boundary, not in UI rendering code.

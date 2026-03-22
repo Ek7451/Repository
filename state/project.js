@@ -10,6 +10,17 @@ const OPTION_COLOR_PALETTE = [
     '#d1433d',
     '#7c3aed'
 ];
+const AUTH_STATUS_VALUES = new Set(['authenticated', 'unauthenticated', 'forbidden', 'error']);
+const PROJECT_CAPABILITY_KEYS = [
+    'canCreateProject',
+    'canListProjects',
+    'canOpenProject',
+    'canRenameProject',
+    'canDuplicateProject',
+    'canDeleteProject',
+    'canSaveProject',
+    'canManageProjectOptions'
+];
 
 function cloneJson(value) {
     return JSON.parse(JSON.stringify(value ?? null));
@@ -19,6 +30,21 @@ function normalizeString(value, fallback = '') {
     return typeof value === 'string' && value.trim()
         ? value.trim()
         : fallback;
+}
+
+function normalizeProjectRevision(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+
+    const normalizedValue = normalizeString(value);
+    return normalizedValue || null;
+}
+
+function cloneProjectAccess(access = null) {
+    return access && typeof access === 'object'
+        ? cloneJson(access)
+        : null;
 }
 
 function resolveTimestamp(value = '', fallback = '') {
@@ -176,13 +202,73 @@ export function normalizeProjectStatus(message, tone = 'default') {
     };
 }
 
-export function cloneProjectMetadata(project = null) {
+export function normalizeAuthStatus(status, fallback = 'unauthenticated') {
+    const normalizedFallback = AUTH_STATUS_VALUES.has(fallback) ? fallback : 'unauthenticated';
+    const normalizedStatus = normalizeString(status, normalizedFallback);
+    return AUTH_STATUS_VALUES.has(normalizedStatus) ? normalizedStatus : normalizedFallback;
+}
+
+function createDefaultProjectCapabilities({ authenticated = false } = {}) {
+    const isAuthenticated = Boolean(authenticated);
     return {
+        canCreateProject: isAuthenticated,
+        canListProjects: isAuthenticated,
+        canOpenProject: isAuthenticated,
+        canRenameProject: isAuthenticated,
+        canDuplicateProject: isAuthenticated,
+        canDeleteProject: isAuthenticated,
+        canSaveProject: isAuthenticated,
+        canManageProjectOptions: isAuthenticated
+    };
+}
+
+export function cloneProjectCapabilities(capabilities = null, { authenticated = false } = {}) {
+    const clone = createDefaultProjectCapabilities({ authenticated });
+
+    if (!capabilities || typeof capabilities !== 'object') {
+        return clone;
+    }
+
+    PROJECT_CAPABILITY_KEYS.forEach((key) => {
+        if (typeof capabilities[key] === 'boolean') {
+            clone[key] = capabilities[key];
+        }
+    });
+
+    return clone;
+}
+
+export function cloneProjectMetadata(project = null) {
+    const metadata = {
         id: typeof project?.id === 'string' ? project.id : null,
         name: typeof project?.name === 'string' ? project.name : '',
         createdAt: typeof project?.createdAt === 'string' ? project.createdAt : '',
         updatedAt: typeof project?.updatedAt === 'string' ? project.updatedAt : ''
     };
+
+    const ownerId = normalizeString(project?.ownerId);
+    const tenantId = normalizeString(project?.tenantId);
+    const lastSyncedAt = normalizeString(project?.lastSyncedAt);
+    const revision = normalizeProjectRevision(project?.revision);
+    const access = cloneProjectAccess(project?.access);
+
+    if (ownerId) {
+        metadata.ownerId = ownerId;
+    }
+    if (tenantId) {
+        metadata.tenantId = tenantId;
+    }
+    if (lastSyncedAt) {
+        metadata.lastSyncedAt = lastSyncedAt;
+    }
+    if (revision !== null) {
+        metadata.revision = revision;
+    }
+    if (access) {
+        metadata.access = access;
+    }
+
+    return metadata;
 }
 
 export function cloneSessionDto(session) {
@@ -208,13 +294,49 @@ export function cloneSessionDto(session) {
     return clone;
 }
 
-export function buildProjectChromeSnapshot({ name = '', projectMetadata = null, session = null } = {}) {
+export function cloneAuthContext(authContext = null) {
+    const hasExplicitSession = Boolean(
+        authContext
+        && typeof authContext === 'object'
+        && Object.prototype.hasOwnProperty.call(authContext, 'session')
+    );
+    const session = cloneSessionDto(hasExplicitSession ? authContext.session : authContext);
+    const fallbackStatus = session ? 'authenticated' : 'unauthenticated';
+    const status = normalizeAuthStatus(authContext?.status, fallbackStatus);
+    const normalizedStatus = status === 'authenticated' && !session
+        ? 'unauthenticated'
+        : status;
+    const reason = normalizeString(authContext?.reason);
+
+    return {
+        status: normalizedStatus,
+        reason,
+        session,
+        capabilities: cloneProjectCapabilities(authContext?.capabilities, {
+            authenticated: normalizedStatus === 'authenticated'
+        })
+    };
+}
+
+export function buildProjectChromeSnapshot({
+    name = '',
+    projectMetadata = null,
+    authContext = null,
+    session = null
+} = {}) {
     const metadata = cloneProjectMetadata(projectMetadata);
+    const normalizedAuthContext = authContext
+        ? cloneAuthContext(authContext)
+        : cloneAuthContext(session ? { status: 'authenticated', session } : null);
+
     return {
         name: typeof name === 'string' ? name.trim() : '',
         metadata,
-        session: cloneSessionDto(session),
-        canSave: Boolean(metadata.id && session)
+        authStatus: normalizedAuthContext.status,
+        authReason: normalizedAuthContext.reason,
+        capabilities: normalizedAuthContext.capabilities,
+        session: normalizedAuthContext.session,
+        canSave: Boolean(metadata.id && normalizedAuthContext.capabilities.canSaveProject)
     };
 }
 
@@ -495,11 +617,18 @@ export function buildProjectLoadSnapshot(project = null, fallbackState = null) {
     };
 }
 
-export function buildProjectSaveRequest({ name = '', state = {} } = {}) {
-    return {
+export function buildProjectSaveRequest({ name = '', state = {}, projectMetadata = null } = {}) {
+    const request = {
         name: normalizeProjectName(name),
         state: cloneJson(state ?? {}) ?? {}
     };
+
+    const revision = normalizeProjectRevision(projectMetadata?.revision);
+    if (revision !== null) {
+        request.revision = revision;
+    }
+
+    return request;
 }
 
 export function buildDefaultProjectCreateRequest(project = {}) {

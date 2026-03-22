@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
     buildDuplicateProjectName,
     buildProjectChromeSnapshot,
+    buildProjectSaveRequest,
     buildUntitledProjectCreateRequest,
+    cloneAuthContext,
+    cloneProjectMetadata,
     cloneSessionDto,
     createDefaultProjectStateDocument,
     createProjectOption,
@@ -16,6 +19,19 @@ import {
     selectProjectOption,
     stageActiveProjectOptionState
 } from '../../state/project.js';
+
+function createExpectedCapabilities(value) {
+    return {
+        canCreateProject: value,
+        canListProjects: value,
+        canOpenProject: value,
+        canRenameProject: value,
+        canDuplicateProject: value,
+        canDeleteProject: value,
+        canSaveProject: value,
+        canManageProjectOptions: value
+    };
+}
 
 describe('project state helpers', () => {
     it('derives a study name from the active sport', () => {
@@ -107,6 +123,102 @@ describe('project state helpers', () => {
             email: 'pat@example.com',
             jobTitle: 'Design Technology Specialist II',
             photoUrl: 'https://example.com/avatar.png'
+        });
+        expect(chrome).toMatchObject({
+            authStatus: 'authenticated',
+            authReason: '',
+            capabilities: createExpectedCapabilities(true),
+            canSave: true
+        });
+    });
+
+    it('preserves optional enterprise metadata in project metadata clones', () => {
+        expect(cloneProjectMetadata({
+            id: 'project-1',
+            name: 'Arena Study',
+            createdAt: '2026-03-15T00:00:00.000Z',
+            updatedAt: '2026-03-15T01:00:00.000Z',
+            ownerId: 'user-1',
+            tenantId: 'tenant-1',
+            lastSyncedAt: '2026-03-15T01:05:00.000Z',
+            revision: 'rev-3',
+            access: {
+                role: 'owner',
+                canShare: true
+            }
+        })).toEqual({
+            id: 'project-1',
+            name: 'Arena Study',
+            createdAt: '2026-03-15T00:00:00.000Z',
+            updatedAt: '2026-03-15T01:00:00.000Z',
+            ownerId: 'user-1',
+            tenantId: 'tenant-1',
+            lastSyncedAt: '2026-03-15T01:05:00.000Z',
+            revision: 'rev-3',
+            access: {
+                role: 'owner',
+                canShare: true
+            }
+        });
+    });
+
+    it('clones auth context defaults and preserves capability overrides', () => {
+        expect(cloneAuthContext()).toEqual({
+            status: 'unauthenticated',
+            reason: '',
+            session: null,
+            capabilities: createExpectedCapabilities(false)
+        });
+
+        expect(cloneAuthContext({
+            status: 'unauthenticated',
+            reason: '',
+            session: null
+        })).toEqual({
+            status: 'unauthenticated',
+            reason: '',
+            session: null,
+            capabilities: createExpectedCapabilities(false)
+        });
+
+        expect(cloneAuthContext({
+            status: 'authenticated',
+            session: {
+                userId: 'user-1',
+                displayName: 'Pat Example',
+                email: 'pat@example.com'
+            },
+            capabilities: {
+                canSaveProject: false,
+                canManageProjectOptions: false
+            }
+        })).toEqual({
+            status: 'authenticated',
+            reason: '',
+            session: {
+                userId: 'user-1',
+                displayName: 'Pat Example',
+                email: 'pat@example.com'
+            },
+            capabilities: {
+                ...createExpectedCapabilities(true),
+                canSaveProject: false,
+                canManageProjectOptions: false
+            }
+        });
+    });
+
+    it('includes revision metadata when building save requests', () => {
+        expect(buildProjectSaveRequest({
+            name: '  Arena Study  ',
+            state: { sport: 'Soccer' },
+            projectMetadata: {
+                revision: 'rev-2'
+            }
+        })).toEqual({
+            name: 'Arena Study',
+            state: { sport: 'Soccer' },
+            revision: 'rev-2'
         });
     });
 
