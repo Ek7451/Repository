@@ -185,10 +185,10 @@ function getTierPlanColors(tierIdx) {
 
 const LABEL_FONT_FAMILY = 'Manrope, Inter, system-ui, sans-serif';
 const SECTION_LABEL_MIN_SCALE = 0.5;     // px/ft, effectively always visible at normal extents
-const ROW_SEATCOUNT_MIN_SCALE = 6.0;     // px/ft, tuned to show near close-up screenshot zoom
+const ROW_SEATCOUNT_MIN_SCALE = 4.5;     // px/ft, tuned to show near close-up screenshot zoom
 const SECTION_OCC_MIN_SCALE = 3.0;       // px/ft, kept aligned with row seat counts by default
-const AISLE_OCC_MIN_SCALE = 6.0;         // px/ft, kept aligned with row seat counts by default
-const AISLE_WIDTH_MIN_SCALE = 6.0;       // px/ft, kept aligned with row seat counts by default
+const AISLE_OCC_MIN_SCALE = 4.5;         // px/ft, kept aligned with row seat counts by default
+const AISLE_WIDTH_MIN_SCALE = 4.5;       // px/ft, kept aligned with row seat counts by default
 // Target sizing: ~40% larger than original labels (not 2x).
 const ROW_SEATCOUNT_LABEL_FONT_PX = 11.2;   // original 8
 const SECTION_LABEL_FONT_PX_ZOOMED_OUT = 9.5;   // ~5% smaller than the prior full-extent size
@@ -1617,10 +1617,12 @@ export class FieldRenderer {
     _getBounds(template, runoff, solvers, visibility, bowlConfig = null, offsetCorrection = 0) {
         // Start with field bounds
         const shape = template.shape;
+        let bounds = null;
         let maxX, maxY;
         if (shape === 'arc') {
-            const r = (template.field_radius || 0) + runoff;
-            maxX = r; maxY = r;
+            // Baseball arc fields are rendered from home plate, not from a
+            // symmetric center point, so fit to the actual drawn geometry.
+            bounds = this._computeSegmentBounds(buildFieldGeometrySegments(template, runoff) || []);
         } else if (shape === 'oval') {
             maxX = (template.straight_length || 0) / 2 + runoff;
             maxY = (template.field_width || 0) / 2 + runoff;
@@ -1629,7 +1631,9 @@ export class FieldRenderer {
             maxY = (template.field_width || 0) / 2 + runoff;
         }
 
-        let bounds = { minX: -maxX, maxX, minY: -maxY, maxY };
+        if (!bounds) {
+            bounds = { minX: -maxX, maxX, minY: -maxY, maxY };
+        }
 
         // Expand for seating — include full bowl perimeter in all directions
         if (solvers && visibility && visibility.showSeating) {

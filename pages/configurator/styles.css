@@ -75,6 +75,7 @@
     --switch-track-active-bg: #0f1113;
     --switch-track-active-border: #0f1113;
     --switch-thumb-bg: #ffffff;
+    --project-option-plus-color: #2c3239;
     --accordion-header-bg: #fafafa;
     --accordion-header-hover-bg: #f0f2ea;
     --accordion-header-border: #e4e4e7;
@@ -1500,7 +1501,7 @@ body.jlg-shell {
     align-items: center;
     justify-content: center;
     width: 16px;
-    color: #806f6f;
+    color: var(--project-option-plus-color);
     font-size: 16px;
     font-weight: 700;
     line-height: 1;
@@ -3697,6 +3698,7 @@ html[data-theme="dark"] {
     --bg-tertiary: #0f151d;
     --border-color: #2b3542;
     --border-light: #354253;
+    --project-option-plus-color: #e8edf2;
     --border-focus: #8fcf33;
     --primary-color: #8fcf33;
     --accent-blue: #93b5e8;

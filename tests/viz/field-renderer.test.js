@@ -489,6 +489,23 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(bounds.maxY).toBeCloseTo(92);
     });
 
+    it('fits baseball plan extents to the rendered arc geometry instead of a full square radius box', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const template = {
+            shape: 'arc',
+            field_radius: 325,
+            arc_angle: 90,
+            runoff: 60
+        };
+
+        const expectedBounds = renderer._computeSegmentBounds(buildFieldGeometrySegments(template, 60));
+        const bounds = renderer._getBounds(template, 60, null, null, null, 0);
+
+        expect(bounds).toEqual(expectedBounds);
+        expect(bounds.minY).toBeCloseTo(0);
+        expect(bounds.maxY).toBeCloseTo(385);
+    });
+
     it('fits plan extents against the visible panel frame instead of the dock-reserved canvas area', () => {
         const canvas = createMockCanvas({ width: 1124, height: 808 });
         const renderer = new FieldRenderer(/** @type {any} */ (canvas));
@@ -2082,6 +2099,61 @@ describe('Scene3D interaction guards', () => {
 
         scene._handleMiddlePointerDown({ button: 1, pointerId: 11, clientX: 100, clientY: 120 });
         expect(scene._handleMiddlePointerUp({ button: 1, pointerId: 11 }, 1500)).toBe(true);
+    });
+
+    it('uses combined field and bowl bounds for baseball 3d zoom extents only', async () => {
+        const { Scene3D } = await import('../../viz/scene3d.js');
+        const THREE = await import('../../lib/three.module.js');
+
+        const createScene = (template) => {
+            const scene = Object.create(Scene3D.prototype);
+            scene.THREE = THREE;
+            scene._currentTemplate = template;
+            scene.camera = new THREE.PerspectiveCamera(50, 1, 1, 5000);
+            scene.camera.position.set(450, 280, 450);
+            scene.controls = {
+                target: new THREE.Vector3(0, 0, 0),
+                update: vi.fn()
+            };
+            scene.bowlGroup = new THREE.Group();
+            scene.fieldGroup = new THREE.Group();
+            scene._getViewportSize = () => ({ w: 1200, h: 800 });
+            scene._clearSpectatorView = vi.fn();
+            scene._stabilizeCameraDistance = vi.fn();
+
+            const bowlMesh = /** @type {any} */ (new THREE.Mesh(
+                new THREE.BoxGeometry(200, 120, 200),
+                new THREE.MeshBasicMaterial()
+            ));
+            scene.bowlGroup.add(bowlMesh);
+
+            const fieldMesh = /** @type {any} */ (new THREE.Mesh(
+                new THREE.BoxGeometry(400, 10, 400),
+                new THREE.MeshBasicMaterial()
+            ));
+            fieldMesh.position.set(0, 0, -220);
+            scene.fieldGroup.add(fieldMesh);
+
+            return scene;
+        };
+
+        const baseballScene = createScene({ shape: 'arc' });
+        baseballScene._fitCameraToBowl();
+
+        const baseballBox = new THREE.Box3()
+            .setFromObject(baseballScene.bowlGroup)
+            .union(new THREE.Box3().setFromObject(baseballScene.fieldGroup));
+        const baseballCenter = baseballBox.getCenter(new THREE.Vector3());
+        expect(baseballScene.controls.target.z).toBeCloseTo(baseballCenter.z, 6);
+
+        const rectangleScene = createScene({ shape: 'rectangle' });
+        rectangleScene._fitCameraToBowl();
+
+        const bowlCenter = new THREE.Box3()
+            .setFromObject(rectangleScene.bowlGroup)
+            .getCenter(new THREE.Vector3());
+        expect(rectangleScene.controls.target.z).toBeCloseTo(bowlCenter.z, 6);
+        expect(baseballScene.controls.target.z).toBeLessThan(rectangleScene.controls.target.z);
     });
 
     it('leaves normal camera distances unchanged when stabilizing zoom', async () => {

@@ -79,6 +79,7 @@ const AISLE_POLYGON_OFFSET_FACTOR = -2;
 const AISLE_POLYGON_OFFSET_UNITS = -2;
 const SEAT_DEFAULT_COLOR = '#ffffff';
 const SEAT_HIGHLIGHT_COLOR = '#de850a';
+const SEAT_CLICK_DRAG_PX = 6;
 const SPECTATOR_LOOK_DISTANCE_FT = 120;
 const SPECTATOR_ALT_LOOK_YAW_SPEED = 0.006;
 const SPECTATOR_ALT_LOOK_PITCH_SPEED = 0.004;
@@ -130,6 +131,7 @@ export class Scene3D {
         this.seatGroup = null;
         /** @type {any} */
         this.fieldGroup = null;
+        this._currentTemplate = null;
         this._animId = null;
         this._initialized = false;
         this._cameraAutoFitted = false;
@@ -157,9 +159,14 @@ export class Scene3D {
         /** @type {any} */
         this._selectedSeatRef = null;
         this._spectatorView = null;
+        this._suppressNextSeatClick = false;
+        this._seatPointerState = null;
+        this._seatPointerDownHandler = null;
         this._seatPointerMoveHandler = null;
         this._seatPointerLeaveHandler = null;
         this._seatClickHandler = null;
+        this._seatPointerUpHandler = null;
+        this._seatPointerCancelHandler = null;
         this._spectatorPointerDownHandler = null;
         this._spectatorPointerMoveHandler = null;
         this._spectatorPointerUpHandler = null;
@@ -277,18 +284,24 @@ export class Scene3D {
         this.renderer.domElement.addEventListener('pointerup', this._middlePointerUpHandler);
         this.renderer.domElement.addEventListener('pointercancel', this._middlePointerCancelHandler);
 
+        this._seatPointerDownHandler = (event) => this._handleSeatPointerDown(event);
         this._seatPointerMoveHandler = (event) => this._handleSeatPointerMove(event);
         this._seatPointerLeaveHandler = () => this._clearSeatHover();
         this._seatClickHandler = (event) => this._handleSeatClick(event);
+        this._seatPointerUpHandler = (event) => this._handleSeatPointerUp(event);
+        this._seatPointerCancelHandler = () => this._clearSeatPointerState();
         this._spectatorPointerDownHandler = (event) => this._handleSpectatorPointerDown(event);
         this._spectatorPointerMoveHandler = (event) => this._handleSpectatorPointerMove(event);
         this._spectatorPointerUpHandler = (event) => this._handleSpectatorPointerUp(event);
         this._spectatorPointerCancelHandler = () => this._cancelSpectatorPointerDrag();
         this._spectatorKeyDownHandler = (event) => this._handleSpectatorKeyDown(event);
         this._spectatorKeyUpHandler = (event) => this._handleSpectatorKeyUp(event);
+        this.renderer.domElement.addEventListener('pointerdown', this._seatPointerDownHandler);
         this.renderer.domElement.addEventListener('pointermove', this._seatPointerMoveHandler);
         this.renderer.domElement.addEventListener('pointerleave', this._seatPointerLeaveHandler);
         this.renderer.domElement.addEventListener('click', this._seatClickHandler);
+        this.renderer.domElement.addEventListener('pointerup', this._seatPointerUpHandler);
+        this.renderer.domElement.addEventListener('pointercancel', this._seatPointerCancelHandler);
         this.renderer.domElement.addEventListener('pointerdown', this._spectatorPointerDownHandler);
         this.renderer.domElement.addEventListener('pointermove', this._spectatorPointerMoveHandler);
         this.renderer.domElement.addEventListener('pointerup', this._spectatorPointerUpHandler);
@@ -460,6 +473,7 @@ export class Scene3D {
     updateField(template, customRunoff, focalZ = 0, focalX = 0) {
         if (!this._initialized || !this.THREE) return;
         const THREE = this.THREE;
+        this._currentTemplate = template || null;
 
         // Clear existing field
         while (this.fieldGroup.children.length) {
@@ -535,6 +549,7 @@ export class Scene3D {
     updateBowl(solvers, bowlConfig, template, offsetCorrection = 0, tierAisleLayouts = [], seatPreviewOptions = null) {
         if (!this._initialized || !this.THREE) return;
         const THREE = this.THREE;
+        this._currentTemplate = template || null;
         this._clearSeatHover();
         this._clearSeatSelection();
         this._clearSpectatorView();
@@ -1334,13 +1349,51 @@ export class Scene3D {
         return null;
     }
 
+    _clearSeatPointerState() {
+        this._seatPointerState = null;
+        this._suppressNextSeatClick = false;
+    }
+
+    _handleSeatPointerDown(event) {
+        if (this._spectatorView?.active || !event || event.button !== 0) return;
+        this._suppressNextSeatClick = false;
+        this._seatPointerState = {
+            pointerId: event.pointerId ?? null,
+            startClientX: Number(event.clientX) || 0,
+            startClientY: Number(event.clientY) || 0,
+            dragged: false
+        };
+    }
+
     _handleSeatPointerMove(event) {
+        const seatPointerState = this._seatPointerState;
+        if (seatPointerState) {
+            if (seatPointerState.pointerId === null || event?.pointerId === undefined || seatPointerState.pointerId === event.pointerId) {
+                const dx = (Number(event?.clientX) || 0) - seatPointerState.startClientX;
+                const dy = (Number(event?.clientY) || 0) - seatPointerState.startClientY;
+                if ((dx * dx) + (dy * dy) >= (SEAT_CLICK_DRAG_PX * SEAT_CLICK_DRAG_PX)) {
+                    seatPointerState.dragged = true;
+                }
+            }
+        }
         if (this._spectatorView?.dragging) return;
         this._setSeatHover(this._getSeatPickFromPointerEvent(event));
     }
 
+    _handleSeatPointerUp(event) {
+        const seatPointerState = this._seatPointerState;
+        if (!seatPointerState) return;
+        if (seatPointerState.pointerId !== null && event?.pointerId !== undefined && seatPointerState.pointerId !== event.pointerId) return;
+        this._suppressNextSeatClick = seatPointerState.dragged;
+        this._seatPointerState = null;
+    }
+
     _handleSeatClick(event) {
         if (!event || (event.button !== undefined && event.button !== 0)) return;
+        if (this._suppressNextSeatClick) {
+            this._suppressNextSeatClick = false;
+            return;
+        }
         if (this._spectatorView?.dragging) return;
         if (this._spectatorView?.suppressNextSeatClick) {
             this._spectatorView.suppressNextSeatClick = false;
@@ -1793,12 +1846,30 @@ export class Scene3D {
         return requiredDistance;
     }
 
+    _getZoomExtentsBox() {
+        if (!this.THREE || !this.bowlGroup || this.bowlGroup.children.length === 0) return null;
+
+        const bowlBox = new this.THREE.Box3().setFromObject(this.bowlGroup);
+        if (bowlBox.isEmpty()) return null;
+
+        if (this._currentTemplate?.shape !== 'arc' || !this.fieldGroup || this.fieldGroup.children.length === 0) {
+            return bowlBox;
+        }
+
+        const fieldBox = new this.THREE.Box3().setFromObject(this.fieldGroup);
+        if (fieldBox.isEmpty()) return bowlBox;
+
+        // Baseball is drawn around a home-plate-centered bowl, so fit the
+        // combined rendered geometry instead of the seating box alone.
+        return bowlBox.clone().union(fieldBox);
+    }
+
     _fitCameraToBowl() {
         if (!this.bowlGroup || this.bowlGroup.children.length === 0 || !this.camera || !this.controls) return;
         this._clearSpectatorView();
 
-        const box = new this.THREE.Box3().setFromObject(this.bowlGroup);
-        if (box.isEmpty()) return;
+        const box = this._getZoomExtentsBox();
+        if (!box || box.isEmpty()) return;
 
         const viewportSize = this._getViewportSize();
         const size = box.getSize(new this.THREE.Vector3());
@@ -1890,11 +1961,20 @@ export class Scene3D {
             if (this._seatPointerMoveHandler) {
                 this.renderer.domElement.removeEventListener('pointermove', this._seatPointerMoveHandler);
             }
+            if (this._seatPointerDownHandler) {
+                this.renderer.domElement.removeEventListener('pointerdown', this._seatPointerDownHandler);
+            }
             if (this._seatPointerLeaveHandler) {
                 this.renderer.domElement.removeEventListener('pointerleave', this._seatPointerLeaveHandler);
             }
             if (this._seatClickHandler) {
                 this.renderer.domElement.removeEventListener('click', this._seatClickHandler);
+            }
+            if (this._seatPointerUpHandler) {
+                this.renderer.domElement.removeEventListener('pointerup', this._seatPointerUpHandler);
+            }
+            if (this._seatPointerCancelHandler) {
+                this.renderer.domElement.removeEventListener('pointercancel', this._seatPointerCancelHandler);
             }
             if (this._spectatorPointerDownHandler) {
                 this.renderer.domElement.removeEventListener('pointerdown', this._spectatorPointerDownHandler);
