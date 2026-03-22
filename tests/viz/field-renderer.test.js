@@ -191,6 +191,46 @@ describe('FieldRenderer helper delegation surface', () => {
         });
     });
 
+    it('anchors track oval apexes to the overall field length while runoff grows uniformly from the field edge', () => {
+        const template = {
+            shape: 'oval',
+            straight_length: 580.5,
+            field_width: 303.6,
+            corner_radius: 120
+        };
+
+        const baseSegments = buildFieldGeometrySegments(template, 0);
+        const runoffSegments = buildFieldGeometrySegments(template, 10);
+        const baseRightArc = baseSegments.find((segment) => segment.cmd === 'arc' && segment.x > 0);
+        const runoffRightArc = runoffSegments.find((segment) => segment.cmd === 'arc' && segment.x > 0);
+
+        expect(baseSegments[0]).toEqual({
+            cmd: 'moveTo',
+            x: -138.45,
+            y: 151.8
+        });
+        expect(baseRightArc).toEqual(expect.objectContaining({
+            cmd: 'arc',
+            x: 138.45,
+            y: 0,
+            r: 151.8
+        }));
+        expect(baseRightArc.x + baseRightArc.r).toBeCloseTo(290.25);
+
+        expect(runoffSegments[0]).toEqual({
+            cmd: 'moveTo',
+            x: -138.45,
+            y: 161.8
+        });
+        expect(runoffRightArc).toEqual(expect.objectContaining({
+            cmd: 'arc',
+            x: 138.45,
+            y: 0,
+            r: 161.8
+        }));
+        expect(runoffRightArc.x + runoffRightArc.r).toBeCloseTo(300.25);
+    });
+
     it('draws runoff and field edge beneath seating in plan view', () => {
         const renderer = Object.create(FieldRenderer.prototype);
         const callOrder = [];

@@ -360,8 +360,11 @@ export function buildFieldGeometrySegments(template, extraRunoff = 0) {
     }
 
     if (shape === 'oval') {
-        const halfStraight = (template.straight_length || 0) / 2 - (template.corner_radius || 0) + extraRunoff;
-        const halfW = (template.field_width || 0) / 2 + extraRunoff;
+        const baseHalfWidth = (template.field_width || 0) / 2;
+        const halfW = baseHalfWidth + extraRunoff;
+        // Track templates store the overall apex-to-apex length. The semicircle centers
+        // stay fixed while runoff grows the arc radius uniformly outward.
+        const halfStraight = Math.max(0, ((template.straight_length || 0) / 2) - baseHalfWidth);
 
         addMove(-halfStraight, halfW);
         addLine(halfStraight, halfW);

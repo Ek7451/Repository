@@ -530,6 +530,7 @@
             <div class="sidebar-utility-panel">
                 <div class="sidebar-utility-strip">
                     <div class="view-tabs-note sidebar-beta-note" role="note" aria-label="Beta disclaimer">
+                        <span class="sidebar-beta-version">v0.1</span>
                         <strong>Beta</strong> Results may be inaccurate.
                     </div>
                     <button id="saveProjectBtn" class="btn btn--icon sidebar-save-btn" type="button" title="Save project" aria-label="Save project" disabled>
@@ -1078,14 +1079,18 @@
 
     <template id="resultsMetricCardTemplate">
         <section class="tier-metrics-card">
-            <div class="tier-metrics-header" data-results-card-header></div>
-            <div class="tier-metrics-grid" data-results-card-grid></div>
-            <div class="tier-capacity-check" data-results-card-check></div>
-            <div class="tier-metrics-warning" data-results-card-warning hidden>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"></path>
-                </svg>
-                <span data-results-card-warning-text></span>
+            <div class="tier-metrics-card-header">
+                <div class="tier-metrics-header" data-results-card-header></div>
+            </div>
+            <div class="tier-metrics-card-body">
+                <div class="tier-metrics-grid" data-results-card-grid></div>
+                <div class="tier-capacity-check" data-results-card-check></div>
+                <div class="tier-metrics-warning" data-results-card-warning hidden>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"></path>
+                    </svg>
+                    <span data-results-card-warning-text></span>
+                </div>
             </div>
         </section>
     </template>

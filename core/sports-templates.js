@@ -42,7 +42,7 @@ const SPORTS_TEMPLATES = {
                 seatWidth: 19,
                 minAisle: 48,
                 maxAisle: 66,
-                seatsBetweenAisles: 28,
+                seatsBetweenAisles: 32,
                 egressFactor: 0.2
             },
             tier1: {
@@ -237,7 +237,7 @@ const SPORTS_TEMPLATES = {
             bowl: {
                 type: "Sides",
                 typeOptions: ALL_BOWL_TYPE_OPTIONS,
-                cornerRad: 100,
+                cornerRad: 30,
                 sideLength: 580.5,
                 endLength: 303.6,
                 structuralDepth: 12,

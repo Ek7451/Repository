@@ -606,10 +606,14 @@ export class StatsPanel {
 
             return `
                 <section class="tier-metrics-card tier-${escapeHtml(String(tier.tierNumber))}">
-                    <div class="tier-metrics-header tier-${escapeHtml(String(tier.tierNumber))}">${escapeHtml(`${egress.tierLabel}${egress.headerSuffix}`)}</div>
-                    <div class="tier-metrics-grid">${metricsMarkup}</div>
-                    <div class="tier-metrics-check">${escapeHtml(`Aisle Egress Capacity (per aisle): ${egress.occupantsPerAisleLine} occ x ${egress.egressFactor}"/occ = ${egress.capacityWidth}" Req.${egress.perSideMirrorNote}`)}</div>
-                    ${warningMarkup}
+                    <div class="tier-metrics-card-header">
+                        <div class="tier-metrics-header tier-${escapeHtml(String(tier.tierNumber))}">${escapeHtml(`${egress.tierLabel}${egress.headerSuffix}`)}</div>
+                    </div>
+                    <div class="tier-metrics-card-body">
+                        <div class="tier-metrics-grid">${metricsMarkup}</div>
+                        <div class="tier-metrics-check">${escapeHtml(`Aisle Egress Capacity (per aisle): ${egress.occupantsPerAisleLine} occ x ${egress.egressFactor}"/occ = ${egress.capacityWidth}" Req.${egress.perSideMirrorNote}`)}</div>
+                        ${warningMarkup}
+                    </div>
                 </section>
             `;
         }).join('');
