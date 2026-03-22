@@ -1540,6 +1540,82 @@ describe('aisle layout geometry seam', () => {
         });
     });
 
+    it('stops at the first authoritative compliant U-end solve without overshooting terminal edge aisles', () => {
+        const cases = [
+            {
+                fixture: buildRendererBowlFixture('U-End2', {
+                    width: 102,
+                    length: 200,
+                    radius: 33,
+                    straightAisleMode: 'perpendicular',
+                    chamferAisleMode: 'radial'
+                }),
+                rows: buildTierRows({
+                    count: 25,
+                    startX: 12,
+                    treadDepth: 2.5
+                }),
+                egressParams: {
+                    seatWidthIn: 19,
+                    minAisleWidthIn: 48,
+                    maxAisleWidthIn: 66,
+                    egressFactor: 0.2,
+                    seatsBetweenAisles: 28
+                }
+            },
+            {
+                fixture: buildRendererBowlFixture('U-End1', {
+                    width: 102,
+                    length: 200,
+                    radius: 28,
+                    straightAisleMode: 'perpendicular',
+                    chamferAisleMode: 'radial'
+                }),
+                rows: buildTierRows({
+                    count: 25,
+                    startX: 12,
+                    treadDepth: 2.5
+                }),
+                egressParams: {
+                    seatWidthIn: 19,
+                    minAisleWidthIn: 48,
+                    maxAisleWidthIn: 66,
+                    egressFactor: 0.2,
+                    seatsBetweenAisles: 28
+                }
+            }
+        ];
+
+        cases.forEach(({ fixture, rows, egressParams }) => {
+            const firstCompliantSolve = findFirstCompliantTargetAisleSolve({
+                fixture,
+                rows,
+                egressParams,
+                maxTargetAisles: 40
+            });
+
+            expect(firstCompliantSolve).not.toBeNull();
+            expect(firstCompliantSolve.summary.compliance.isCompliant).toBe(true);
+
+            const tierLayout = buildTierAisleAnalysisForFixture({
+                fixture,
+                rows,
+                egressParams
+            });
+
+            expect(tierLayout.sectionSummary.compliance.isCompliant).toBe(true);
+            expect(tierLayout.targetAisles).toBe(firstCompliantSolve.tierLayout.targetAisles);
+            expect(tierLayout.sectionSummary.actualAisles).toBe(firstCompliantSolve.summary.actualAisles);
+            expect(tierLayout.sectionSummary.tierSeatCount).toBe(firstCompliantSolve.summary.tierSeatCount);
+            expect(tierLayout.sectionSummary.largestSectionOccupancy).toBe(
+                firstCompliantSolve.summary.largestSectionOccupancy
+            );
+            expect(tierLayout.sectionSummary.maxRequiredAisleWidthIn).toBe(
+                firstCompliantSolve.summary.maxRequiredAisleWidthIn
+            );
+        });
+    });
+
     it('does not escalate deterministic full-bowl aisle counts when a tapered 18-aisle solve already meets measured egress', () => {
         const renderer = Object.create(FieldRenderer.prototype);
         const cases = [

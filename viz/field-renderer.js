@@ -60,53 +60,53 @@ const FIELD_TIER_PLAN_COLORS = {
     light: [
         {
             rowBand: 'rgba(80, 85, 80, 0.92)',
-            aisleFill: 'rgba(35, 35, 35, 0.04)',
+            aisleFill: 'rgba(35, 35, 35, 0.8)',
             aisleStroke: 'rgba(35, 35, 35, 0.58)',
             rowOutline: 'rgba(32, 32, 32, 0.5)',
-            frontEdge: 'rgba(53, 53, 53, 0.9)',
-            perimeter: 'rgba(68, 68, 68, 0.7)'
+            frontEdge: 'rgba(80, 80, 80, 0.9)',
+            perimeter: 'rgba(94, 94, 94, 0.7)'
         },
         {
             rowBand: 'rgba(136, 143, 135, 0.94)',
-            aisleFill: 'rgba(111, 117, 110, 0.09)',
+            aisleFill: 'rgba(111, 117, 110, 0.8)',
             aisleStroke: 'rgba(111, 117, 110, 0.66)',
             rowOutline: 'rgba(32, 32, 32, 0.5)',
-            frontEdge: 'rgba(53, 53, 53, 0.9)',
-            perimeter: 'rgba(68, 68, 68, 0.7)'
+            frontEdge: 'rgba(80, 80, 80, 0.9)',
+            perimeter: 'rgba(94, 94, 94, 0.7)'
         },
         {
             rowBand: 'rgba(183, 190, 182, 0.98)',
-            aisleFill: 'rgba(158, 166, 157, 0.14)',
+            aisleFill: 'rgba(158, 166, 157, 0.8)',
             aisleStroke: 'rgba(138, 145, 136, 0.76)',
             rowOutline: 'rgba(32, 32, 32, 0.5)',
-            frontEdge: 'rgba(53, 53, 53, 0.9)',
-            perimeter: 'rgba(68, 68, 68, 0.7)'
+            frontEdge: 'rgba(80, 80, 80, 0.9)',
+            perimeter: 'rgba(94, 94, 94, 0.7)'
         }
     ],
     dark: [
         {
             rowBand: 'rgba(154, 165, 153, 0.68)',
-            aisleFill: 'rgba(198, 208, 195, 0.055)',
+            aisleFill: 'rgba(35, 35, 35, 0.8)',
             aisleStroke: 'rgba(198, 208, 195, 0.22)',
             rowOutline: 'rgba(32, 32, 32, 0.3)',
-            frontEdge: 'rgba(104, 104, 104, 0.37)',
-            perimeter: 'rgba(198, 208, 195, 0.45)'
+            frontEdge: 'rgba(80, 80, 80, 0.9)',
+            perimeter: 'rgba(94, 94, 94, 0.7)'
         },
         {
             rowBand: 'rgba(122, 139, 121, 0.72)',
-            aisleFill: 'rgba(157, 170, 155, 0.075)',
+            aisleFill: 'rgba(111, 117, 110, 0.8)',
             aisleStroke: 'rgba(157, 170, 155, 0.26)',
             rowOutline: 'rgba(32, 32, 32, 0.3)',
-            frontEdge: 'rgba(157, 170, 155, 0.42)',
-            perimeter: 'rgba(157, 170, 155, 0.49)'
+            frontEdge: 'rgba(80, 80, 80, 0.9)',
+            perimeter: 'rgba(94, 94, 94, 0.7)'
         },
         {
             rowBand: 'rgba(103, 116, 101, 0.76)',
-            aisleFill: 'rgba(131, 145, 130, 0.09)',
+            aisleFill: 'rgba(158, 166, 157, 0.8)',
             aisleStroke: 'rgba(131, 145, 130, 0.29)',
             rowOutline: 'rgba(32, 32, 32, 0.3)',
-            frontEdge: 'rgba(131, 145, 130, 0.45)',
-            perimeter: 'rgba(131, 145, 130, 0.52)'
+            frontEdge: 'rgba(80, 80, 80, 0.9)',
+            perimeter: 'rgba(94, 94, 94, 0.7)'
         }
     ]
 };
@@ -910,7 +910,7 @@ export class FieldRenderer {
     constructor(canvas, options = {}) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
-        this.padding = 200;
+        this.padding = 160;
         this._theme = normalizeThemeName(options?.theme);
 
         // Zoom/pan state

@@ -2085,10 +2085,10 @@ function isFixedDeterministicAisle(aisle) {
     return !!aisle?.forced || aisle?.anchorType === 'open_edge_terminal';
 }
 
-function countFixedDeterministicAisles(aisles = []) {
-    return (Array.isArray(aisles) ? aisles : []).reduce((count, aisle) => (
-        count + (isFixedDeterministicAisle(aisle) ? 1 : 0)
-    ), 0);
+function countRequestedDeterministicTargetAisles(perimeterModel, aisles = [], forcedCount = 0) {
+    return Math.max(0, Math.floor(Number(forcedCount) || 0)) + sumIntervalCounts(
+        countDistributedAislesByInterval(perimeterModel, aisles)
+    );
 }
 
 function countDistributedAislesByInterval(perimeterModel, aisles = []) {
@@ -4480,7 +4480,7 @@ export function buildTierAisleAnalysis({
                 previousSeatPressureMetrics = currentSeatMetrics;
                 requestedIntervalCounts = refinement.nextCounts;
                 requestedTargetAisles = Math.max(
-                    countFixedDeterministicAisles(analysis.aisles) + sumIntervalCounts(refinement.nextCounts),
+                    Math.max(0, Number(analysis.forcedCount) || 0) + sumIntervalCounts(refinement.nextCounts),
                     analysis.forcedCount || 0
                 );
                 continue;
@@ -4537,7 +4537,7 @@ export function buildTierAisleAnalysis({
                 previousEgressPressureMetrics = currentEgressMetrics;
                 requestedIntervalCounts = refinement.nextCounts;
                 requestedTargetAisles = Math.max(
-                    countFixedDeterministicAisles(analysis.aisles) + sumIntervalCounts(refinement.nextCounts),
+                    Math.max(0, Number(analysis.forcedCount) || 0) + sumIntervalCounts(refinement.nextCounts),
                     analysis.forcedCount || 0
                 );
                 continue;
@@ -4554,10 +4554,21 @@ export function buildTierAisleAnalysis({
             return analysis;
         }
 
+        const nextDeterministicRequestedTarget = analysis.allocationMode === 'deterministic_perimeter'
+            ? countRequestedDeterministicTargetAisles(
+                perimeterModel,
+                analysis.aisles,
+                analysis.forcedCount
+            ) + 1
+            : 0;
         requestedTargetAisles = Math.max(
             requestedTargetAisles + 1,
-            Math.max(0, Number(analysis.targetAisles) || 0) + 1,
-            (analysis.aisles?.length || 0) + 1
+            analysis.allocationMode === 'deterministic_perimeter'
+                ? nextDeterministicRequestedTarget
+                : Math.max(0, Number(analysis.targetAisles) || 0) + 1,
+            analysis.allocationMode === 'deterministic_perimeter'
+                ? nextDeterministicRequestedTarget
+                : (analysis.aisles?.length || 0) + 1
         );
     }
 
