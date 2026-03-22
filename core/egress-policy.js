@@ -7,6 +7,235 @@ import {
     spanGapToSeatCount
 } from './seat-math.js';
 
+/**
+ * @typedef {{
+ *   minSeats?: number | string,
+ *   maxSeats?: number | string | null,
+ *   requiredSpaces?: number | string,
+ *   requiredLocations?: number | string,
+ *   seatsPerIncrement?: number | string,
+ *   incrementAppliesAfter?: number | string
+ * }} AccessibilityRequirementBandInput
+ * @typedef {{
+ *   wheelchairSpaceBands?: AccessibilityRequirementBandInput[],
+ *   wheelchairLocationBands?: AccessibilityRequirementBandInput[],
+ *   companionSeatsPerWheelchairSpace?: number
+ * }} AccessibilityParams
+ * @typedef {{
+ *   tierIndex?: number,
+ *   tierSeatCount?: number
+ * }} TierSeatCountInput
+ */
+
+function toNonNegativeInteger(value) {
+    return Math.max(0, Math.round(Number(value) || 0));
+}
+
+/**
+ * @param {'requiredSpaces' | 'requiredLocations'} requirementKey
+ * @param {AccessibilityRequirementBandInput[] | undefined} [bands]
+ */
+function normalizeAccessibilityBands(requirementKey, bands = []) {
+    return (Array.isArray(bands) ? bands : [])
+        .map((band, index) => {
+            const minSeats = toNonNegativeInteger(band?.minSeats);
+            const maxSeats = band?.maxSeats === null || band?.maxSeats === undefined || band?.maxSeats === ''
+                ? Number.POSITIVE_INFINITY
+                : Math.max(minSeats, toNonNegativeInteger(band.maxSeats));
+            return {
+                minSeats,
+                maxSeats,
+                requirement: toNonNegativeInteger(band?.[requirementKey]),
+                seatsPerIncrement: toNonNegativeInteger(band?.seatsPerIncrement),
+                incrementAppliesAfter: toNonNegativeInteger(
+                    band?.incrementAppliesAfter ?? (minSeats > 0 ? (minSeats - 1) : 0)
+                ),
+                order: index
+            };
+        })
+        .sort((a, b) => (
+            a.minSeats - b.minSeats
+            || a.maxSeats - b.maxSeats
+            || a.order - b.order
+        ));
+}
+
+/**
+ * @param {{
+ *   seatCount?: number,
+ *   bands?: AccessibilityRequirementBandInput[],
+ *   requirementKey: 'requiredSpaces' | 'requiredLocations'
+ * }} options
+ */
+function computeRequirementFromBands({ seatCount = 0, bands = [], requirementKey }) {
+    const resolvedSeatCount = toNonNegativeInteger(seatCount);
+    if (!(resolvedSeatCount > 0)) return 0;
+
+    const normalizedBands = normalizeAccessibilityBands(requirementKey, bands);
+    for (let index = 0; index < normalizedBands.length; index += 1) {
+        const band = normalizedBands[index];
+        if (resolvedSeatCount < band.minSeats || resolvedSeatCount > band.maxSeats) continue;
+        if (!(band.seatsPerIncrement > 0)) return band.requirement;
+
+        return band.requirement + Math.ceil(
+            Math.max(0, resolvedSeatCount - band.incrementAppliesAfter) / band.seatsPerIncrement
+        );
+    }
+
+    return 0;
+}
+
+/** @param {TierSeatCountInput[] | undefined} [tierSeatCounts] */
+function normalizeTierSeatCounts(tierSeatCounts = []) {
+    return (Array.isArray(tierSeatCounts) ? tierSeatCounts : [])
+        .map((tier, index) => ({
+            tierIndex: Math.max(0, Math.floor(Number(tier?.tierIndex) || index)),
+            tierSeatCount: Math.max(0, Number(tier?.tierSeatCount) || 0)
+        }))
+        .sort((a, b) => a.tierIndex - b.tierIndex);
+}
+
+/** @param {{ seatCount?: number, accessibilityParams?: AccessibilityParams }} [options] */
+export function computeRequiredWheelchairSpaces({
+    seatCount = 0,
+    accessibilityParams = {}
+} = {}) {
+    return computeRequirementFromBands({
+        seatCount,
+        bands: accessibilityParams?.wheelchairSpaceBands,
+        requirementKey: 'requiredSpaces'
+    });
+}
+
+/** @param {{ seatCount?: number, accessibilityParams?: AccessibilityParams }} [options] */
+export function computeRequiredWheelchairLocations({
+    seatCount = 0,
+    accessibilityParams = {}
+} = {}) {
+    return computeRequirementFromBands({
+        seatCount,
+        bands: accessibilityParams?.wheelchairLocationBands,
+        requirementKey: 'requiredLocations'
+    });
+}
+
+/** @param {{ totalRequired?: number, tierSeatCounts?: TierSeatCountInput[] }} [options] */
+export function allocateRequirementByLargestRemainder({
+    totalRequired = 0,
+    tierSeatCounts = []
+} = {}) {
+    const tiers = normalizeTierSeatCounts(tierSeatCounts);
+    const resolvedTotalRequired = toNonNegativeInteger(totalRequired);
+    if (!tiers.length) return [];
+
+    const totalSeatCount = tiers.reduce((sum, tier) => sum + tier.tierSeatCount, 0);
+    if (!(resolvedTotalRequired > 0) || !(totalSeatCount > 0)) {
+        return tiers.map((tier) => ({
+            tierIndex: tier.tierIndex,
+            allocated: 0
+        }));
+    }
+
+    const rawShares = tiers.map((tier) => {
+        const rawShare = (tier.tierSeatCount / totalSeatCount) * resolvedTotalRequired;
+        const floorShare = Math.floor(rawShare);
+        return {
+            tierIndex: tier.tierIndex,
+            tierSeatCount: tier.tierSeatCount,
+            rawShare,
+            floorShare,
+            fractionalShare: rawShare - floorShare
+        };
+    });
+    const allocations = new Map(rawShares.map((share) => [share.tierIndex, share.floorShare]));
+    let remaining = resolvedTotalRequired - rawShares.reduce((sum, share) => sum + share.floorShare, 0);
+
+    const rank = rawShares
+        .filter((share) => share.tierSeatCount > 0)
+        .sort((a, b) => (
+            b.fractionalShare - a.fractionalShare
+            || b.tierSeatCount - a.tierSeatCount
+            || a.tierIndex - b.tierIndex
+        ));
+
+    for (let index = 0; index < remaining; index += 1) {
+        const nextShare = rank[index % rank.length];
+        allocations.set(nextShare.tierIndex, (allocations.get(nextShare.tierIndex) || 0) + 1);
+    }
+
+    return tiers.map((tier) => ({
+        tierIndex: tier.tierIndex,
+        allocated: allocations.get(tier.tierIndex) || 0
+    }));
+}
+
+/** @param {{ tierSeatCounts?: TierSeatCountInput[], accessibilityParams?: AccessibilityParams }} [options] */
+export function buildAccessibilityRequirementSummary({
+    tierSeatCounts = [],
+    accessibilityParams = {}
+} = {}) {
+    const tiers = normalizeTierSeatCounts(tierSeatCounts);
+    const baseSeatCount = tiers.reduce((sum, tier) => sum + tier.tierSeatCount, 0);
+    const companionSeatsPerWheelchairSpace = toNonNegativeInteger(
+        accessibilityParams?.companionSeatsPerWheelchairSpace
+    );
+    const wheelchairSpacesRequired = computeRequiredWheelchairSpaces({
+        seatCount: baseSeatCount,
+        accessibilityParams
+    });
+    const companionSeatsRequired = wheelchairSpacesRequired * companionSeatsPerWheelchairSpace;
+    const wheelchairLocationsRequired = computeRequiredWheelchairLocations({
+        seatCount: baseSeatCount,
+        accessibilityParams
+    });
+
+    const wheelchairAllocations = new Map(
+        allocateRequirementByLargestRemainder({
+            totalRequired: wheelchairSpacesRequired,
+            tierSeatCounts: tiers
+        }).map((entry) => [entry.tierIndex, entry.allocated])
+    );
+    const locationAllocations = new Map(
+        allocateRequirementByLargestRemainder({
+            totalRequired: wheelchairLocationsRequired,
+            tierSeatCounts: tiers
+        }).map((entry) => [entry.tierIndex, entry.allocated])
+    );
+
+    const tierSummaries = tiers.map((tier) => {
+        const allocatedWheelchairSpaces = wheelchairAllocations.get(tier.tierIndex) || 0;
+        const allocatedCompanionSeats = allocatedWheelchairSpaces * companionSeatsPerWheelchairSpace;
+        const allocatedWheelchairLocations = locationAllocations.get(tier.tierIndex) || 0;
+        const accessibilityOccupancyContribution = allocatedWheelchairSpaces + allocatedCompanionSeats;
+
+        return {
+            tierIndex: tier.tierIndex,
+            baseSeatCount: tier.tierSeatCount,
+            wheelchairSpacesRequired: allocatedWheelchairSpaces,
+            companionSeatsRequired: allocatedCompanionSeats,
+            wheelchairLocationsRequired: allocatedWheelchairLocations,
+            accessibilityOccupancyContribution,
+            reportedOccupancy: tier.tierSeatCount + accessibilityOccupancyContribution
+        };
+    });
+
+    const accessibilityOccupancyContribution = tierSummaries.reduce(
+        (sum, tier) => sum + tier.accessibilityOccupancyContribution,
+        0
+    );
+
+    return {
+        baseSeatCount,
+        companionSeatsPerWheelchairSpace,
+        wheelchairSpacesRequired,
+        companionSeatsRequired,
+        wheelchairLocationsRequired,
+        accessibilityOccupancyContribution,
+        reportedOccupancy: baseSeatCount + accessibilityOccupancyContribution,
+        tiers: tierSummaries
+    };
+}
+
 export function computeMinimumBlockCountForSeatLimit({ backRowSeatsPerRun, seatsBetweenAisles }) {
     const backSeats = Math.max(0, Number(backRowSeatsPerRun) || 0);
     const limit = Math.max(1, Math.round(Number(seatsBetweenAisles) || 1));

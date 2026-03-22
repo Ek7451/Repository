@@ -28,8 +28,13 @@ function createSolver({ tierIndex = 0, rows = [createRow()] } = {}) {
 }
 
 function createMetrics(overrides = {}) {
-    return {
+    const metrics = {
         capacity: 120,
+        reportedOccupancy: undefined,
+        accessibilityOccupancyContribution: 0,
+        wheelchairSpacesRequired: 0,
+        companionSeatsRequired: 0,
+        wheelchairLocationsRequired: 0,
         totalRowLength: '120',
         totalSeatingLength: '96',
         totalAisleLength: '24',
@@ -57,6 +62,18 @@ function createMetrics(overrides = {}) {
         renderedWidthCompliant: true,
         ...overrides
     };
+
+    if (!Object.prototype.hasOwnProperty.call(overrides, 'reportedOccupancy')) {
+        metrics.reportedOccupancy = metrics.capacity;
+    }
+    if (!Object.prototype.hasOwnProperty.call(overrides, 'accessibilityOccupancyContribution')) {
+        metrics.accessibilityOccupancyContribution = Math.max(
+            0,
+            Number(metrics.reportedOccupancy) - Number(metrics.capacity)
+        );
+    }
+
+    return metrics;
 }
 
 function buildStatsDto(input = {}) {
@@ -66,11 +83,28 @@ function buildStatsDto(input = {}) {
         : Array.from(tierMetricsByIndex.values()).reduce((sum, metrics) => (
             sum + Math.max(0, Number(metrics?.capacity) || 0)
         ), 0);
+    const reportedOccupancyAllTiers = Number.isFinite(Number(input?.configurationSummary?.reportedOccupancyAllTiers))
+        ? Number(input.configurationSummary.reportedOccupancyAllTiers)
+        : Array.from(tierMetricsByIndex.values()).reduce((sum, metrics) => (
+            sum + Math.max(
+                0,
+                Number(metrics?.reportedOccupancy ?? metrics?.capacity) || 0
+            )
+        ), 0);
 
     return buildStatsViewModel({
         ...input,
         configurationSummary: input.configurationSummary ?? {
-            totalOccupancyAllTiers
+            totalOccupancyAllTiers,
+            reportedOccupancyAllTiers,
+            accessibility: {
+                baseSeatCount: totalOccupancyAllTiers,
+                wheelchairSpacesRequired: 0,
+                companionSeatsRequired: 0,
+                wheelchairLocationsRequired: 0,
+                accessibilityOccupancyContribution: Math.max(0, reportedOccupancyAllTiers - totalOccupancyAllTiers),
+                reportedOccupancy: reportedOccupancyAllTiers
+            }
         }
     });
 }
@@ -100,6 +134,54 @@ describe('StatsPanel', () => {
         expect(statsEl.innerHTML).toContain('EGRESS ANALYSIS');
         expect(detailsEl.innerHTML).toContain('Tier 1 Details');
         expect(detailsEl.innerHTML).toContain('row-table-row');
+    });
+
+    test('renders dedicated accessibility markup from the shared view model', () => {
+        const viewModel = buildStatsDto({
+            solvers: [createSolver()],
+            focalPointFt: { x: 0, z: 0 },
+            bowlConfig: { type: 'Full' },
+            egressParams: { egressFactor: 0.2 },
+            tierMetricsByIndex: new Map([[0, createMetrics({
+                capacity: 120,
+                reportedOccupancy: 128,
+                accessibilityOccupancyContribution: 8,
+                wheelchairSpacesRequired: 4,
+                companionSeatsRequired: 4,
+                wheelchairLocationsRequired: 2
+            })]]),
+            configurationSummary: {
+                totalOccupancyAllTiers: 120,
+                reportedOccupancyAllTiers: 128,
+                accessibility: {
+                    baseSeatCount: 120,
+                    wheelchairSpacesRequired: 4,
+                    companionSeatsRequired: 4,
+                    wheelchairLocationsRequired: 2,
+                    accessibilityOccupancyContribution: 8,
+                    reportedOccupancy: 128
+                }
+            }
+        });
+        const statsEl = { innerHTML: '' };
+        const accessibilityEl = { innerHTML: '' };
+        const detailsEl = {
+            innerHTML: '',
+            querySelectorAll: vi.fn(() => [])
+        };
+        const panel = new StatsPanel({
+            statsEl: /** @type {any} */ (statsEl),
+            accessibilityEl: /** @type {any} */ (accessibilityEl),
+            detailsEl: /** @type {any} */ (detailsEl)
+        });
+
+        panel.update(viewModel);
+
+        expect(accessibilityEl.innerHTML).toContain('ACCESSIBILITY');
+        expect(accessibilityEl.innerHTML).toContain('Wheelchair Spaces');
+        expect(accessibilityEl.innerHTML).toContain('Companion Seats');
+        expect(accessibilityEl.innerHTML).toContain('Space Locations');
+        expect(accessibilityEl.innerHTML).toContain('Reported Occupancy: 128 total');
     });
 
     test('renders largest section occupancy wording from canonical metrics', () => {

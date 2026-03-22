@@ -32,7 +32,10 @@ function normalizeViewTab(tab) {
 }
 
 function normalizeResultsTab(targetId) {
-    return targetId === 'detailsTab' ? 'detailsTab' : 'statsTab';
+    if (targetId === 'accessibilityTab' || targetId === 'detailsTab') {
+        return targetId;
+    }
+    return 'statsTab';
 }
 
 function normalizeThemePreference(theme) {

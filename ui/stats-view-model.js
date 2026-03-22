@@ -257,7 +257,28 @@ function buildTierStatsViewModel({
         occupancy: {
             label: `Tier ${tierNumber}`,
             color: accentColor,
-            capacity: Math.max(0, Number(metrics?.capacity) || 0)
+            capacity: Math.max(0, Number(metrics?.capacity) || 0),
+            standardSeats: Math.max(0, Number(metrics?.capacity) || 0),
+            accessibilityContribution: Math.max(0, Number(metrics?.accessibilityOccupancyContribution) || 0),
+            reportedOccupancy: Math.max(
+                0,
+                Number(metrics?.reportedOccupancy) || Math.max(0, Number(metrics?.capacity) || 0)
+            )
+        },
+        accessibility: {
+            tierLabel: `TIER ${tierNumber}`,
+            wheelchairSpacesRequired: Math.max(0, Number(metrics?.wheelchairSpacesRequired) || 0),
+            companionSeatsRequired: Math.max(0, Number(metrics?.companionSeatsRequired) || 0),
+            wheelchairLocationsRequired: Math.max(0, Number(metrics?.wheelchairLocationsRequired) || 0),
+            accessibilityOccupancyContribution: Math.max(
+                0,
+                Number(metrics?.accessibilityOccupancyContribution) || 0
+            ),
+            reportedOccupancy: Math.max(
+                0,
+                Number(metrics?.reportedOccupancy) || Math.max(0, Number(metrics?.capacity) || 0)
+            ),
+            baseSeatCount: Math.max(0, Number(metrics?.capacity) || 0)
         },
         egress,
         rows
@@ -316,15 +337,47 @@ export function buildStatsViewModel({
         tierMetricsByIndex,
         isMirroredSidesMode
     }));
+    const accessibilitySummary = configurationSummary?.accessibility && typeof configurationSummary.accessibility === 'object'
+        ? configurationSummary.accessibility
+        : {};
     const totalOccupancy = Math.max(
         0,
-        Number(configurationSummary?.totalOccupancyAllTiers) || 0
+        Number(
+            configurationSummary?.reportedOccupancyAllTiers
+            ?? configurationSummary?.totalOccupancyAllTiers
+        ) || 0
     );
 
     return {
         summary: {
             totalRows,
             totalOccupancy,
+            accessibility: {
+                baseSeatCount: Math.max(
+                    0,
+                    Number(
+                        accessibilitySummary?.baseSeatCount
+                        ?? configurationSummary?.totalOccupancyAllTiers
+                    ) || 0
+                ),
+                wheelchairSpacesRequired: Math.max(
+                    0,
+                    Number(accessibilitySummary?.wheelchairSpacesRequired) || 0
+                ),
+                companionSeatsRequired: Math.max(
+                    0,
+                    Number(accessibilitySummary?.companionSeatsRequired) || 0
+                ),
+                wheelchairLocationsRequired: Math.max(
+                    0,
+                    Number(accessibilitySummary?.wheelchairLocationsRequired) || 0
+                ),
+                accessibilityOccupancyContribution: Math.max(
+                    0,
+                    Number(accessibilitySummary?.accessibilityOccupancyContribution) || 0
+                ),
+                reportedOccupancy: totalOccupancy
+            },
             averageCValueDisplay,
             qualityDistribution: [
                 { label: 'Excellent', count: Math.max(0, Number(qualityDistribution.Excellent) || 0) },

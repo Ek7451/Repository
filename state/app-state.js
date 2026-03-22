@@ -7,7 +7,7 @@ import {
 
 const APP_STATE_VERSION = 'phase6-app-state';
 const VALID_VIEW_TABS = new Set(['profile', 'field', 'scene3d']);
-const VALID_RESULTS_TABS = new Set(['statsTab', 'detailsTab']);
+const VALID_RESULTS_TABS = new Set(['statsTab', 'accessibilityTab', 'detailsTab']);
 
 /**
  * @typedef {{ x: number, y: number, z: number }} VectorState
@@ -29,6 +29,25 @@ const VALID_RESULTS_TABS = new Set(['statsTab', 'detailsTab']);
  *   target: VectorState,
  *   thumbnail: string
  * }} BookmarkState
+ * @typedef {{
+ *   minSeats: number,
+ *   maxSeats: number | null,
+ *   requiredSpaces: number,
+ *   seatsPerIncrement: number,
+ *   incrementAppliesAfter: number
+ * }} WheelchairSpaceBandState
+ * @typedef {{
+ *   minSeats: number,
+ *   maxSeats: number | null,
+ *   requiredLocations: number,
+ *   seatsPerIncrement: number,
+ *   incrementAppliesAfter: number
+ * }} WheelchairLocationBandState
+ * @typedef {{
+ *   companionSeatsPerWheelchairSpace: number,
+ *   wheelchairSpaceBands: WheelchairSpaceBandState[],
+ *   wheelchairLocationBands: WheelchairLocationBandState[]
+ * }} AccessibilityState
  * @typedef {{
  *   _version: string,
  *   sport: string,
@@ -55,7 +74,8 @@ const VALID_RESULTS_TABS = new Set(['statsTab', 'detailsTab']);
  *     maxAisle: number,
  *     seatsBetweenAisles: number,
  *     egressFactor: number,
- *     showSeatCubes3D: boolean
+ *     showSeatCubes3D: boolean,
+ *     accessibility: AccessibilityState
  *   },
  *   ui: {
  *     activeViewTab: string,
@@ -99,7 +119,8 @@ const VALID_RESULTS_TABS = new Set(['statsTab', 'detailsTab']);
  *         minAisle?: number,
  *         maxAisle?: number,
  *         seatsBetweenAisles?: number,
- *         egressFactor?: number
+ *         egressFactor?: number,
+ *         accessibility?: object
  *       },
  *       tier1?: {
  *         targetCValue?: number,
@@ -147,6 +168,29 @@ function createDefaultTier(overrides = {}) {
     };
 }
 
+/** @returns {AccessibilityState} */
+function createDefaultAccessibilityState() {
+    return {
+        companionSeatsPerWheelchairSpace: 1,
+        wheelchairSpaceBands: [
+            { minSeats: 4, maxSeats: 25, requiredSpaces: 1, seatsPerIncrement: 0, incrementAppliesAfter: 25 },
+            { minSeats: 26, maxSeats: 50, requiredSpaces: 2, seatsPerIncrement: 0, incrementAppliesAfter: 50 },
+            { minSeats: 51, maxSeats: 100, requiredSpaces: 4, seatsPerIncrement: 0, incrementAppliesAfter: 100 },
+            { minSeats: 101, maxSeats: 300, requiredSpaces: 5, seatsPerIncrement: 0, incrementAppliesAfter: 300 },
+            { minSeats: 301, maxSeats: 500, requiredSpaces: 6, seatsPerIncrement: 0, incrementAppliesAfter: 500 },
+            { minSeats: 501, maxSeats: 5000, requiredSpaces: 6, seatsPerIncrement: 150, incrementAppliesAfter: 500 },
+            { minSeats: 5001, maxSeats: null, requiredSpaces: 36, seatsPerIncrement: 200, incrementAppliesAfter: 5000 }
+        ],
+        wheelchairLocationBands: [
+            { minSeats: 1, maxSeats: 150, requiredLocations: 1, seatsPerIncrement: 0, incrementAppliesAfter: 150 },
+            { minSeats: 151, maxSeats: 500, requiredLocations: 2, seatsPerIncrement: 0, incrementAppliesAfter: 500 },
+            { minSeats: 501, maxSeats: 1000, requiredLocations: 3, seatsPerIncrement: 0, incrementAppliesAfter: 1000 },
+            { minSeats: 1001, maxSeats: 5000, requiredLocations: 3, seatsPerIncrement: 1000, incrementAppliesAfter: 1000 },
+            { minSeats: 5001, maxSeats: null, requiredLocations: 7, seatsPerIncrement: 2000, incrementAppliesAfter: 5000 }
+        ]
+    };
+}
+
 function createBaseDefaultStateData() {
     return {
         _version: APP_STATE_VERSION,
@@ -174,7 +218,8 @@ function createBaseDefaultStateData() {
             maxAisle: 72,
             seatsBetweenAisles: 20,
             egressFactor: 0.2,
-            showSeatCubes3D: false
+            showSeatCubes3D: false,
+            accessibility: createDefaultAccessibilityState()
         },
         ui: {
             activeViewTab: 'profile',
@@ -231,6 +276,10 @@ function createDefaultStateData() {
     state.occupancy.seatsBetweenAisles = templateDefaults.occupancy?.seatsBetweenAisles
         ?? state.occupancy.seatsBetweenAisles;
     state.occupancy.egressFactor = templateDefaults.occupancy?.egressFactor ?? state.occupancy.egressFactor;
+    state.occupancy.accessibility = normalizeAccessibilityState(
+        templateDefaults.occupancy?.accessibility,
+        state.occupancy.accessibility
+    );
     state.tiers[0] = createDefaultTier({
         ...defaultTier,
         enabled: true,
@@ -345,6 +394,120 @@ function normalizeViewTab(value, fallback) {
 
 function normalizeResultsTab(value, fallback) {
     return VALID_RESULTS_TABS.has(value) ? value : fallback;
+}
+
+/**
+ * @param {object} rawBand
+ * @param {WheelchairSpaceBandState} fallbackBand
+ * @returns {WheelchairSpaceBandState}
+ */
+function normalizeWheelchairSpaceBand(rawBand, fallbackBand) {
+    const band = rawBand && typeof rawBand === 'object' ? rawBand : {};
+    const fallback = fallbackBand && typeof fallbackBand === 'object'
+        ? fallbackBand
+        : createDefaultAccessibilityState().wheelchairSpaceBands[0];
+
+    return {
+        minSeats: Math.max(0, Math.round(parseNumber(band.minSeats, fallback.minSeats ?? 0))),
+        maxSeats: parseNullableNumber(band.maxSeats, fallback.maxSeats ?? null),
+        requiredSpaces: Math.max(
+            0,
+            Math.round(parseNumber(band.requiredSpaces, fallback.requiredSpaces ?? 0))
+        ),
+        seatsPerIncrement: Math.max(0, Math.round(parseNumber(band.seatsPerIncrement, fallback.seatsPerIncrement ?? 0))),
+        incrementAppliesAfter: Math.max(
+            0,
+            Math.round(parseNumber(
+                band.incrementAppliesAfter,
+                fallback.incrementAppliesAfter ?? 0
+            ))
+        )
+    };
+}
+
+/**
+ * @param {object} rawBand
+ * @param {WheelchairLocationBandState} fallbackBand
+ * @returns {WheelchairLocationBandState}
+ */
+function normalizeWheelchairLocationBand(rawBand, fallbackBand) {
+    const band = rawBand && typeof rawBand === 'object' ? rawBand : {};
+    const fallback = fallbackBand && typeof fallbackBand === 'object'
+        ? fallbackBand
+        : createDefaultAccessibilityState().wheelchairLocationBands[0];
+
+    return {
+        minSeats: Math.max(0, Math.round(parseNumber(band.minSeats, fallback.minSeats ?? 0))),
+        maxSeats: parseNullableNumber(band.maxSeats, fallback.maxSeats ?? null),
+        requiredLocations: Math.max(
+            0,
+            Math.round(parseNumber(band.requiredLocations, fallback.requiredLocations ?? 0))
+        ),
+        seatsPerIncrement: Math.max(0, Math.round(parseNumber(band.seatsPerIncrement, fallback.seatsPerIncrement ?? 0))),
+        incrementAppliesAfter: Math.max(
+            0,
+            Math.round(parseNumber(
+                band.incrementAppliesAfter,
+                fallback.incrementAppliesAfter ?? 0
+            ))
+        )
+    };
+}
+
+/**
+ * @param {unknown} rawBands
+ * @param {WheelchairSpaceBandState[]} fallbackBands
+ * @returns {WheelchairSpaceBandState[]}
+ */
+function normalizeWheelchairSpaceBands(rawBands, fallbackBands) {
+    const fallback = Array.isArray(fallbackBands) ? fallbackBands : [];
+    const bands = Array.isArray(rawBands) ? rawBands : [];
+
+    return fallback.map((fallbackBand, index) => (
+        normalizeWheelchairSpaceBand(bands[index], fallbackBand)
+    ));
+}
+
+/**
+ * @param {unknown} rawBands
+ * @param {WheelchairLocationBandState[]} fallbackBands
+ * @returns {WheelchairLocationBandState[]}
+ */
+function normalizeWheelchairLocationBands(rawBands, fallbackBands) {
+    const fallback = Array.isArray(fallbackBands) ? fallbackBands : [];
+    const bands = Array.isArray(rawBands) ? rawBands : [];
+
+    return fallback.map((fallbackBand, index) => (
+        normalizeWheelchairLocationBand(bands[index], fallbackBand)
+    ));
+}
+
+/** @returns {AccessibilityState} */
+function normalizeAccessibilityState(rawAccessibility, fallbackAccessibility = createDefaultAccessibilityState()) {
+    const accessibility = rawAccessibility && typeof rawAccessibility === 'object'
+        ? rawAccessibility
+        : {};
+    const fallback = fallbackAccessibility && typeof fallbackAccessibility === 'object'
+        ? fallbackAccessibility
+        : createDefaultAccessibilityState();
+
+    return {
+        companionSeatsPerWheelchairSpace: Math.max(
+            0,
+            Math.round(parseNumber(
+                accessibility.companionSeatsPerWheelchairSpace,
+                fallback.companionSeatsPerWheelchairSpace ?? 0
+            ))
+        ),
+        wheelchairSpaceBands: normalizeWheelchairSpaceBands(
+            accessibility.wheelchairSpaceBands,
+            fallback.wheelchairSpaceBands
+        ),
+        wheelchairLocationBands: normalizeWheelchairLocationBands(
+            accessibility.wheelchairLocationBands,
+            fallback.wheelchairLocationBands
+        )
+    };
 }
 
 export function normalizeSportName(sportName) {
@@ -508,6 +671,10 @@ function normalizeAppState(rawState = {}, fallbackState = createDefaultStateData
             showSeatCubes3D: parseBoolean(
                 state.occupancy?.showSeatCubes3D,
                 fallback.occupancy.showSeatCubes3D
+            ),
+            accessibility: normalizeAccessibilityState(
+                state.occupancy?.accessibility,
+                fallback.occupancy.accessibility
             )
         },
         ui: {
@@ -666,6 +833,23 @@ export function buildEgressParams(state) {
         minAisleWidthIn: occupancy.minAisle ?? 0,
         egressFactor: occupancy.egressFactor ?? 0,
         seatsBetweenAisles: occupancy.seatsBetweenAisles ?? 0
+    };
+}
+
+export function buildAccessibilityParams(state) {
+    const occupancy = getStateOccupancy(state);
+    const accessibility = normalizeAccessibilityState(occupancy.accessibility);
+    const applyDerivedIncrementThreshold = (bands = []) => bands.map((band) => ({
+        ...band,
+        incrementAppliesAfter: band.seatsPerIncrement > 0
+            ? Math.max(0, band.minSeats - 1)
+            : band.incrementAppliesAfter
+    }));
+
+    return {
+        ...accessibility,
+        wheelchairSpaceBands: applyDerivedIncrementThreshold(accessibility.wheelchairSpaceBands),
+        wheelchairLocationBands: applyDerivedIncrementThreshold(accessibility.wheelchairLocationBands)
     };
 }
 
@@ -852,7 +1036,8 @@ const appStateMethods = {
                 minAisle: templateDefaults.occupancy?.minAisle,
                 maxAisle: templateDefaults.occupancy?.maxAisle,
                 seatsBetweenAisles: templateDefaults.occupancy?.seatsBetweenAisles,
-                egressFactor: templateDefaults.occupancy?.egressFactor
+                egressFactor: templateDefaults.occupancy?.egressFactor,
+                accessibility: templateDefaults.occupancy?.accessibility
             },
             tiers: [{
                 ...templateDefaults.tier1,

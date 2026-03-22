@@ -277,7 +277,7 @@ describe('architecture layer boundaries', () => {
             'utf8'
         );
 
-        expect(sourceText).toContain('configurationSummary?.totalOccupancyAllTiers');
+        expect(sourceText).toContain('configurationSummary?.reportedOccupancyAllTiers');
         expect(sourceText).not.toContain('Array.from(tierMetricsByIndex.values()).reduce');
     });
 });

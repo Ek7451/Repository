@@ -378,7 +378,12 @@ function stampSolverRowsFromSummary(solver, summary, mirrorRuns) {
     });
 }
 
-function buildLegacyMetricsFromLayout({ solver, layout, egressParams }) {
+function buildLegacyMetricsFromLayout({
+    solver,
+    layout,
+    egressParams,
+    accessibilitySummary = null
+}) {
     const summary = layout?.sectionSummary;
     if (!summary) return null;
 
@@ -418,6 +423,17 @@ function buildLegacyMetricsFromLayout({ solver, layout, egressParams }) {
 
     return {
         capacity: Math.max(0, Number(summary.tierSeatCount) || 0),
+        reportedOccupancy: Math.max(
+            0,
+            Number(accessibilitySummary?.reportedOccupancy) || Math.max(0, Number(summary.tierSeatCount) || 0)
+        ),
+        accessibilityOccupancyContribution: Math.max(
+            0,
+            Number(accessibilitySummary?.accessibilityOccupancyContribution) || 0
+        ),
+        wheelchairSpacesRequired: Math.max(0, Number(accessibilitySummary?.wheelchairSpacesRequired) || 0),
+        companionSeatsRequired: Math.max(0, Number(accessibilitySummary?.companionSeatsRequired) || 0),
+        wheelchairLocationsRequired: Math.max(0, Number(accessibilitySummary?.wheelchairLocationsRequired) || 0),
         numAisles,
         aisleWidth: toFixedString(summary.maxGoverningAisleWidthIn),
         renderedAisleWidth: toFixedString(summary.maxRenderedAisleWidthIn),
@@ -463,12 +479,22 @@ function buildLegacyMetricsFromLayout({ solver, layout, egressParams }) {
 export function buildTierMetricsByIndexFromLayouts({
     tierLayouts,
     egressParams,
-    solvers
+    solvers,
+    configurationSummary = null
 }) {
     const tierLayoutByIndex = new Map((tierLayouts || []).map((layout, index) => [
         getTierLayoutIndex(layout, index),
         layout
     ]));
+    const accessibilityByTierIndex = new Map(
+        (Array.isArray(configurationSummary?.accessibility?.tiers)
+            ? configurationSummary.accessibility.tiers
+            : []
+        ).map((tier) => [
+            Math.max(0, Math.floor(Number(tier?.tierIndex) || 0)),
+            tier
+        ])
+    );
     const tierMetricsByIndex = new Map();
 
     (solvers || []).forEach((solver, index) => {
@@ -479,7 +505,8 @@ export function buildTierMetricsByIndexFromLayouts({
         const metrics = buildLegacyMetricsFromLayout({
             solver,
             layout,
-            egressParams
+            egressParams,
+            accessibilitySummary: accessibilityByTierIndex.get(tierIndex) || null
         });
         if (!metrics) return;
 

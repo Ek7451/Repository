@@ -204,7 +204,8 @@ export class EditorExportController {
         const tierMetricsByIndex = buildTierMetricsByIndexFromLayouts({
             tierLayouts: tierArtifacts.map((artifact) => artifact.tierLayout).filter(Boolean),
             egressParams: exportContext.egressParams,
-            solvers: exportContext.activeSolvers
+            solvers: exportContext.activeSolvers,
+            configurationSummary: exportContext.configurationSummary
         });
 
         return tierArtifacts.map((artifact) => ({

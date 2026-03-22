@@ -27,8 +27,13 @@ function createSolver({ tierIndex = 0, rows = [createRow()] } = {}) {
 }
 
 function createMetrics(overrides = {}) {
-    return {
+    const metrics = {
         capacity: 120,
+        reportedOccupancy: undefined,
+        accessibilityOccupancyContribution: 0,
+        wheelchairSpacesRequired: 0,
+        companionSeatsRequired: 0,
+        wheelchairLocationsRequired: 0,
         totalRowLength: '120',
         totalSeatingLength: '96',
         totalAisleLength: '24',
@@ -56,6 +61,18 @@ function createMetrics(overrides = {}) {
         renderedWidthCompliant: true,
         ...overrides
     };
+
+    if (!Object.prototype.hasOwnProperty.call(overrides, 'reportedOccupancy')) {
+        metrics.reportedOccupancy = metrics.capacity;
+    }
+    if (!Object.prototype.hasOwnProperty.call(overrides, 'accessibilityOccupancyContribution')) {
+        metrics.accessibilityOccupancyContribution = Math.max(
+            0,
+            Number(metrics.reportedOccupancy) - Number(metrics.capacity)
+        );
+    }
+
+    return metrics;
 }
 
 function buildStatsDto(input = {}) {
@@ -65,11 +82,28 @@ function buildStatsDto(input = {}) {
         : Array.from(tierMetricsByIndex.values()).reduce((sum, metrics) => (
             sum + Math.max(0, Number(metrics?.capacity) || 0)
         ), 0);
+    const reportedOccupancyAllTiers = Number.isFinite(Number(input?.configurationSummary?.reportedOccupancyAllTiers))
+        ? Number(input.configurationSummary.reportedOccupancyAllTiers)
+        : Array.from(tierMetricsByIndex.values()).reduce((sum, metrics) => (
+            sum + Math.max(
+                0,
+                Number(metrics?.reportedOccupancy ?? metrics?.capacity) || 0
+            )
+        ), 0);
 
     return buildStatsViewModel({
         ...input,
         configurationSummary: input.configurationSummary ?? {
-            totalOccupancyAllTiers
+            totalOccupancyAllTiers,
+            reportedOccupancyAllTiers,
+            accessibility: {
+                baseSeatCount: totalOccupancyAllTiers,
+                wheelchairSpacesRequired: 0,
+                companionSeatsRequired: 0,
+                wheelchairLocationsRequired: 0,
+                accessibilityOccupancyContribution: Math.max(0, reportedOccupancyAllTiers - totalOccupancyAllTiers),
+                reportedOccupancy: reportedOccupancyAllTiers
+            }
         }
     });
 }
@@ -130,6 +164,68 @@ describe('buildStatsViewModel', () => {
         expect(viewModel.tiers[1]).toMatchObject({
             tierNumber: 2,
             occupancy: { capacity: 80 }
+        });
+    });
+
+    test('reads reported occupancy and accessibility allocations from the shared summary stream', () => {
+        const viewModel = buildStatsDto({
+            solvers: [createSolver({ tierIndex: 0 }), createSolver({ tierIndex: 1 })],
+            focalPointFt: { x: 0, z: 0 },
+            bowlConfig: { type: 'Full' },
+            egressParams: { egressFactor: 0.2 },
+            tierMetricsByIndex: new Map([
+                [0, createMetrics({
+                    capacity: 120,
+                    reportedOccupancy: 128,
+                    accessibilityOccupancyContribution: 8,
+                    wheelchairSpacesRequired: 4,
+                    companionSeatsRequired: 4,
+                    wheelchairLocationsRequired: 2
+                })],
+                [1, createMetrics({
+                    capacity: 80,
+                    reportedOccupancy: 84,
+                    accessibilityOccupancyContribution: 4,
+                    wheelchairSpacesRequired: 2,
+                    companionSeatsRequired: 2,
+                    wheelchairLocationsRequired: 1
+                })]
+            ]),
+            configurationSummary: {
+                totalOccupancyAllTiers: 200,
+                reportedOccupancyAllTiers: 212,
+                accessibility: {
+                    baseSeatCount: 200,
+                    wheelchairSpacesRequired: 6,
+                    companionSeatsRequired: 6,
+                    wheelchairLocationsRequired: 3,
+                    accessibilityOccupancyContribution: 12,
+                    reportedOccupancy: 212
+                }
+            }
+        });
+
+        expect(viewModel.summary.totalOccupancy).toBe(212);
+        expect(viewModel.summary.accessibility).toMatchObject({
+            baseSeatCount: 200,
+            wheelchairSpacesRequired: 6,
+            companionSeatsRequired: 6,
+            wheelchairLocationsRequired: 3,
+            accessibilityOccupancyContribution: 12,
+            reportedOccupancy: 212
+        });
+        expect(viewModel.tiers[0].occupancy).toMatchObject({
+            standardSeats: 120,
+            accessibilityContribution: 8,
+            reportedOccupancy: 128
+        });
+        expect(viewModel.tiers[0].accessibility).toMatchObject({
+            wheelchairSpacesRequired: 4,
+            companionSeatsRequired: 4,
+            wheelchairLocationsRequired: 2,
+            accessibilityOccupancyContribution: 8,
+            reportedOccupancy: 128,
+            baseSeatCount: 120
         });
     });
 

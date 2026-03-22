@@ -826,6 +826,7 @@ body.jlg-shell {
 
 .jlg-shell #fieldSetupSection,
 .jlg-shell #occupancySection,
+.jlg-shell #accessibilitySection,
 .jlg-shell #bowlConfigSection,
 .jlg-shell .control-section.tier-section-1 {
     border-left: 4px solid #232323;
@@ -893,6 +894,121 @@ body.jlg-shell {
 
 .jlg-shell .control-row:hover {
     background: #f3f5eb;
+}
+
+.jlg-shell .accessibility-subsection {
+    margin-top: 10px;
+    border-left: 3px solid rgba(20, 45, 83, 0.18);
+}
+
+.jlg-shell .accessibility-inline-control {
+    margin-bottom: 10px;
+}
+
+.jlg-shell .code-table-shell {
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(247, 248, 250, 0.92), rgba(255, 255, 255, 0.98));
+    padding: 14px 12px 12px;
+}
+
+.jlg-shell .code-table-kicker {
+    color: #1f3250;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.jlg-shell .code-table-lead {
+    color: #63748a;
+    font-size: 12px;
+    font-style: italic;
+    line-height: 1.45;
+    margin: 8px 0 12px;
+}
+
+.jlg-shell .code-table-caption,
+.jlg-shell .code-table-title {
+    color: #16345c;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.jlg-shell .code-table-title {
+    margin-top: 2px;
+    margin-bottom: 10px;
+}
+
+.jlg-shell .accessibility-code-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 12px;
+}
+
+.jlg-shell .accessibility-code-table th,
+.jlg-shell .accessibility-code-table td {
+    border: 1px solid rgba(22, 52, 92, 0.18);
+    padding: 8px;
+    vertical-align: middle;
+}
+
+.jlg-shell .accessibility-code-table th {
+    background: rgba(222, 228, 236, 0.7);
+    color: #16345c;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.jlg-shell .accessibility-code-table td {
+    background: rgba(255, 255, 255, 0.92);
+}
+
+.jlg-shell .accessibility-code-table input[type="number"] {
+    width: 68px;
+    min-width: 0;
+    background: #ffffff;
+    border: 1px solid #cfd5de;
+    border-radius: 6px;
+    color: #18181b;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 6px;
+    text-align: center;
+}
+
+.jlg-shell .accessibility-code-table input[type="number"]:focus {
+    border-color: #7aae1a;
+    box-shadow: 0 0 0 3px rgba(122, 174, 26, 0.14);
+}
+
+.jlg-shell .accessibility-range-inputs,
+.jlg-shell .accessibility-formula-inputs {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.jlg-shell .accessibility-range-inputs--open {
+    justify-content: flex-start;
+}
+
+.jlg-shell .accessibility-range-inputs span,
+.jlg-shell .accessibility-formula-inputs span {
+    color: #526074;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
 }
 
 /* ==========================================================================
@@ -3198,6 +3314,12 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
     width: 100%;
 }
 
+.occupancy-breakdown-content {
+    width: 100%;
+    display: grid;
+    gap: 14px;
+}
+
 .occupancy-bar-container {
     width: 100%;
     margin: 0 auto;
@@ -3222,6 +3344,63 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
     height: 100%;
     background: var(--segment-color, transparent);
     transition: width 0.3s ease;
+}
+
+.occupancy-tier-breakdown-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.occupancy-tier-breakdown-card {
+    border-radius: 10px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-top: 3px solid var(--tier-color, var(--border-color));
+    background: rgba(255, 255, 255, 0.9);
+    padding: 12px;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+}
+
+.occupancy-tier-breakdown-header {
+    color: var(--text-primary);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.occupancy-tier-breakdown-total {
+    color: var(--text-primary);
+    font-size: 18px;
+    font-weight: 700;
+    margin: 6px 0 10px;
+}
+
+.occupancy-tier-breakdown-line {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.occupancy-tier-breakdown-line--muted {
+    color: var(--text-muted);
+}
+
+.accessibility-overview {
+    display: grid;
+    gap: 16px;
+}
+
+.accessibility-total-block {
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+}
+
+.accessibility-overview-grid,
+.accessibility-metrics-container {
+    gap: 12px;
 }
 
 .occupancy-legend-row {
@@ -4285,6 +4464,7 @@ html[data-theme="dark"] .jlg-shell .control-section {
 
 html[data-theme="dark"] .jlg-shell #fieldSetupSection,
 html[data-theme="dark"] .jlg-shell #occupancySection,
+html[data-theme="dark"] .jlg-shell #accessibilitySection,
 html[data-theme="dark"] .jlg-shell #bowlConfigSection,
 html[data-theme="dark"] .jlg-shell .control-section.tier-section-1,
 html[data-theme="dark"] .jlg-shell .control-section.tier-section-2,
@@ -4312,6 +4492,10 @@ html[data-theme="dark"] .jlg-shell #occupancySection .section-body {
     background: linear-gradient(180deg, rgba(141, 152, 168, 0.16), rgba(18, 24, 33, 0));
 }
 
+html[data-theme="dark"] .jlg-shell #accessibilitySection .section-body {
+    background: linear-gradient(180deg, rgba(141, 152, 168, 0.16), rgba(18, 24, 33, 0));
+}
+
 html[data-theme="dark"] .jlg-shell #bowlConfigSection .section-body {
     background: linear-gradient(180deg, rgba(141, 152, 168, 0.16), rgba(18, 24, 33, 0));
 }
@@ -4334,6 +4518,56 @@ html[data-theme="dark"] .jlg-shell .control-row label:not(.switch) {
 
 html[data-theme="dark"] .jlg-shell .control-row .unit {
     color: var(--text-muted);
+}
+
+html[data-theme="dark"] .jlg-shell .accessibility-subsection {
+    border-left-color: rgba(148, 163, 184, 0.22);
+}
+
+html[data-theme="dark"] .jlg-shell .code-table-shell {
+    border-color: rgba(148, 163, 184, 0.16);
+    background: linear-gradient(180deg, rgba(26, 35, 49, 0.96), rgba(16, 23, 33, 0.98));
+}
+
+html[data-theme="dark"] .jlg-shell .code-table-kicker,
+html[data-theme="dark"] .jlg-shell .code-table-caption,
+html[data-theme="dark"] .jlg-shell .code-table-title {
+    color: #d5deeb;
+}
+
+html[data-theme="dark"] .jlg-shell .code-table-lead {
+    color: #9aa8bc;
+}
+
+html[data-theme="dark"] .jlg-shell .accessibility-code-table th,
+html[data-theme="dark"] .jlg-shell .accessibility-code-table td {
+    border-color: rgba(148, 163, 184, 0.16);
+}
+
+html[data-theme="dark"] .jlg-shell .accessibility-code-table th {
+    background: rgba(49, 63, 84, 0.72);
+    color: #d5deeb;
+}
+
+html[data-theme="dark"] .jlg-shell .accessibility-code-table td {
+    background: rgba(20, 28, 39, 0.94);
+}
+
+html[data-theme="dark"] .jlg-shell .accessibility-code-table input[type="number"] {
+    background: #111923;
+    border-color: #334155;
+    color: #f8fafc;
+}
+
+html[data-theme="dark"] .jlg-shell .accessibility-range-inputs span,
+html[data-theme="dark"] .jlg-shell .accessibility-formula-inputs span {
+    color: #b7c3d4;
+}
+
+html[data-theme="dark"] .occupancy-tier-breakdown-card {
+    border-color: rgba(148, 163, 184, 0.12);
+    background: rgba(17, 25, 35, 0.92);
+    box-shadow: none;
 }
 
 html[data-theme="dark"] .jlg-shell .control-row input[type="range"] {

@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    allocateRequirementByLargestRemainder,
+    buildAccessibilityRequirementSummary,
     computeAisleTributaryOccupancies,
     buildDistributedAisleCountMatrix,
     clampAisleWidthIn,
+    computeRequiredWheelchairLocations,
+    computeRequiredWheelchairSpaces,
     computeRequiredPerimeterSegmentCounts,
     computeAssignedAisleWidthIn,
     computeMaximumOccupantsPerAisle,
@@ -22,6 +26,26 @@ import {
     validateDistributedSeatCaps,
     validateTributaryAisleCapacity
 } from '../../core/egress-policy.js';
+
+const ACCESSIBILITY_PARAMS = {
+    companionSeatsPerWheelchairSpace: 1,
+    wheelchairSpaceBands: [
+        { minSeats: 4, maxSeats: 25, requiredSpaces: 1 },
+        { minSeats: 26, maxSeats: 50, requiredSpaces: 2 },
+        { minSeats: 51, maxSeats: 100, requiredSpaces: 4 },
+        { minSeats: 101, maxSeats: 300, requiredSpaces: 5 },
+        { minSeats: 301, maxSeats: 500, requiredSpaces: 6 },
+        { minSeats: 501, maxSeats: 5000, requiredSpaces: 6, seatsPerIncrement: 150, incrementAppliesAfter: 500 },
+        { minSeats: 5001, requiredSpaces: 36, seatsPerIncrement: 200, incrementAppliesAfter: 5000 }
+    ],
+    wheelchairLocationBands: [
+        { minSeats: 1, maxSeats: 150, requiredLocations: 1 },
+        { minSeats: 151, maxSeats: 500, requiredLocations: 2 },
+        { minSeats: 501, maxSeats: 1000, requiredLocations: 3 },
+        { minSeats: 1001, maxSeats: 5000, requiredLocations: 3, seatsPerIncrement: 1000, incrementAppliesAfter: 1000 },
+        { minSeats: 5001, requiredLocations: 7, seatsPerIncrement: 2000, incrementAppliesAfter: 5000 }
+    ]
+};
 
 describe('egress policy helpers', () => {
     it('solves uniform tier egress policy with current fixed-point behavior', () => {
@@ -55,6 +79,68 @@ describe('egress policy helpers', () => {
         expect(computeRequiredBlockCountForWidthCap({ seatsPerRow: 100, rowCount: 10, assignedAisleWidthIn: 48, egressFactor: 0.2 })).toBe(5);
         expect(validateTributaryAisleCapacity({ tributaryOccupancy: 300, maxAisleWidthIn: 72, egressFactor: 0.2 })).toBe(true);
         expect(validateTributaryAisleCapacity({ tributaryOccupancy: 400, maxAisleWidthIn: 72, egressFactor: 0.2 })).toBe(false);
+    });
+
+    it('computes wheelchair spaces and location dispersion from table-driven thresholds', () => {
+        expect(computeRequiredWheelchairSpaces({ seatCount: 25, accessibilityParams: ACCESSIBILITY_PARAMS })).toBe(1);
+        expect(computeRequiredWheelchairSpaces({ seatCount: 500, accessibilityParams: ACCESSIBILITY_PARAMS })).toBe(6);
+        expect(computeRequiredWheelchairSpaces({ seatCount: 501, accessibilityParams: ACCESSIBILITY_PARAMS })).toBe(7);
+        expect(computeRequiredWheelchairSpaces({ seatCount: 5000, accessibilityParams: ACCESSIBILITY_PARAMS })).toBe(36);
+        expect(computeRequiredWheelchairSpaces({ seatCount: 5001, accessibilityParams: ACCESSIBILITY_PARAMS })).toBe(37);
+
+        expect(computeRequiredWheelchairLocations({ seatCount: 150, accessibilityParams: ACCESSIBILITY_PARAMS })).toBe(1);
+        expect(computeRequiredWheelchairLocations({ seatCount: 1000, accessibilityParams: ACCESSIBILITY_PARAMS })).toBe(3);
+        expect(computeRequiredWheelchairLocations({ seatCount: 1001, accessibilityParams: ACCESSIBILITY_PARAMS })).toBe(4);
+        expect(computeRequiredWheelchairLocations({ seatCount: 5001, accessibilityParams: ACCESSIBILITY_PARAMS })).toBe(8);
+    });
+
+    it('allocates accessibility requirements across tiers with stable largest-remainder tie breaking', () => {
+        expect(allocateRequirementByLargestRemainder({
+            totalRequired: 7,
+            tierSeatCounts: [
+                { tierIndex: 0, tierSeatCount: 265 },
+                { tierIndex: 1, tierSeatCount: 265 }
+            ]
+        })).toEqual([
+            { tierIndex: 0, allocated: 4 },
+            { tierIndex: 1, allocated: 3 }
+        ]);
+
+        expect(buildAccessibilityRequirementSummary({
+            tierSeatCounts: [
+                { tierIndex: 0, tierSeatCount: 265 },
+                { tierIndex: 1, tierSeatCount: 265 }
+            ],
+            accessibilityParams: ACCESSIBILITY_PARAMS
+        })).toEqual({
+            baseSeatCount: 530,
+            companionSeatsPerWheelchairSpace: 1,
+            wheelchairSpacesRequired: 7,
+            companionSeatsRequired: 7,
+            wheelchairLocationsRequired: 3,
+            accessibilityOccupancyContribution: 14,
+            reportedOccupancy: 544,
+            tiers: [
+                {
+                    tierIndex: 0,
+                    baseSeatCount: 265,
+                    wheelchairSpacesRequired: 4,
+                    companionSeatsRequired: 4,
+                    wheelchairLocationsRequired: 2,
+                    accessibilityOccupancyContribution: 8,
+                    reportedOccupancy: 273
+                },
+                {
+                    tierIndex: 1,
+                    baseSeatCount: 265,
+                    wheelchairSpacesRequired: 3,
+                    companionSeatsRequired: 3,
+                    wheelchairLocationsRequired: 1,
+                    accessibilityOccupancyContribution: 6,
+                    reportedOccupancy: 271
+                }
+            ]
+        });
     });
 
     it('finds interval aisle counts and worst seat spans using shared policy math', () => {

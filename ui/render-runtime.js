@@ -5,6 +5,7 @@ import {
 } from '../core/profile-solver.js';
 import { buildConfigurationAisleSummary } from '../core/aisle-layout.js';
 import {
+    buildAccessibilityParams,
     buildBowlConfig,
     buildEgressParams,
     buildFieldVisibility,
@@ -76,8 +77,10 @@ export class RenderRuntime {
         let visualFocalY = 0;
         let tierMetricsByIndex = new Map();
         let tierAisleLayouts = [];
+        const accessibilityParams = buildAccessibilityParams(state);
         let configurationSummary = buildConfigurationAisleSummary({
-            tierLayouts: tierAisleLayouts
+            tierLayouts: tierAisleLayouts,
+            accessibilityParams
         });
 
         if (fieldGeometryPort && bowlConfig) {
@@ -90,13 +93,15 @@ export class RenderRuntime {
                 offsetCorrection,
                 egressParams
             ) || [];
+            configurationSummary = buildConfigurationAisleSummary({
+                tierLayouts: tierAisleLayouts,
+                accessibilityParams
+            });
             tierMetricsByIndex = buildTierMetricsByIndexFromLayouts({
                 tierLayouts: tierAisleLayouts,
                 egressParams,
-                solvers
-            });
-            configurationSummary = buildConfigurationAisleSummary({
-                tierLayouts: tierAisleLayouts
+                solvers,
+                configurationSummary
             });
         }
 
@@ -190,7 +195,8 @@ export class RenderRuntime {
             runoffDistance: getRunoffDistance(state, template),
             tierAisleLayouts: this._tierAisleLayouts || [],
             configurationSummary: this._snapshot?.configurationSummary || buildConfigurationAisleSummary({
-                tierLayouts: this._tierAisleLayouts || []
+                tierLayouts: this._tierAisleLayouts || [],
+                accessibilityParams: buildAccessibilityParams(state)
             }),
             structuralDepthFt: structuralDepth / 12.0,
             offsetCorrection: Number(this._snapshot?.offsetCorrection) || 0

@@ -87,6 +87,17 @@ const QUALITY_LEGEND = [
     { label: 'Acceptable', color: '#de850a', rangeLabel: '2.4 - 3.5"' },
     { label: 'Poor', color: '#d1433d', rangeLabel: '< 2.4"' }
 ];
+const CODE_SCOPE_DISCLAIMER_LINES = [
+    'Accessibility counts, wheelchair space locations, and reported occupancy adjustments are now included in current results.',
+    'The following effects are still excluded from this phase and must be evaluated in later phases:',
+    '- Wheelchair space carve-outs and resulting standard-seat loss',
+    '- Clear floor space, maneuvering, and route geometry',
+    '- Wheelchair location impacts on seating block subdivision, aisle widths, and local layout geometry',
+    '- 30 ft rules and dead end row access conditions',
+    '- Vomitory, concourse, door bank, exit stair, discharge capacity and merging flows',
+    '- Exit loss checks and exit separation',
+    '- Handrail and guard encroachment rules'
+];
 
 function normalizeQualityDistribution(summary = {}) {
     const distributionByLabel = new Map(
@@ -138,6 +149,25 @@ function createMetricIcon(kind) {
 
     if (kind === 'avg') {
         svg.appendChild(createSvgElement('path', { d: 'M2.5 8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v4h-5V8z M1 12h8v2H1z M9.5 8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v4h-5V8z M8 12h8v2H8z M16.5 8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v4h-5V8z M15 12h8v2h-8z' }));
+        return svg;
+    }
+
+    if (kind === 'wheelchair') {
+        svg.appendChild(createSvgElement('circle', { cx: '8', cy: '18', r: '3.2', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8' }));
+        svg.appendChild(createSvgElement('circle', { cx: '14', cy: '6', r: '1.8', fill: 'currentColor' }));
+        svg.appendChild(createSvgElement('path', { d: 'M13.5 8.5h-4l-1.4 5.2h4.2l2.9 3.3H19', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+        svg.appendChild(createSvgElement('path', { d: 'M10.3 13.7 8 9.2', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8', 'stroke-linecap': 'round' }));
+        return svg;
+    }
+
+    if (kind === 'locations') {
+        svg.appendChild(createSvgElement('path', { d: 'M12 21s5-4.6 5-9a5 5 0 1 0-10 0c0 4.4 5 9 5 9z', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+        svg.appendChild(createSvgElement('circle', { cx: '12', cy: '12', r: '1.9', fill: 'currentColor' }));
+        return svg;
+    }
+
+    if (kind === 'occupancy') {
+        svg.appendChild(createSvgElement('path', { d: 'M6 4h12v5H6z M4 11h16v7H4z M7 18h2v2H7z M15 18h2v2h-2z' }));
         return svg;
     }
 
@@ -256,18 +286,21 @@ function createPieChartVisual(summary = {}) {
 }
 
 function createOccupancyBreakdown(tiers = [], totalOccupancy = 0) {
-    const container = createElement('div', 'occupancy-bar-container');
+    const container = createElement('div', 'occupancy-breakdown-content');
+    const barContainer = createElement('div', 'occupancy-bar-container');
     const bar = createElement('div', 'occupancy-stacked-bar');
-    const legendRow = createElement('div', 'occupancy-legend-row');
+    const tierBreakdownGrid = createElement('div', 'occupancy-tier-breakdown-grid');
 
     if (totalOccupancy > 0) {
         tiers.forEach((tier) => {
-            const capacity = Math.max(0, Number(tier?.occupancy?.capacity) || 0);
-            if (capacity === 0) return;
+            const reportedOccupancy = Math.max(0, Number(tier?.occupancy?.reportedOccupancy) || 0);
+            if (reportedOccupancy === 0) return;
 
             const color = tier?.occupancy?.color || 'var(--accent-blue)';
             const label = tier?.occupancy?.label || 'Tier';
-            const percent = `${(capacity / totalOccupancy) * 100}%`;
+            const standardSeats = Math.max(0, Number(tier?.occupancy?.standardSeats) || 0);
+            const accessibilityContribution = Math.max(0, Number(tier?.occupancy?.accessibilityContribution) || 0);
+            const percent = `${(reportedOccupancy / totalOccupancy) * 100}%`;
 
             const segment = createElement('div', 'occupancy-bar-segment');
             applyStyleVars(segment, {
@@ -276,17 +309,26 @@ function createOccupancyBreakdown(tiers = [], totalOccupancy = 0) {
             });
             bar.appendChild(segment);
 
-            const legendItem = createElement('div', 'occ-legend-item');
-            const dot = createElement('span', 'occ-legend-dot', '\u25CF');
-            dot.setAttribute('aria-hidden', 'true');
-            applyStyleVars(dot, { 'legend-color': color });
-            const strong = createElement('strong', '', capacity.toLocaleString());
-            legendItem.append(dot, document.createTextNode(`${label}: `), strong);
-            legendRow.appendChild(legendItem);
+            const tierCard = createElement('div', 'occupancy-tier-breakdown-card');
+            applyStyleVars(tierCard, { 'tier-color': color });
+            tierCard.appendChild(createElement('div', 'occupancy-tier-breakdown-header', label));
+            tierCard.appendChild(createElement('div', 'occupancy-tier-breakdown-total', `${reportedOccupancy.toLocaleString()} total`));
+            tierCard.appendChild(createElement(
+                'div',
+                'occupancy-tier-breakdown-line',
+                `Standard Seats: ${standardSeats.toLocaleString()}`
+            ));
+            tierCard.appendChild(createElement(
+                'div',
+                'occupancy-tier-breakdown-line occupancy-tier-breakdown-line--muted',
+                `Wheelchair + Companion: ${accessibilityContribution.toLocaleString()}`
+            ));
+            tierBreakdownGrid.appendChild(tierCard);
         });
     }
 
-    container.append(bar, legendRow);
+    barContainer.appendChild(bar);
+    container.append(barContainer, tierBreakdownGrid);
     return container;
 }
 
@@ -299,6 +341,121 @@ function createMetricItem(label, iconKind, mainValue, suffixText = '') {
     content.appendChild(createMetricValue(mainValue, suffixText));
     item.appendChild(content);
     return item;
+}
+
+function createAccessibilityOverview(summary = {}) {
+    const section = createElement('section', 'accessibility-overview');
+    section.appendChild(createElement('div', 'total-occupancy-label results-section-title--center results-section-title--spaced', 'ACCESSIBILITY'));
+
+    const totalBlock = createElement('div', 'accessibility-total-block');
+    totalBlock.appendChild(createElement('div', 'total-occupancy-label', 'REPORTED OCCUPANCY'));
+    totalBlock.appendChild(createElement(
+        'div',
+        'total-occupancy',
+        Math.max(0, Number(summary?.reportedOccupancy) || 0).toLocaleString()
+    ));
+    section.appendChild(totalBlock);
+
+    const grid = createElement('div', 'tier-metrics-grid accessibility-overview-grid');
+    [
+        ['Wheelchair Spaces', 'wheelchair', String(Math.max(0, Number(summary?.wheelchairSpacesRequired) || 0))],
+        ['Companion Seats', 'companion', String(Math.max(0, Number(summary?.companionSeatsRequired) || 0))],
+        ['Space Locations', 'locations', String(Math.max(0, Number(summary?.wheelchairLocationsRequired) || 0))],
+        ['Occupancy Add', 'occupancy', String(Math.max(0, Number(summary?.accessibilityOccupancyContribution) || 0)), 'occ']
+    ].forEach(([label, kind, value, suffix]) => {
+        grid.appendChild(createMetricItem(label, kind, value, suffix || ''));
+    });
+    section.appendChild(grid);
+    return section;
+}
+
+function buildMetricItemMarkup(label, value, suffix = '') {
+    return `
+        <div class="tier-metric-item">
+            <div class="tier-metric-label">${escapeHtml(label)}</div>
+            <div class="tier-metric-value">${escapeHtml(String(value))}${suffix ? `<span class="small-text">${escapeHtml(suffix)}</span>` : ''}</div>
+        </div>
+    `;
+}
+
+function buildOccupancyBreakdownMarkup(tiers = [], totalOccupancy = 0) {
+    const barSegments = [];
+    const tierCards = [];
+
+    if (totalOccupancy > 0) {
+        tiers.forEach((tier) => {
+            const reportedOccupancy = Math.max(0, Number(tier?.occupancy?.reportedOccupancy) || 0);
+            if (!(reportedOccupancy > 0)) return;
+
+            const color = tier?.occupancy?.color || 'var(--accent-blue)';
+            const label = tier?.occupancy?.label || 'Tier';
+            const standardSeats = Math.max(0, Number(tier?.occupancy?.standardSeats) || 0);
+            const accessibilityContribution = Math.max(0, Number(tier?.occupancy?.accessibilityContribution) || 0);
+            barSegments.push(`
+                <div class="occupancy-bar-segment" style="--segment-width:${(reportedOccupancy / totalOccupancy) * 100}%; --segment-color:${escapeHtml(color)}"></div>
+            `);
+            tierCards.push(`
+                <div class="occupancy-tier-breakdown-card" style="--tier-color:${escapeHtml(color)}">
+                    <div class="occupancy-tier-breakdown-header">${escapeHtml(label)}</div>
+                    <div class="occupancy-tier-breakdown-total">${escapeHtml(reportedOccupancy.toLocaleString())} total</div>
+                    <div class="occupancy-tier-breakdown-line">Standard Seats: ${escapeHtml(standardSeats.toLocaleString())}</div>
+                    <div class="occupancy-tier-breakdown-line occupancy-tier-breakdown-line--muted">Wheelchair + Companion: ${escapeHtml(accessibilityContribution.toLocaleString())}</div>
+                </div>
+            `);
+        });
+    }
+
+    return `
+        <div class="occupancy-breakdown-content">
+            <div class="occupancy-bar-container">
+                <div class="occupancy-stacked-bar">${barSegments.join('')}</div>
+            </div>
+            <div class="occupancy-tier-breakdown-grid">${tierCards.join('')}</div>
+        </div>
+    `;
+}
+
+function buildAccessibilityOverviewMarkup(summary = {}) {
+    return `
+        <section class="accessibility-overview">
+            <div class="total-occupancy-label results-section-title--center results-section-title--spaced">ACCESSIBILITY</div>
+            <div class="accessibility-total-block">
+                <div class="total-occupancy-label">REPORTED OCCUPANCY</div>
+                <div class="total-occupancy">${Math.max(0, Number(summary?.reportedOccupancy) || 0).toLocaleString()}</div>
+            </div>
+            <div class="tier-metrics-grid accessibility-overview-grid">
+                ${buildMetricItemMarkup('Wheelchair Spaces', Math.max(0, Number(summary?.wheelchairSpacesRequired) || 0))}
+                ${buildMetricItemMarkup('Companion Seats', Math.max(0, Number(summary?.companionSeatsRequired) || 0))}
+                ${buildMetricItemMarkup('Space Locations', Math.max(0, Number(summary?.wheelchairLocationsRequired) || 0))}
+                ${buildMetricItemMarkup('Occupancy Add', Math.max(0, Number(summary?.accessibilityOccupancyContribution) || 0), 'occ')}
+            </div>
+        </section>
+    `;
+}
+
+function buildAccessibilityCardMarkup(tier) {
+    const accessibility = tier?.accessibility;
+    if (!accessibility) return '';
+
+    const metricsMarkup = [
+        ['Wheelchair Spaces', accessibility.wheelchairSpacesRequired, ''],
+        ['Companion Seats', accessibility.companionSeatsRequired, ''],
+        ['Space Locations', accessibility.wheelchairLocationsRequired, ''],
+        ['Occupancy Add', accessibility.accessibilityOccupancyContribution, 'occ'],
+        ['Standard Seats', accessibility.baseSeatCount, '']
+    ].map(([label, value, suffix]) => buildMetricItemMarkup(label, value, suffix)).join('');
+
+    return `
+        <section class="tier-metrics-card tier-${escapeHtml(String(tier.tierNumber))}">
+            <div class="tier-metrics-card-header">
+                <div class="tier-metrics-header tier-${escapeHtml(String(tier.tierNumber))}">${escapeHtml(accessibility.tierLabel)}</div>
+            </div>
+            <div class="tier-metrics-card-body">
+                <div class="tier-metrics-grid">${metricsMarkup}</div>
+                <div class="tier-metrics-check">${escapeHtml(`Reported Occupancy: ${accessibility.reportedOccupancy.toLocaleString()} total (${accessibility.baseSeatCount.toLocaleString()} standard + ${accessibility.accessibilityOccupancyContribution.toLocaleString()} accessibility).`)}</div>
+            </div>
+        </section>
+    `;
 }
 
 function createResultsDetailsSection({ title, classes = [], isCollapsed = true, sectionId = '', contentBuilder = null }) {
@@ -386,17 +543,12 @@ function createDisclaimerSection() {
         sectionId: 'resultsCodeScopeDisclaimer',
         contentBuilder: (panel) => {
             panel.classList.add('results-details-body--disclaimer');
-            panel.append(document.createTextNode('Early stage geometric simplification only. The following code egress requirements are excluded from current results and must be evaluated in later phases:'));
-            appendLineBreak(panel);
-            panel.append(document.createTextNode('- 30 ft rules and dead end row access conditions'));
-            appendLineBreak(panel);
-            panel.append(document.createTextNode('- Vomitory, concourse, door bank, exit stair, discharge capacity and merging flows'));
-            appendLineBreak(panel);
-            panel.append(document.createTextNode('- Exit loss checks and exit separation'));
-            appendLineBreak(panel);
-            panel.append(document.createTextNode('- Accessibility and wheelchair locations affecting seating blocks and aisle widths'));
-            appendLineBreak(panel);
-            panel.append(document.createTextNode('- Handrail and guard encroachment rules'));
+            CODE_SCOPE_DISCLAIMER_LINES.forEach((line, index) => {
+                panel.append(document.createTextNode(line));
+                if (index < CODE_SCOPE_DISCLAIMER_LINES.length - 1) {
+                    appendLineBreak(panel);
+                }
+            });
         }
     });
 }
@@ -444,9 +596,50 @@ function createEgressMetricCard(tier) {
     return card;
 }
 
+function createAccessibilityMetricCard(tier) {
+    const card = cloneTemplateElement('resultsMetricCardTemplate');
+    if (!card) return null;
+
+    const accessibility = tier?.accessibility;
+    if (!accessibility) return null;
+
+    card.classList.add(`tier-${tier.tierNumber}`);
+    const header = card.querySelector('[data-results-card-header]');
+    if (header instanceof HTMLElement) {
+        header.classList.add(`tier-${tier.tierNumber}`);
+        header.textContent = accessibility.tierLabel;
+    }
+
+    const grid = card.querySelector('[data-results-card-grid]');
+    if (grid instanceof HTMLElement) {
+        [
+            ['Wheelchair Spaces', 'wheelchair', String(accessibility.wheelchairSpacesRequired)],
+            ['Companion Seats', 'companion', String(accessibility.companionSeatsRequired)],
+            ['Space Locations', 'locations', String(accessibility.wheelchairLocationsRequired)],
+            ['Occupancy Add', 'occupancy', String(accessibility.accessibilityOccupancyContribution), 'occ'],
+            ['Standard Seats', 'seats', String(accessibility.baseSeatCount)]
+        ].forEach(([label, kind, value, suffix]) => {
+            grid.appendChild(createMetricItem(label, kind, value, suffix || ''));
+        });
+    }
+
+    const check = card.querySelector('[data-results-card-check]');
+    if (check) {
+        check.textContent = `Reported Occupancy: ${accessibility.reportedOccupancy.toLocaleString()} total (${accessibility.baseSeatCount.toLocaleString()} standard + ${accessibility.accessibilityOccupancyContribution.toLocaleString()} accessibility).`;
+    }
+
+    const warning = /** @type {HTMLElement | null} */ (card.querySelector('[data-results-card-warning]'));
+    if (warning) {
+        warning.hidden = true;
+    }
+
+    return card;
+}
+
 export class StatsPanel {
-    constructor({ statsEl = null, detailsEl = null } = {}) {
+    constructor({ statsEl = null, accessibilityEl = null, detailsEl = null } = {}) {
         this.statsEl = statsEl ?? getDefaultElement('statsContent');
+        this.accessibilityEl = accessibilityEl ?? getDefaultElement('accessibilityContent');
         this.detailsEl = detailsEl ?? getDefaultElement('detailsContent');
         this.openDetailSections = new Set();
     }
@@ -461,6 +654,13 @@ export class StatsPanel {
             this.statsEl.replaceChildren(this._buildStatsContent(viewModel));
         } else {
             this.statsEl.innerHTML = this._buildStatsMarkup(viewModel);
+        }
+        if (this.accessibilityEl) {
+            if (canRenderWithDom(this.accessibilityEl)) {
+                this.accessibilityEl.replaceChildren(this._buildAccessibilityContent(viewModel));
+            } else {
+                this.accessibilityEl.innerHTML = this._buildAccessibilityMarkup(viewModel);
+            }
         }
         if (this.detailsEl) {
             if (canRenderWithDom(this.detailsEl)) {
@@ -516,6 +716,22 @@ export class StatsPanel {
         occupancySection.appendChild(egressContainer);
 
         root.appendChild(occupancySection);
+        return root;
+    }
+
+    _buildAccessibilityContent(viewModel) {
+        const root = createElement('div', 'results-summary-container');
+        root.appendChild(createAccessibilityOverview(viewModel.summary?.accessibility || {}));
+        root.appendChild(createElement('div', 'results-divider results-divider--spacious'));
+        root.appendChild(createElement('div', 'total-occupancy-label results-section-title--spaced', 'PER-TIER REQUIREMENTS'));
+
+        const accessibilityContainer = createElement('div', 'egress-metrics-container accessibility-metrics-container');
+        viewModel.tiers.forEach((tier) => {
+            const card = createAccessibilityMetricCard(tier);
+            if (card) accessibilityContainer.appendChild(card);
+        });
+        accessibilityContainer.appendChild(createDisclaimerSection());
+        root.appendChild(accessibilityContainer);
         return root;
     }
 
@@ -622,12 +838,7 @@ export class StatsPanel {
             <section class="results-details collapsed results-details--disclaimer">
                 <button type="button" class="accordion__trigger results-details__trigger" aria-expanded="false">* Code Scope Disclaimer</button>
                 <div class="section-body results-details__panel" hidden>
-                    Early stage geometric simplification only. The following code egress requirements are excluded from current results and must be evaluated in later phases:<br>
-                    - 30 ft rules and dead end row access conditions<br>
-                    - Vomitory, concourse, door bank, exit stair, discharge capacity and merging flows<br>
-                    - Exit loss checks and exit separation<br>
-                    - Accessibility and wheelchair locations affecting seating blocks and aisle widths<br>
-                    - Handrail and guard encroachment rules
+                    ${CODE_SCOPE_DISCLAIMER_LINES.map((line) => escapeHtml(line)).join('<br>')}
                 </div>
             </section>
         `;
@@ -668,9 +879,33 @@ export class StatsPanel {
                 <div class="occupancy-section">
                     <div class="total-occupancy-label">TOTAL OCCUPANCY</div>
                     <div class="total-occupancy">${totalOccupancy.toLocaleString()}</div>
+                    <div class="occupancy-breakdown">${buildOccupancyBreakdownMarkup(viewModel.tiers, totalOccupancy)}</div>
                     <div class="results-divider results-divider--spacious"></div>
                     <div class="total-occupancy-label results-section-title--spaced">EGRESS ANALYSIS</div>
                     <div class="egress-metrics-container">${cardsMarkup}${disclaimerMarkup}${estimateMarkup}</div>
+                </div>
+            </div>
+        `;
+    }
+
+    _buildAccessibilityMarkup(viewModel) {
+        const disclaimerMarkup = `
+            <section class="results-details collapsed results-details--disclaimer">
+                <button type="button" class="accordion__trigger results-details__trigger" aria-expanded="false">* Code Scope Disclaimer</button>
+                <div class="section-body results-details__panel" hidden>
+                    ${CODE_SCOPE_DISCLAIMER_LINES.map((line) => escapeHtml(line)).join('<br>')}
+                </div>
+            </section>
+        `;
+
+        return `
+            <div class="results-summary-container">
+                ${buildAccessibilityOverviewMarkup(viewModel.summary?.accessibility || {})}
+                <div class="results-divider results-divider--spacious"></div>
+                <div class="total-occupancy-label results-section-title--spaced">PER-TIER REQUIREMENTS</div>
+                <div class="egress-metrics-container accessibility-metrics-container">
+                    ${viewModel.tiers.map((tier) => buildAccessibilityCardMarkup(tier)).join('')}
+                    ${disclaimerMarkup}
                 </div>
             </div>
         `;

@@ -4,6 +4,7 @@
  */
 
 import {
+    buildAccessibilityRequirementSummary,
     buildDistributedAisleCountMatrix,
     computeAisleTributaryOccupancies,
     computeAssignedAisleWidthIn,
@@ -4617,15 +4618,22 @@ export function buildTierAisleAnalysis({
     return lastAnalysis;
 }
 
-export function buildConfigurationAisleSummary({ tierLayouts = [] } = {}) {
+export function buildConfigurationAisleSummary({ tierLayouts = [], accessibilityParams = null } = {}) {
     const safeTierLayouts = Array.isArray(tierLayouts) ? tierLayouts : [];
     const tierSeatCounts = safeTierLayouts.map((tierLayout, index) => ({
         tierIndex: Math.max(0, Math.floor(Number(tierLayout?.tierIndex) || index)),
         tierSeatCount: Math.max(0, Number(tierLayout?.sectionSummary?.tierSeatCount) || 0)
     }));
+    const totalOccupancyAllTiers = tierSeatCounts.reduce((sum, tier) => sum + tier.tierSeatCount, 0);
+    const accessibility = buildAccessibilityRequirementSummary({
+        tierSeatCounts,
+        accessibilityParams
+    });
 
     return {
-        totalOccupancyAllTiers: tierSeatCounts.reduce((sum, tier) => sum + tier.tierSeatCount, 0),
+        totalOccupancyAllTiers,
+        reportedOccupancyAllTiers: accessibility.reportedOccupancy,
+        accessibilityOccupancyContributionAllTiers: accessibility.accessibilityOccupancyContribution,
         totalAislesAllTiers: safeTierLayouts.reduce((sum, tierLayout) => (
             sum + Math.max(0, Number(tierLayout?.sectionSummary?.actualAisles) || 0)
         ), 0),
@@ -4633,6 +4641,7 @@ export function buildConfigurationAisleSummary({ tierLayouts = [] } = {}) {
             sum + Math.max(0, Number(tierLayout?.sectionSummary?.actualSections) || 0)
         ), 0),
         tierSeatCounts,
+        accessibility,
         maxRequiredAisleWidthInOverall: safeTierLayouts.reduce((maxWidth, tierLayout) => (
             Math.max(maxWidth, Math.max(0, Number(tierLayout?.sectionSummary?.maxRequiredAisleWidthIn) || 0))
         ), 0)

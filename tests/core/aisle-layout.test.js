@@ -2374,12 +2374,32 @@ describe('aisle layout geometry seam', () => {
 
         expect(configurationSummary).toEqual({
             totalOccupancyAllTiers: tierLayout.sectionSummary.tierSeatCount,
+            reportedOccupancyAllTiers: tierLayout.sectionSummary.tierSeatCount,
+            accessibilityOccupancyContributionAllTiers: 0,
             totalAislesAllTiers: tierLayout.sectionSummary.actualAisles,
             totalSectionsAllTiers: tierLayout.sectionSummary.actualSections,
             tierSeatCounts: [{
                 tierIndex: 0,
                 tierSeatCount: tierLayout.sectionSummary.tierSeatCount
             }],
+            accessibility: {
+                baseSeatCount: tierLayout.sectionSummary.tierSeatCount,
+                companionSeatsPerWheelchairSpace: 0,
+                wheelchairSpacesRequired: 0,
+                companionSeatsRequired: 0,
+                wheelchairLocationsRequired: 0,
+                accessibilityOccupancyContribution: 0,
+                reportedOccupancy: tierLayout.sectionSummary.tierSeatCount,
+                tiers: [{
+                    tierIndex: 0,
+                    baseSeatCount: tierLayout.sectionSummary.tierSeatCount,
+                    wheelchairSpacesRequired: 0,
+                    companionSeatsRequired: 0,
+                    wheelchairLocationsRequired: 0,
+                    accessibilityOccupancyContribution: 0,
+                    reportedOccupancy: tierLayout.sectionSummary.tierSeatCount
+                }]
+            },
             maxRequiredAisleWidthInOverall: tierLayout.sectionSummary.maxRequiredAisleWidthIn
         });
     });

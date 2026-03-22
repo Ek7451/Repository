@@ -162,6 +162,18 @@ describe('profile solver helper exports', () => {
                 maxAisleWidthIn: 72,
                 seatsBetweenAisles: 20
             },
+            configurationSummary: {
+                accessibility: {
+                    tiers: [{
+                        tierIndex: 0,
+                        wheelchairSpacesRequired: 2,
+                        companionSeatsRequired: 2,
+                        wheelchairLocationsRequired: 1,
+                        accessibilityOccupancyContribution: 4,
+                        reportedOccupancy: 26
+                    }]
+                }
+            },
             tierLayouts: [{
                 tierIndex: 0,
                 sectionSummary: {
@@ -226,6 +238,11 @@ describe('profile solver helper exports', () => {
 
         expect(tierMetricsByIndex.get(0)).toMatchObject({
             capacity: 22,
+            reportedOccupancy: 26,
+            accessibilityOccupancyContribution: 4,
+            wheelchairSpacesRequired: 2,
+            companionSeatsRequired: 2,
+            wheelchairLocationsRequired: 1,
             numAisles: 2,
             numSections: 1,
             seatsPerBlock: '12.0',

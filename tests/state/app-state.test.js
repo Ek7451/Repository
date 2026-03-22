@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import {
     APP_STATE_VERSION,
     AppState,
+    buildAccessibilityParams,
     buildBowlConfig,
     buildEgressParams,
     buildFieldVisibility,
@@ -297,6 +298,9 @@ describe('AppState', () => {
         state.occupancy.seatsBetweenAisles = 18;
         state.occupancy.egressFactor = 0.3;
         state.occupancy.showSeatCubes3D = true;
+        state.occupancy.accessibility.companionSeatsPerWheelchairSpace = 2;
+        state.occupancy.accessibility.wheelchairSpaceBands[5].minSeats = 600;
+        state.occupancy.accessibility.wheelchairSpaceBands[5].seatsPerIncrement = 175;
         state.tiers[1].enabled = true;
         state.tiers[2].enabled = false;
 
@@ -316,6 +320,19 @@ describe('AppState', () => {
             egressFactor: 0.3,
             seatsBetweenAisles: 18
         });
+        expect(buildAccessibilityParams(state)).toEqual(expect.objectContaining({
+            companionSeatsPerWheelchairSpace: 2,
+            wheelchairSpaceBands: expect.arrayContaining([
+                expect.objectContaining({ minSeats: 4, maxSeats: 25, requiredSpaces: 1 }),
+                expect.objectContaining({
+                    minSeats: 600,
+                    maxSeats: 5000,
+                    requiredSpaces: 6,
+                    seatsPerIncrement: 175,
+                    incrementAppliesAfter: 599
+                })
+            ])
+        }));
         expect(buildPrimaryTierParameters(state)).toEqual({
             targetCValue: 3.5,
             firstRowDistance: 0,

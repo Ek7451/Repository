@@ -153,12 +153,43 @@ describe('RenderRuntime', () => {
         expect(snapshot.tierAisleLayouts).toHaveLength(2);
         expect(snapshot.configurationSummary).toEqual({
             totalOccupancyAllTiers: 530,
+            reportedOccupancyAllTiers: 544,
+            accessibilityOccupancyContributionAllTiers: 14,
             totalAislesAllTiers: 2,
             totalSectionsAllTiers: 2,
             tierSeatCounts: [
                 { tierIndex: 0, tierSeatCount: 265 },
                 { tierIndex: 1, tierSeatCount: 265 }
             ],
+            accessibility: {
+                baseSeatCount: 530,
+                companionSeatsPerWheelchairSpace: 1,
+                wheelchairSpacesRequired: 7,
+                companionSeatsRequired: 7,
+                wheelchairLocationsRequired: 3,
+                accessibilityOccupancyContribution: 14,
+                reportedOccupancy: 544,
+                tiers: [
+                    {
+                        tierIndex: 0,
+                        baseSeatCount: 265,
+                        wheelchairSpacesRequired: 4,
+                        companionSeatsRequired: 4,
+                        wheelchairLocationsRequired: 2,
+                        accessibilityOccupancyContribution: 8,
+                        reportedOccupancy: 273
+                    },
+                    {
+                        tierIndex: 1,
+                        baseSeatCount: 265,
+                        wheelchairSpacesRequired: 3,
+                        companionSeatsRequired: 3,
+                        wheelchairLocationsRequired: 1,
+                        accessibilityOccupancyContribution: 6,
+                        reportedOccupancy: 271
+                    }
+                ]
+            },
             maxRequiredAisleWidthInOverall: 26.6
         });
         expect(snapshot.tierAisleLayouts[0]).toEqual(expect.objectContaining({
@@ -183,6 +214,11 @@ describe('RenderRuntime', () => {
         }));
         expect(snapshot.tierMetricsByIndex.get(0)).toMatchObject({
             capacity: 265,
+            reportedOccupancy: 273,
+            accessibilityOccupancyContribution: 8,
+            wheelchairSpacesRequired: 4,
+            companionSeatsRequired: 4,
+            wheelchairLocationsRequired: 2,
             numAisles: 1,
             numSections: 1,
             seatsPerBlock: '18.0',
@@ -228,7 +264,7 @@ describe('RenderRuntime', () => {
         expect(snapshot.statsViewModel).toEqual(expect.objectContaining({
             summary: expect.objectContaining({
                 totalRows: expect.any(Number),
-                totalOccupancy: 530
+                totalOccupancy: 544
             }),
             tiers: expect.any(Array)
         }));

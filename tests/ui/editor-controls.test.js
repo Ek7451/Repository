@@ -148,7 +148,26 @@ function createState() {
             chamferAisleMode: 'radial'
         },
         occupancy: {
-            showSeatCubes3D: false
+            showSeatCubes3D: false,
+            accessibility: {
+                companionSeatsPerWheelchairSpace: 1,
+                wheelchairSpaceBands: [
+                    { minSeats: 4, maxSeats: 25, requiredSpaces: 1, seatsPerIncrement: 0, incrementAppliesAfter: 25 },
+                    { minSeats: 26, maxSeats: 50, requiredSpaces: 2, seatsPerIncrement: 0, incrementAppliesAfter: 50 },
+                    { minSeats: 51, maxSeats: 100, requiredSpaces: 4, seatsPerIncrement: 0, incrementAppliesAfter: 100 },
+                    { minSeats: 101, maxSeats: 300, requiredSpaces: 5, seatsPerIncrement: 0, incrementAppliesAfter: 300 },
+                    { minSeats: 301, maxSeats: 500, requiredSpaces: 6, seatsPerIncrement: 0, incrementAppliesAfter: 500 },
+                    { minSeats: 501, maxSeats: 5000, requiredSpaces: 6, seatsPerIncrement: 150, incrementAppliesAfter: 500 },
+                    { minSeats: 5001, maxSeats: null, requiredSpaces: 36, seatsPerIncrement: 200, incrementAppliesAfter: 5000 }
+                ],
+                wheelchairLocationBands: [
+                    { minSeats: 1, maxSeats: 150, requiredLocations: 1, seatsPerIncrement: 0, incrementAppliesAfter: 150 },
+                    { minSeats: 151, maxSeats: 500, requiredLocations: 2, seatsPerIncrement: 0, incrementAppliesAfter: 500 },
+                    { minSeats: 501, maxSeats: 1000, requiredLocations: 3, seatsPerIncrement: 0, incrementAppliesAfter: 1000 },
+                    { minSeats: 1001, maxSeats: 5000, requiredLocations: 3, seatsPerIncrement: 1000, incrementAppliesAfter: 1000 },
+                    { minSeats: 5001, maxSeats: null, requiredLocations: 7, seatsPerIncrement: 2000, incrementAppliesAfter: 5000 }
+                ]
+            }
         },
         ui: {
             activeViewTab: 'profile',
@@ -348,6 +367,49 @@ describe('EditorControls', () => {
         controls._syncBowlLengthVisibility('Full');
         expect(elements.sideLengthRow.hidden).toBe(true);
         expect(elements.sideLength34Row.hidden).toBe(true);
+    });
+
+    test('syncs and commits accessibility override inputs through canonical AppState paths', () => {
+        const elements = {
+            companionSeatsPerWheelchairSpaceInput: createElement({ value: '1' }),
+            wheelchairSpacesBand6SeatsPerIncrementInput: createElement({ value: '150' }),
+            wheelchairLocationsBand4RequiredLocationsInput: createElement({ value: '3' })
+        };
+        const state = createState();
+        const onChange = vi.fn();
+
+        vi.stubGlobal('document', createDocumentStub(elements));
+
+        const controls = new EditorControls({
+            state,
+            onChange
+        });
+
+        controls.init();
+        controls.syncFromState();
+
+        expect(elements.companionSeatsPerWheelchairSpaceInput.value).toBe('1');
+        expect(elements.wheelchairSpacesBand6SeatsPerIncrementInput.value).toBe('150');
+        expect(elements.wheelchairLocationsBand4RequiredLocationsInput.value).toBe('3');
+
+        elements.companionSeatsPerWheelchairSpaceInput.value = '2';
+        elements.companionSeatsPerWheelchairSpaceInput.dispatch('input');
+        elements.companionSeatsPerWheelchairSpaceInput.dispatch('blur');
+
+        elements.wheelchairSpacesBand6SeatsPerIncrementInput.value = '175';
+        elements.wheelchairSpacesBand6SeatsPerIncrementInput.dispatch('input');
+        elements.wheelchairSpacesBand6SeatsPerIncrementInput.dispatch('blur');
+
+        elements.wheelchairLocationsBand4RequiredLocationsInput.value = '4';
+        elements.wheelchairLocationsBand4RequiredLocationsInput.dispatch('input');
+        elements.wheelchairLocationsBand4RequiredLocationsInput.dispatch('blur');
+
+        expect(state.occupancy.accessibility.companionSeatsPerWheelchairSpace).toBe(2);
+        expect(state.occupancy.accessibility.wheelchairSpaceBands[5].seatsPerIncrement).toBe(175);
+        expect(state.occupancy.accessibility.wheelchairLocationBands[3].requiredLocations).toBe(4);
+        expect(onChange).toHaveBeenCalledWith({ reason: 'state', controlId: 'companionSeatsPerWheelchairSpaceInput' });
+        expect(onChange).toHaveBeenCalledWith({ reason: 'state', controlId: 'wheelchairSpacesBand6SeatsPerIncrementInput' });
+        expect(onChange).toHaveBeenCalledWith({ reason: 'state', controlId: 'wheelchairLocationsBand4RequiredLocationsInput' });
     });
 
     test('switches baseball controls to the baseball-only bowl palette and relabels the leg-length inputs', () => {

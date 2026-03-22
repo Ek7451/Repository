@@ -256,10 +256,12 @@ describe('Workspace shell characterization', () => {
         ];
         const resultButtons = [
             createTabButton('data-target', 'statsTab'),
+            createTabButton('data-target', 'accessibilityTab'),
             createTabButton('data-target', 'detailsTab')
         ];
         const resultPanels = [
             createPanel('statsTab'),
+            createPanel('accessibilityTab'),
             createPanel('detailsTab')
         ];
         const dockViews = [
@@ -300,7 +302,7 @@ describe('Workspace shell characterization', () => {
         shell._notifyScene3DResize = vi.fn();
 
         shell.setViewTab('field');
-        shell.setResultsTab('detailsTab');
+        shell.setResultsTab('accessibilityTab');
         vi.runAllTimers();
 
         expect(viewButtons[1].classList.contains('active')).toBe(true);
@@ -315,7 +317,7 @@ describe('Workspace shell characterization', () => {
         expect(resultPanels[1].scrollTop).toBe(0);
         expect(rightSidebar.classList.contains('collapsed')).toBe(false);
         expect(onViewTabChanged).toHaveBeenCalledWith('field');
-        expect(onResultsTabChanged).toHaveBeenCalledWith('detailsTab');
+        expect(onResultsTabChanged).toHaveBeenCalledWith('accessibilityTab');
         expect(window.dispatchEvent).toHaveBeenCalledTimes(1);
         expect(shell._notifyScene3DResize).toHaveBeenCalledTimes(1);
     });

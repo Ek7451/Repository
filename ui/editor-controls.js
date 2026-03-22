@@ -9,6 +9,49 @@ import {
     resolveSportTemplate
 } from '../state/app-state.js';
 
+/** @typedef {Array<string | number>} StatePath */
+
+const ACCESSIBILITY_FIELD_SUFFIXES = {
+    minSeats: 'MinSeats',
+    maxSeats: 'MaxSeats',
+    requiredSpaces: 'RequiredSpaces',
+    requiredLocations: 'RequiredLocations',
+    seatsPerIncrement: 'SeatsPerIncrement'
+};
+/** @type {Array<{ prefix: string, path: StatePath, fields: string[] }>} */
+const ACCESSIBILITY_BAND_CONTROL_CONFIGS = [
+    { prefix: 'wheelchairSpacesBand1', path: ['occupancy', 'accessibility', 'wheelchairSpaceBands', 0], fields: ['minSeats', 'maxSeats', 'requiredSpaces'] },
+    { prefix: 'wheelchairSpacesBand2', path: ['occupancy', 'accessibility', 'wheelchairSpaceBands', 1], fields: ['minSeats', 'maxSeats', 'requiredSpaces'] },
+    { prefix: 'wheelchairSpacesBand3', path: ['occupancy', 'accessibility', 'wheelchairSpaceBands', 2], fields: ['minSeats', 'maxSeats', 'requiredSpaces'] },
+    { prefix: 'wheelchairSpacesBand4', path: ['occupancy', 'accessibility', 'wheelchairSpaceBands', 3], fields: ['minSeats', 'maxSeats', 'requiredSpaces'] },
+    { prefix: 'wheelchairSpacesBand5', path: ['occupancy', 'accessibility', 'wheelchairSpaceBands', 4], fields: ['minSeats', 'maxSeats', 'requiredSpaces'] },
+    { prefix: 'wheelchairSpacesBand6', path: ['occupancy', 'accessibility', 'wheelchairSpaceBands', 5], fields: ['minSeats', 'maxSeats', 'requiredSpaces', 'seatsPerIncrement'] },
+    { prefix: 'wheelchairSpacesBand7', path: ['occupancy', 'accessibility', 'wheelchairSpaceBands', 6], fields: ['minSeats', 'requiredSpaces', 'seatsPerIncrement'] },
+    { prefix: 'wheelchairLocationsBand1', path: ['occupancy', 'accessibility', 'wheelchairLocationBands', 0], fields: ['minSeats', 'maxSeats', 'requiredLocations'] },
+    { prefix: 'wheelchairLocationsBand2', path: ['occupancy', 'accessibility', 'wheelchairLocationBands', 1], fields: ['minSeats', 'maxSeats', 'requiredLocations'] },
+    { prefix: 'wheelchairLocationsBand3', path: ['occupancy', 'accessibility', 'wheelchairLocationBands', 2], fields: ['minSeats', 'maxSeats', 'requiredLocations'] },
+    { prefix: 'wheelchairLocationsBand4', path: ['occupancy', 'accessibility', 'wheelchairLocationBands', 3], fields: ['minSeats', 'maxSeats', 'requiredLocations', 'seatsPerIncrement'] },
+    { prefix: 'wheelchairLocationsBand5', path: ['occupancy', 'accessibility', 'wheelchairLocationBands', 4], fields: ['minSeats', 'requiredLocations', 'seatsPerIncrement'] }
+];
+
+/** @returns {Record<string, StatePath>} */
+function buildAccessibilityNumericInputStatePaths() {
+    /** @type {Array<[string, StatePath]>} */
+    const entries = [
+        ['companionSeatsPerWheelchairSpace', ['occupancy', 'accessibility', 'companionSeatsPerWheelchairSpace']]
+    ];
+
+    ACCESSIBILITY_BAND_CONTROL_CONFIGS.forEach(({ prefix, path, fields }) => {
+        fields.forEach((field) => {
+            entries.push([`${prefix}${ACCESSIBILITY_FIELD_SUFFIXES[field]}`, [...path, field]]);
+        });
+    });
+
+    return Object.fromEntries(entries);
+}
+
+const ACCESSIBILITY_NUMERIC_INPUT_STATE_PATHS = buildAccessibilityNumericInputStatePaths();
+
 const NUMERIC_INPUT_STATE_PATHS = {
     focalX: ['setup', 'focalX'],
     focalZ: ['setup', 'focalZ'],
@@ -21,6 +64,7 @@ const NUMERIC_INPUT_STATE_PATHS = {
     maxAisle: ['occupancy', 'maxAisle'],
     seatsBetweenAisles: ['occupancy', 'seatsBetweenAisles'],
     egressFactor: ['occupancy', 'egressFactor'],
+    ...ACCESSIBILITY_NUMERIC_INPUT_STATE_PATHS,
     cValue: ['tiers', 0, 'cValue'],
     numRows: ['tiers', 0, 'numRows'],
     firstRowDist: ['tiers', 0, 'firstRowDist'],
@@ -71,7 +115,8 @@ const INTEGER_INPUT_IDS = new Set([
     't3NumRows',
     'minAisle',
     'maxAisle',
-    'seatsBetweenAisles'
+    'seatsBetweenAisles',
+    ...Object.keys(ACCESSIBILITY_NUMERIC_INPUT_STATE_PATHS)
 ]);
 const DEFAULT_BOWL_TYPE_OPTIONS = [
     { value: 'Full', label: 'Full Bowl' },
