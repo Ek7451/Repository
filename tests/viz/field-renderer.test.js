@@ -12,6 +12,10 @@ import {
     resolveAisleStationRatios,
     samplePathPointByRatio
 } from '../../core/aisle-layout.js';
+import {
+    buildActiveTierSolvers,
+    buildStructuralProfileGeometry
+} from '../../core/profile-solver.js';
 import { resolvePlanFocalYFt } from '../../core/sports-templates.js';
 
 vi.mock('three', async () => import('../../lib/three.module.js'));
@@ -35,6 +39,22 @@ function createFullChamferBowlConfig(overrides = {}) {
         radius: 20,
         corner: 'Chamfer',
         type: 'Full',
+        straightAisleMode: 'perpendicular',
+        chamferAisleMode: 'radial',
+        ...overrides
+    };
+}
+
+function createBaseballArcBowlConfig(overrides = {}) {
+    return {
+        shape: 'arc',
+        radius_arc: 325,
+        arc_angle: 90,
+        type: 'BaseballStandard',
+        sideLength: 325,
+        endLength: 325,
+        radius: 18,
+        corner: 'Chamfer',
         straightAisleMode: 'perpendicular',
         chamferAisleMode: 'radial',
         ...overrides
@@ -115,6 +135,7 @@ function createSharedBowlGeometryCases() {
         createFullChamferBowlConfig({ corner: 'Radius', radius: 18 }),
         createFullChamferBowlConfig({ type: 'U-End1', corner: 'Chamfer', radius: 18 }),
         createFullChamferBowlConfig({ type: 'Sides', corner: 'Radius', radius: 18 }),
+        createBaseballArcBowlConfig({ type: 'BaseballStandard', radius: 18 }),
         {
             shape: 'arc',
             radius_arc: 325,
@@ -150,6 +171,17 @@ function isReadableLabelAngle(angle) {
 
 function smallestAngleDistance(a, b) {
     return Math.abs(normalizeAnglePi((Number(a) || 0) - (Number(b) || 0)));
+}
+
+function expectSequentialSectionNumbers(labels, comparator, startNumber) {
+    const orderedNumbers = labels
+        .slice()
+        .sort(comparator)
+        .map((label) => label.sectionNumber);
+
+    expect(orderedNumbers).toEqual(
+        orderedNumbers.map((_, index) => startNumber + index)
+    );
 }
 
 describe('FieldRenderer helper delegation surface', () => {
@@ -381,7 +413,7 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(ctx.arc).toHaveBeenCalledWith(0, -54.5, 4.8, 0, Math.PI * 2);
     });
 
-    it('projects the section cut line to the outermost visible tier edge and extends it 20 feet', () => {
+    it('projects the section cut line to the outermost visible tier edge and extends it 10 feet', () => {
         const renderer = Object.create(FieldRenderer.prototype);
         const cutLine = renderer._getSectionCutLineData(
             [
@@ -406,7 +438,7 @@ describe('FieldRenderer helper delegation surface', () => {
             edgeX: 0,
             edgeY: -108,
             endX: 0,
-            endY: -128
+            endY: -118
         });
     });
 
@@ -426,7 +458,7 @@ describe('FieldRenderer helper delegation surface', () => {
             edgeX: 0,
             edgeY: -93,
             endX: 0,
-            endY: -113
+            endY: -103
         });
     });
 
@@ -451,10 +483,10 @@ describe('FieldRenderer helper delegation surface', () => {
             { showSeating: true, t1: true, t2: false, t3: false }
         );
 
-        expect(bounds.minX).toBeCloseTo(-150);
-        expect(bounds.maxX).toBeCloseTo(150);
-        expect(bounds.minY).toBeCloseTo(-100);
-        expect(bounds.maxY).toBeCloseTo(100);
+        expect(bounds.minX).toBeCloseTo(-142);
+        expect(bounds.maxX).toBeCloseTo(142);
+        expect(bounds.minY).toBeCloseTo(-92);
+        expect(bounds.maxY).toBeCloseTo(92);
     });
 
     it('fits plan extents against the visible panel frame instead of the dock-reserved canvas area', () => {
@@ -462,6 +494,12 @@ describe('FieldRenderer helper delegation surface', () => {
         const renderer = new FieldRenderer(/** @type {any} */ (canvas));
 
         canvas.parentElement = {};
+        canvas.getBoundingClientRect.mockReturnValue({
+            left: 0,
+            top: 0,
+            width: 1124,
+            height: 768
+        });
         vi.stubGlobal('getComputedStyle', () => ({
             paddingLeft: '0px',
             paddingRight: '0px',
@@ -493,6 +531,53 @@ describe('FieldRenderer helper delegation surface', () => {
                 );
             });
         });
+    });
+
+    it('keeps the canonical baseball bowl families on one shared geometry source', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const side1Paths = buildGeometryPaths(renderer._getBowlGeometry(
+            createBaseballArcBowlConfig({ type: 'Side1', radius: 18 }),
+            0
+        ));
+        const sidesPaths = buildGeometryPaths(renderer._getBowlGeometry(
+            createBaseballArcBowlConfig({ type: 'Sides', radius: 18 }),
+            0
+        ));
+        const baseballStandardPaths = buildGeometryPaths(renderer._getBowlGeometry(
+            createBaseballArcBowlConfig({ type: 'BaseballStandard', radius: 18 }),
+            0
+        ));
+
+        expect(side1Paths).toHaveLength(1);
+        expect(side1Paths[0].closed).toBe(false);
+        expect(side1Paths[0].parts.length).toBe(1);
+
+        expect(sidesPaths).toHaveLength(2);
+        expect(sidesPaths.map((path) => path.closed)).toEqual([false, false]);
+        expect(sidesPaths.map((path) => path.parts.length)).toEqual([1, 1]);
+
+        expect(baseballStandardPaths).toHaveLength(1);
+        expect(baseballStandardPaths[0].closed).toBe(false);
+        expect(baseballStandardPaths[0].parts.length).toBe(3);
+    });
+
+    it('measures baseball leg length from the theoretical apex while chamfer only shortens the visible connector', () => {
+        const shortChamferSegments = buildBowlGeometrySegments(
+            createBaseballArcBowlConfig({ radius: 18 }),
+            0
+        );
+        const longChamferSegments = buildBowlGeometrySegments(
+            createBaseballArcBowlConfig({ radius: 36 }),
+            0
+        );
+
+        expect(Math.hypot(shortChamferSegments[0].x, shortChamferSegments[0].y)).toBeCloseTo(325);
+        expect(Math.hypot(shortChamferSegments[3].x, shortChamferSegments[3].y)).toBeCloseTo(325);
+        expect(shortChamferSegments[0]).toEqual(longChamferSegments[0]);
+        expect(shortChamferSegments[3]).toEqual(longChamferSegments[3]);
+        expect(Math.hypot(shortChamferSegments[1].x, shortChamferSegments[1].y)).toBeCloseTo(18);
+        expect(Math.hypot(longChamferSegments[1].x, longChamferSegments[1].y)).toBeCloseTo(36);
+        expect(shortChamferSegments[1].y).toBeLessThan(longChamferSegments[1].y);
     });
 
     it('anchors chamfer slider values at the interior reference edge while preserving 45-degree growth outward', () => {
@@ -929,6 +1014,154 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(overlay.rowSeatLabels.every((label) => isReadableLabelAngle(label.rotationRad))).toBe(true);
     });
 
+    it('numbers C-shape sections clockwise from the lower-right open end', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const solver = createTierSolver();
+        const bowlConfig = createFullChamferBowlConfig({
+            type: 'U-End1',
+            width: 85,
+            length: 200,
+            radius: 28
+        });
+        const tierLayout = renderer.generateTierAisleLayout(
+            solver,
+            bowlConfig,
+            createTierMetrics(),
+            0,
+            createEgressParams()
+        );
+        const overlay = renderer.getTierSectionMetricsOverlayData(solver, bowlConfig, tierLayout, 0);
+        const labelsBySlot = overlay.sectionLabels
+            .slice()
+            .sort((a, b) => a.slotIndex - b.slotIndex);
+
+        expect(labelsBySlot.map((label) => label.sectionNumber)).toEqual(
+            labelsBySlot.map((_, index) => 100 + (labelsBySlot.length - 1 - index))
+        );
+    });
+
+    it('numbers open side bowls in bottom-left-top-right traversal order', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const solver = createTierSolver();
+        const cases = [
+            {
+                type: 'Side1',
+                bowlConfig: createFullChamferBowlConfig({
+                    type: 'Side1',
+                    corner: 'None',
+                    width: 85,
+                    length: 200
+                }),
+                expectations: [
+                    {
+                        pathIndex: 0,
+                        startNumber: 100,
+                        comparator: (a, b) => (b.x - a.x) || (a.y - b.y)
+                    }
+                ]
+            },
+            {
+                type: 'Sides',
+                bowlConfig: createFullChamferBowlConfig({
+                    type: 'Sides',
+                    corner: 'None',
+                    width: 85,
+                    length: 200
+                }),
+                expectations: [
+                    {
+                        pathIndex: 0,
+                        startNumber: 100,
+                        comparator: (a, b) => (b.x - a.x) || (a.y - b.y)
+                    },
+                    {
+                        pathIndex: 1,
+                        startNumber: 105,
+                        comparator: (a, b) => (a.x - b.x) || (b.y - a.y)
+                    }
+                ]
+            },
+            {
+                type: 'Sides3',
+                bowlConfig: createFullChamferBowlConfig({
+                    type: 'Sides3',
+                    corner: 'None',
+                    width: 85,
+                    length: 200,
+                    sideLength: 200,
+                    endLength: 85
+                }),
+                expectations: [
+                    {
+                        pathIndex: 1,
+                        startNumber: 100,
+                        comparator: (a, b) => (b.x - a.x) || (a.y - b.y)
+                    },
+                    {
+                        pathIndex: 2,
+                        startNumber: 105,
+                        comparator: (a, b) => (a.y - b.y) || (a.x - b.x)
+                    },
+                    {
+                        pathIndex: 0,
+                        startNumber: 107,
+                        comparator: (a, b) => (a.x - b.x) || (b.y - a.y)
+                    }
+                ]
+            },
+            {
+                type: 'Sides4',
+                bowlConfig: createFullChamferBowlConfig({
+                    type: 'Sides4',
+                    corner: 'None',
+                    width: 85,
+                    length: 200,
+                    sideLength: 200,
+                    endLength: 85
+                }),
+                expectations: [
+                    {
+                        pathIndex: 1,
+                        startNumber: 100,
+                        comparator: (a, b) => (b.x - a.x) || (a.y - b.y)
+                    },
+                    {
+                        pathIndex: 2,
+                        startNumber: 105,
+                        comparator: (a, b) => (a.y - b.y) || (a.x - b.x)
+                    },
+                    {
+                        pathIndex: 0,
+                        startNumber: 107,
+                        comparator: (a, b) => (a.x - b.x) || (b.y - a.y)
+                    },
+                    {
+                        pathIndex: 3,
+                        startNumber: 112,
+                        comparator: (a, b) => (b.y - a.y) || (a.x - b.x)
+                    }
+                ]
+            }
+        ];
+
+        cases.forEach(({ bowlConfig, expectations }) => {
+            const tierLayout = renderer.generateTierAisleLayout(
+                solver,
+                bowlConfig,
+                createTierMetrics(),
+                0,
+                createEgressParams()
+            );
+            const overlay = renderer.getTierSectionMetricsOverlayData(solver, bowlConfig, tierLayout, 0);
+
+            expectations.forEach(({ pathIndex, startNumber, comparator }) => {
+                const labels = overlay.sectionLabels.filter((label) => label.pathIndex === pathIndex);
+                expect(labels.length).toBeGreaterThan(0);
+                expectSequentialSectionNumbers(labels, comparator, startNumber);
+            });
+        });
+    });
+
     it('renders U-end terminal aisle polygons flush to the open segment edge', () => {
         const renderer = Object.create(FieldRenderer.prototype);
         const solver = createTierSolver();
@@ -979,7 +1212,7 @@ describe('FieldRenderer helper delegation surface', () => {
         const renderer = Object.create(FieldRenderer.prototype);
         const solver = createTierSolver();
 
-        ['Side1', 'Side2', 'Sides'].forEach((type) => {
+        ['Side1', 'Sides', 'BaseballStandard'].forEach((type) => {
             const bowlConfig = createFullChamferBowlConfig({
                 type,
                 width: 85,
@@ -1574,6 +1807,201 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(marker.position.x).toBe(0);
         expect(marker.position.y).toBe(9);
         expect(marker.position.z).toBeCloseTo(-resolvePlanFocalYFt(template, 18));
+    });
+
+    it('caps open row-end bowl meshes so side bowls do not export as hollow strips', async () => {
+        const { Scene3D } = await import('../../viz/scene3d.js');
+        const THREE = await import('../../lib/three.module.js');
+        const scene = Object.create(Scene3D.prototype);
+        scene.THREE = THREE;
+        const row = { x: 24, z: 10, riser_height: 2, tread_depth: 3 };
+        const bowlConfig = createFullChamferBowlConfig({
+            type: 'Side1',
+            corner: 'None',
+            radius: 0
+        });
+        const pointCount = buildBowlGeometrySubpaths(bowlConfig, row.x - row.tread_depth)[0].length;
+        const baseVertexCount = pointCount * 3;
+
+        const geometry = scene._createTierGeometry(
+            {
+                tierIndex: 0,
+                rows: [row]
+            },
+            bowlConfig,
+            0
+        );
+
+        expect(geometry).not.toBeNull();
+        expect(geometry.attributes.position.count).toBe(baseVertexCount + 6);
+
+        const positions = geometry.attributes.position.array;
+        const normals = geometry.attributes.normal.array;
+        const duplicatedStartVertex = baseVertexCount;
+        const originalPosition = new THREE.Vector3().fromArray(positions, 0);
+        const duplicatedPosition = new THREE.Vector3().fromArray(positions, duplicatedStartVertex * 3);
+        const originalNormal = new THREE.Vector3().fromArray(normals, 0);
+        const duplicatedNormal = new THREE.Vector3().fromArray(normals, duplicatedStartVertex * 3);
+        const duplicatedNeighborNormal = new THREE.Vector3().fromArray(normals, (duplicatedStartVertex + 1) * 3);
+
+        expect(duplicatedPosition.distanceTo(originalPosition)).toBeCloseTo(0, 6);
+        expect(Math.abs(originalNormal.dot(duplicatedNormal))).toBeLessThan(0.999);
+        expect(duplicatedNormal.angleTo(duplicatedNeighborNormal)).toBeCloseTo(0, 6);
+    });
+
+    it('caps open structural-depth bowl meshes at both end faces', async () => {
+        const { Scene3D } = await import('../../viz/scene3d.js');
+        const THREE = await import('../../lib/three.module.js');
+        const scene = Object.create(Scene3D.prototype);
+        scene.THREE = THREE;
+
+        const [solver] = buildActiveTierSolvers([
+            {
+                enabled: true,
+                cValue: 4,
+                firstRowDist: 45,
+                firstRowElev: 6,
+                treadDepth: 33,
+                riserHeight: 10,
+                numRows: 4,
+                eyeHeight: 3.75,
+                eyeSetback: 6,
+                profileType: 'Parabolic'
+            }
+        ], { x: 0, z: 0 });
+        const bowlConfig = /** @type {any} */ (createFullChamferBowlConfig({
+            type: 'Side1',
+            corner: 'None',
+            radius: 0,
+            structuralDepth: 18
+        }));
+        const structuralDepthFt = 18 / 12;
+        const geometry = scene._createTierGeometryWithDepth(solver, bowlConfig, structuralDepthFt, 0);
+        const profile = buildStructuralProfileGeometry(solver, {
+            structuralDepthFt,
+            structuralProfileMode: bowlConfig.structuralProfileMode,
+            tierIndex: 0
+        })?.closedProfile;
+        const firstPathPointCount = buildBowlGeometrySubpaths(bowlConfig, profile[0].x)[0].length;
+        const baseVertexCount = profile.length * firstPathPointCount;
+        const capTriangleCount = scene.THREE.ShapeUtils.triangulateShape(
+            profile.map((point) => new scene.THREE.Vector2(point.x, point.z)),
+            []
+        ).length;
+        const expectedTriangleCount = ((profile.length - 1) * (firstPathPointCount - 1) * 2)
+            + (capTriangleCount * 2);
+
+        expect(geometry).not.toBeNull();
+        expect(geometry.index.array.length / 3).toBe(expectedTriangleCount);
+        expect(geometry.attributes.position.count).toBe(baseVertexCount + (profile.length * 2));
+
+        const positions = geometry.attributes.position.array;
+        const normals = geometry.attributes.normal.array;
+        const duplicatedStartVertex = baseVertexCount;
+        const originalPosition = new THREE.Vector3().fromArray(positions, 0);
+        const duplicatedPosition = new THREE.Vector3().fromArray(positions, duplicatedStartVertex * 3);
+        const originalNormal = new THREE.Vector3().fromArray(normals, 0);
+        const duplicatedNormal = new THREE.Vector3().fromArray(normals, duplicatedStartVertex * 3);
+
+        expect(duplicatedPosition.distanceTo(originalPosition)).toBeCloseTo(0, 6);
+        expect(Math.abs(originalNormal.dot(duplicatedNormal))).toBeLessThan(0.999);
+    });
+
+    it('stores seat eye anchors for spectator view and keeps Alt-look rotations fixed to the head position', async () => {
+        const { Scene3D } = await import('../../viz/scene3d.js');
+        const THREE = await import('../../lib/three.module.js');
+        const scene = Object.create(Scene3D.prototype);
+        scene.THREE = THREE;
+        scene.camera = new THREE.PerspectiveCamera(50, 1, 1, 5000);
+        scene.controls = {
+            target: new THREE.Vector3(),
+            update: vi.fn(),
+            enabled: true,
+            enableRotate: true,
+            enablePan: true,
+            enableZoom: true
+        };
+        scene.renderer = {
+            domElement: {
+                style: {},
+                setPointerCapture: vi.fn(),
+                releasePointerCapture: vi.fn()
+            }
+        };
+        scene._hoveredSeatRef = null;
+        scene._selectedSeatRef = null;
+        scene._spectatorView = null;
+
+        const seatPreview = scene._createTierSeatPreviewMesh(
+            {
+                tierIndex: 0,
+                eyeHeight: 3.75,
+                rows: [
+                    { x: 24, z: 10, tread_depth: 3, eye_x: 23.5, eye_z: 13.75 }
+                ]
+            },
+            createFullChamferBowlConfig({
+                type: 'Side1',
+                corner: 'None',
+                radius: 0
+            }),
+            { tierIndex: 0, aisles: [] },
+            24,
+            0
+        );
+        const seatRef = { mesh: seatPreview.mesh, instanceId: 0 };
+        const previewSeat = seatPreview.mesh.userData.seatPreview.instances[0];
+        const instanceColor = new THREE.Color();
+
+        expect(previewSeat.eyePosition.y).toBeCloseTo(13.75);
+
+        scene._setSeatHover(seatRef);
+        seatPreview.mesh.getColorAt(0, instanceColor);
+        expect(instanceColor.getHex()).toBe(0xde850a);
+
+        scene._setSeatSelection(seatRef);
+        scene._enterSpectatorView(previewSeat);
+        const initialPosition = scene.camera.position.clone();
+        const initialTarget = scene.controls.target.clone();
+
+        expect(scene.controls.enabled).toBe(false);
+        expect(scene.camera.position.y).toBeCloseTo(13.75);
+
+        scene._rotateSpectatorView(60, -20);
+
+        expect(scene.camera.position.distanceTo(initialPosition)).toBeCloseTo(0);
+        expect(scene.controls.target.distanceTo(initialTarget)).toBeGreaterThan(0.01);
+        expect(scene.controls.target.distanceTo(scene.camera.position)).toBeGreaterThan(8);
+
+        scene._clearSpectatorView();
+        expect(scene.controls.enabled).toBe(true);
+
+        scene._enterSpectatorView(previewSeat);
+        scene._getSeatPickFromPointerEvent = vi.fn(() => seatRef);
+
+        scene._handleSpectatorPointerDown({
+            altKey: true,
+            button: 0,
+            pointerId: 7,
+            clientX: 20,
+            clientY: 30,
+            preventDefault: vi.fn()
+        });
+        scene._handleSpectatorPointerMove({
+            pointerId: 7,
+            clientX: 32,
+            clientY: 18,
+            preventDefault: vi.fn()
+        });
+        scene._handleSpectatorPointerUp({
+            pointerId: 7
+        });
+        scene._handleSeatClick({
+            button: 0
+        });
+
+        expect(scene._getSeatPickFromPointerEvent).not.toHaveBeenCalled();
+        expect(scene._selectedSeatRef).toBe(seatRef);
     });
 });
 

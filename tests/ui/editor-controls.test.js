@@ -350,6 +350,52 @@ describe('EditorControls', () => {
         expect(elements.sideLength34Row.hidden).toBe(true);
     });
 
+    test('switches baseball controls to the baseball-only bowl palette and relabels the leg-length inputs', () => {
+        const elements = {
+            sportSelect: createElement(),
+            bowlType: createElement(),
+            bowlCornerRadLabel: createElement(),
+            sideLengthRow: createElement(),
+            sideLengthRowLabel: createElement(),
+            sideLength34Row: createElement(),
+            sideLength34RowLabel: createElement(),
+            bowlSideLengthInput: createElement(),
+            bowlSideLengthSlider: createElement(),
+            bowlEndLengthInput: createElement(),
+            bowlEndLengthSlider: createElement()
+        };
+        const state = createState();
+        state.sport = 'Baseball';
+        state.bowl.type = 'BaseballStandard';
+        state.bowl.sideLength = 325;
+        state.bowl.endLength = 325;
+
+        vi.stubGlobal('document', createDocumentStub(elements));
+
+        const controls = new EditorControls({
+            state
+        });
+
+        controls.init();
+        controls.syncFromState();
+        controls._populateBowlTypes(getTemplate('Baseball'));
+
+        expect(elements.bowlType.children.map((option) => option.value)).toEqual([
+            'Side1',
+            'Sides',
+            'BaseballStandard'
+        ]);
+        expect(elements.bowlType.children.map((option) => option.textContent)).toEqual([
+            '1-Sided',
+            '2-Sided',
+            'Standard'
+        ]);
+        expect(elements.sideLengthRow.hidden).toBe(false);
+        expect(elements.sideLength34Row.hidden).toBe(true);
+        expect(elements.sideLengthRowLabel.textContent).toBe('Leg Length');
+        expect(elements.bowlCornerRadLabel.textContent).toBe('Chamfer');
+    });
+
     test('owns control bindings while mutating only the single shared AppState object', () => {
         const elements = {
             sportSelect: createElement(),

@@ -14,6 +14,12 @@ const ALL_BOWL_TYPE_OPTIONS = [
     { value: "Sides4", label: "4-Sided" }
 ];
 
+const BASEBALL_BOWL_TYPE_OPTIONS = [
+    { value: "Side1", label: "1-Sided" },
+    { value: "Sides", label: "2-Sided" },
+    { value: "BaseballStandard", label: "Standard" }
+];
+
 const SPORTS_TEMPLATES = {
     "Ice Hockey": {
         field_length: 200.0,
@@ -192,16 +198,17 @@ const SPORTS_TEMPLATES = {
         shape: "arc",
         arc_angle: 90.0,
         defaults: {
-            setup: { customRunoff: 60.0, focalZ: 0.0, focalX: 0.0 },
+            setup: { customRunoff: 60.0, focalZ: 0.0, focalX: -50.0 },
             bowl: {
-                type: "Full",
-                typeOptions: ALL_BOWL_TYPE_OPTIONS,
-                cornerRad: 0,
-                endLength: 325,
+                type: "BaseballStandard",
+                typeOptions: BASEBALL_BOWL_TYPE_OPTIONS,
+                cornerRad: 1,
+                sideLength: 200,
+                endLength: 200,
                 structuralDepth: 12,
                 structuralProfileMode: "stepped",
                 straightAisleMode: "perpendicular",
-                chamferAisleMode: "radial",
+                chamferAisleMode: "perpendicular",
                 radius: 0
             },
             occupancy: {
@@ -213,9 +220,9 @@ const SPORTS_TEMPLATES = {
             },
             tier1: {
                 targetCValue: 5.0,
-                numRows: 25,
-                firstRowDist: 50.0, // Saftey/Backstop
-                firstRowElev: 3.0,
+                numRows: 20,
+                firstRowDist: 25.0, // Saftey/Backstop
+                firstRowElev: 8.0,
                 treadDepth: 33,
                 riserHeight: 8,
                 eyeHeight: 3.75,

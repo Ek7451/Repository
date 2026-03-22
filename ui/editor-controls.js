@@ -127,6 +127,7 @@ function normalizeBowlType(value) {
     if (normalized === 'Side3') return 'Sides3';
     if (normalized === 'Side4') return 'Sides4';
     if (normalized === 'Side2') return 'Sides';
+    if (normalized === 'Standard' || normalized === 'Baseball Standard') return 'BaseballStandard';
     return normalized;
 }
 
@@ -142,6 +143,7 @@ function formatBowlTypeLabel(value, fallbackLabel = null) {
         Side1: '1-Sided',
         Side2: '2-Sided',
         Sides: '2-Sided',
+        BaseballStandard: 'Standard',
         Sides3: '3-Sided',
         Sides4: '4-Sided',
         Side3: '3-Sided',
@@ -199,7 +201,7 @@ function resolveBowlTypeOptionsFromTemplate(template) {
 }
 
 function shouldShowPrimarySideLengthRow(type) {
-    return ['Side1', 'Side2', 'Sides', 'Sides3', 'Sides4'].includes(normalizeBowlType(type));
+    return ['Side1', 'Side2', 'Sides', 'Sides3', 'Sides4', 'BaseballStandard'].includes(normalizeBowlType(type));
 }
 
 function shouldShowSecondarySideLengthRow(type) {
@@ -545,30 +547,36 @@ export class EditorControls {
 
         this._setInputValue('bowlSideLength', primaryValue);
         this._setInputValue('bowlEndLength', secondaryValue);
-        this._syncBowlLengthVisibility(this.state?.bowl?.type);
+        this._syncBowlLengthVisibility(this.state?.bowl?.type, this.state?.sport);
     }
 
-    _syncBowlLengthVisibility(bowlType) {
+    _syncBowlLengthVisibility(bowlType, sportName = this.state?.sport) {
         const type = normalizeBowlType(bowlType);
+        const isBaseball = sportName === 'Baseball';
         const primaryRow = getHtmlElement('sideLengthRow');
         const secondaryRow = getHtmlElement('sideLength34Row');
         const labels = resolveSideLengthRowLabels(type);
+        const chamferLabel = getHtmlElement('bowlCornerRadLabel');
 
         if (primaryRow) {
             primaryRow.hidden = !shouldShowPrimarySideLengthRow(type);
         }
         if (secondaryRow) {
-            secondaryRow.hidden = !shouldShowSecondarySideLengthRow(type);
+            secondaryRow.hidden = isBaseball || !shouldShowSecondarySideLengthRow(type);
         }
 
         const primaryLabel = getHtmlElement('sideLengthRowLabel');
         if (primaryLabel) {
-            primaryLabel.textContent = labels.primary;
+            primaryLabel.textContent = isBaseball ? 'Leg Length' : labels.primary;
         }
 
         const secondaryLabel = getHtmlElement('sideLength34RowLabel');
         if (secondaryLabel) {
             secondaryLabel.textContent = labels.secondary;
+        }
+
+        if (chamferLabel) {
+            chamferLabel.textContent = isBaseball ? 'Chamfer' : 'Chamfer Dim';
         }
     }
 

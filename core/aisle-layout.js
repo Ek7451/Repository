@@ -10,6 +10,7 @@ import {
     computeMaximumOccupantsPerAisle,
     computeRequiredAisleWidthIn,
     estimateWorstOccupantsPerSectionInTaperedInterval,
+    estimateWorstTributaryOccupancyInTaperedInterval,
     estimateWorstSeatsInInterval as estimateWorstSeatsInIntervalByPolicy,
     findRequiredIntervalAisleCount,
     findRequiredIntervalAisleCountForAisleLoad,
@@ -471,8 +472,8 @@ function collectTransitionAnchors(path) {
             const next = parts[i];
             if (isChamferTransition(prev, next)) pushAnchor(next.startDist);
         }
-        if (isChamferLikePart(parts[0])) pushAnchor(0);
-        if (isChamferLikePart(parts[count - 1])) pushAnchor(path.length);
+        if (count > 1 && isChamferLikePart(parts[0])) pushAnchor(0);
+        if (count > 1 && isChamferLikePart(parts[count - 1])) pushAnchor(path.length);
     }
 
     if (!raw.length) return [];
@@ -606,6 +607,10 @@ function buildPerimeterIntervals(pathFront, pathBack, anchors) {
         const front = buildIntervalSideRecord(pathFront, frontAnchors[i], frontAnchors[nextIndex]);
         const back = buildIntervalSideRecord(pathBack, backAnchors[i], backAnchors[nextIndex]);
         const axis = back?.axis || front?.axis || null;
+        const isOpenTerminalInterval = !closed && (i === 0 || i === intervalCount - 1);
+        const family = axis || isOpenTerminalInterval
+            ? 'straight'
+            : 'chamfer';
 
         out.push({
             index: i,
@@ -615,7 +620,7 @@ function buildPerimeterIntervals(pathFront, pathBack, anchors) {
             front,
             back,
             axis,
-            family: axis ? 'straight' : 'chamfer',
+            family,
             symmetryKey: `interval:${i}`,
             oppositeIndex: null
         });
@@ -2026,6 +2031,28 @@ function computeRequiredSegmentCounts(perimeterModel, options) {
                     rowCount: resolvedRowCount,
                     maxCount: 500,
                     measureWorstSeatsForCount: measureWorstSeats,
+                    measureWorstTributaryOccupancyForCount: (count) => estimateWorstTributaryOccupancyInTaperedInterval({
+                        frontIntervalLengthFt: interval?.front?.length,
+                        backIntervalLengthFt: interval?.back?.length,
+                        distributedCount: count,
+                        rowCount: resolvedRowCount,
+                        aisleWidthFt,
+                        seatWidthIn,
+                        measureSegments: typeof measureWorstSeatsForCount === 'function'
+                            ? undefined
+                            : (distributedCount) => {
+                                const resolvedCount = Math.max(0, Math.floor(Number(distributedCount) || 0));
+                                const intervalSide = getIntervalSide(interval);
+                                if (!intervalSide || intervalSide.length <= EPS) return [0, 1];
+
+                                return [0, ...distributeIntervalTs(
+                                    interval,
+                                    resolvedCount,
+                                    axisExclusionFt,
+                                    endpointBufferFt
+                                ), 1].sort((left, right) => left - right);
+                            }
+                    }),
                     measureWorstOccupantsPerSectionForCount: (count) => estimateWorstOccupantsPerSectionInTaperedInterval({
                         frontIntervalLengthFt: interval?.front?.length,
                         backIntervalLengthFt: interval?.back?.length,
@@ -2255,14 +2282,14 @@ function buildMeasuredSeatCapRefinement({
         maxSeatsBetweenAisles
     });
     const nextCounts = createPerimeterCountMatrix(perimeterModel, currentCounts);
+    const bestPressure = intervalPressures.find((pressure) => pressure.deficit > 0) || null;
 
-    intervalPressures.forEach((pressure) => {
-        if (!(pressure.deficit > 0)) return;
-        nextCounts[pressure.pathIndex][pressure.intervalIndex] = Math.max(
-            nextCounts[pressure.pathIndex][pressure.intervalIndex],
-            pressure.currentCount + 1
+    if (bestPressure) {
+        nextCounts[bestPressure.pathIndex][bestPressure.intervalIndex] = Math.max(
+            nextCounts[bestPressure.pathIndex][bestPressure.intervalIndex],
+            bestPressure.currentCount + 1
         );
-    });
+    }
 
     const normalizedNextCounts = normalizeRequiredCountsForSymmetry(perimeterModel, nextCounts);
 
@@ -3166,7 +3193,13 @@ export function resolveTierAisleStationRatios(
     tierLayout = null
 ) {
     const renderedWidthFt = getTierRenderedAisleWidthFt(tierLayout, aisleIndex);
-    if (renderedWidthFt > 0) {
+    const alignmentMode = normalizeAlignmentMode(aisle?.alignmentMode);
+    const shouldClampOpenEdgeByWidth = (
+        aisle?.anchorType === 'open_edge_terminal' ||
+        aisle?.anchorType === 'distributed_linear_even' ||
+        alignmentMode !== 'perpendicular'
+    );
+    if (renderedWidthFt > 0 && shouldClampOpenEdgeByWidth) {
         let edge = null;
         if (aisle?.anchorType === 'open_edge_terminal') {
             edge = String(aisle.edge || '').toLowerCase() === 'end' ? 'end' : 'start';

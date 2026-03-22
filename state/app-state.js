@@ -306,6 +306,7 @@ function normalizeBowlType(value, fallback) {
     if (nextValue === 'Side2') return 'Side1';
     if (nextValue === 'Side3') return 'Sides3';
     if (nextValue === 'Side4') return 'Sides4';
+    if (nextValue === 'Standard' || nextValue === 'Baseball Standard') return 'BaseballStandard';
     if (nextValue === 'C-Shape') return 'U-End1';
     if (nextValue === 'U-Shape') return 'U-End2';
     return nextValue;
@@ -723,10 +724,9 @@ export function buildBowlConfig(state, template) {
 export function buildFieldVisibility(state) {
     const setup = getStateSetup(state);
     const tiers = Array.isArray(state?.tiers) ? state.tiers : [];
-    const sportName = resolveSportName(state);
 
     return {
-        showSeating: sportName !== 'Baseball',
+        showSeating: true,
         t1: !!tiers[0]?.enabled,
         t2: !!tiers[1]?.enabled,
         t3: !!tiers[2]?.enabled,

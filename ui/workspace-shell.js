@@ -91,12 +91,14 @@ function syncLeftSidebarSliderState(sidebar, minWidth, currentWidth = null) {
 }
 
 function resizeCanvasToParent(canvas) {
-    const parent = canvas?.parentElement;
-    const rect = parent?.getBoundingClientRect?.();
-    if (!canvas || !rect) return;
-    if (rect.width > 0 && rect.height > 0) {
-        canvas.width = rect.width;
-        canvas.height = rect.height;
+    const rect = canvas?.getBoundingClientRect?.();
+    const parentRect = canvas?.parentElement?.getBoundingClientRect?.();
+    const nextWidth = Math.round(rect?.width || 0) || Math.round(parentRect?.width || 0);
+    const nextHeight = Math.round(rect?.height || 0) || Math.round(parentRect?.height || 0);
+    if (!canvas) return;
+    if (nextWidth > 0 && nextHeight > 0) {
+        canvas.width = nextWidth;
+        canvas.height = nextHeight;
     }
 }
 

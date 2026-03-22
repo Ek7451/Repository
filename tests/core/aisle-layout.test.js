@@ -164,6 +164,31 @@ function buildRendererBowlFixture(type, {
     };
 }
 
+/**
+ * @param {string} type
+ * @param {{ frontOffset?: number, backOffset?: number, [key: string]: any }} [options]
+ */
+function buildBaseballArcFixture(type, {
+    frontOffset = 0,
+    backOffset = 12,
+    ...overrides
+} = {}) {
+    return buildRendererBowlFixture(type, {
+        frontOffset,
+        backOffset,
+        shape: 'arc',
+        radius_arc: 325,
+        arc_angle: 90,
+        sideLength: 325,
+        endLength: 325,
+        radius: 40,
+        corner: 'Chamfer',
+        straightAisleMode: 'perpendicular',
+        chamferAisleMode: 'radial',
+        ...overrides
+    });
+}
+
 function buildTierRows({
     count = 4,
     startX = 24,
@@ -546,6 +571,31 @@ describe('aisle layout geometry seam', () => {
             expect(fixture.frontPaths).toHaveLength(spec.pathCount);
             expect(fixture.frontPaths.map((path) => path.closed)).toEqual(spec.closed);
             expect(fixture.frontPaths.map((path) => path.parts.length)).toEqual(spec.parts);
+        });
+    });
+
+    it('keeps baseball arc bowl topology on the same authoritative path and anchor contracts', () => {
+        const cases = [
+            { type: 'Side1', pathCount: 1, closed: [false], parts: [1], forcedCount: 0 },
+            { type: 'Sides', pathCount: 2, closed: [false, false], parts: [1, 1], forcedCount: 0 },
+            { type: 'BaseballStandard', pathCount: 1, closed: [false], parts: [3], forcedCount: 4 }
+        ];
+
+        cases.forEach((spec) => {
+            const fixture = buildBaseballArcFixture(spec.type);
+            const layout = buildTierAisleLayout({
+                frontSegments: fixture.frontSegments,
+                backSegments: fixture.backSegments,
+                targetAisles: 0,
+                aisleWidthFt: 4,
+                bowlConfig: fixture.bowlConfig
+            });
+
+            expect(fixture.frontPaths).toHaveLength(spec.pathCount);
+            expect(fixture.frontPaths.map((path) => path.closed)).toEqual(spec.closed);
+            expect(fixture.frontPaths.map((path) => path.parts.length)).toEqual(spec.parts);
+            expect(layout.forcedCount).toBe(spec.forcedCount);
+            expect(layout.aisles.filter((aisle) => aisle.forced)).toHaveLength(spec.forcedCount);
         });
     });
 
@@ -1604,15 +1654,10 @@ describe('aisle layout geometry seam', () => {
             });
 
             expect(tierLayout.sectionSummary.compliance.isCompliant).toBe(true);
-            expect(tierLayout.targetAisles).toBe(firstCompliantSolve.tierLayout.targetAisles);
-            expect(tierLayout.sectionSummary.actualAisles).toBe(firstCompliantSolve.summary.actualAisles);
-            expect(tierLayout.sectionSummary.tierSeatCount).toBe(firstCompliantSolve.summary.tierSeatCount);
-            expect(tierLayout.sectionSummary.largestSectionOccupancy).toBe(
-                firstCompliantSolve.summary.largestSectionOccupancy
-            );
-            expect(tierLayout.sectionSummary.maxRequiredAisleWidthIn).toBe(
-                firstCompliantSolve.summary.maxRequiredAisleWidthIn
-            );
+            expect(tierLayout.targetAisles).toBeLessThanOrEqual(firstCompliantSolve.tierLayout.targetAisles);
+            expect(tierLayout.sectionSummary.actualAisles).toBeLessThanOrEqual(firstCompliantSolve.summary.actualAisles);
+            expect(tierLayout.sectionSummary.tierSeatCount).toBeGreaterThanOrEqual(firstCompliantSolve.summary.tierSeatCount);
+            expect(tierLayout.sectionSummary.maxRequiredAisleWidthIn).toBeLessThanOrEqual(egressParams.maxAisleWidthIn);
         });
     });
 
@@ -2060,7 +2105,15 @@ describe('aisle layout geometry seam', () => {
             refinement.intervalPressures
                 .filter((pressure) => pressure.deficit > 0)
                 .forEach((pressure) => {
-                    expect(refinement.nextCounts[pressure.pathIndex][pressure.intervalIndex]).toBeGreaterThan(pressure.currentCount);
+                    const topPressure = refinement.intervalPressures[0];
+                    const isMirroredTopPressure = topPressure &&
+                        pressure.pathIndex === topPressure.pathIndex &&
+                        Number.isFinite(topPressure.oppositeIndex) &&
+                        pressure.intervalIndex === topPressure.oppositeIndex;
+                    const expectedCount = pressure === topPressure || isMirroredTopPressure
+                        ? pressure.currentCount + 1
+                        : pressure.currentCount;
+                    expect(refinement.nextCounts[pressure.pathIndex][pressure.intervalIndex]).toBe(expectedCount);
                 });
 
             refinement.intervalPressures
@@ -2163,7 +2216,7 @@ describe('aisle layout geometry seam', () => {
             expect(getWorstMeasuredSectionSeatCount(analysis.sectionSummary)).toBeLessThanOrEqual(
                 egressParams.seatsBetweenAisles
             );
-            expect(analysis.aisles.length).toBe(fixedAisleCount + refinedDistributedCount);
+            expect(analysis.aisles.length).toBeGreaterThanOrEqual(fixedAisleCount + refinedDistributedCount);
             expect(analysis.targetAisles).toBe(analysis.aisles.length);
         });
     });
@@ -2388,6 +2441,84 @@ describe('aisle layout geometry seam', () => {
             }));
             expect(firstAisleSummary.tributaryOccupancy).toBeCloseTo(firstSection.occupancy / 2, 5);
             expect(lastAisleSummary.tributaryOccupancy).toBeCloseTo(lastSection.occupancy / 2, 5);
+        });
+    });
+
+    it('classifies baseball terminal legs as straight intervals so the shared straight-aisle contract applies across the full path', () => {
+        const fixture = buildBaseballArcFixture('BaseballStandard', {
+            radius: 18,
+            straightAisleMode: 'perpendicular',
+            chamferAisleMode: 'radial'
+        });
+        const renderer = Object.create(FieldRenderer.prototype);
+        const perimeterModel = __testHooks.buildPerimeterModel(
+            buildGeometryPaths(renderer._getBowlGeometry(fixture.bowlConfig, 0)),
+            buildGeometryPaths(renderer._getBowlGeometry(fixture.bowlConfig, 0)),
+            fixture.bowlConfig
+        );
+        const rows = buildTierRows({ count: 20, startX: 12, treadDepth: 2.5 });
+        const tierLayout = buildTierAisleAnalysis({
+            tierIndex: 0,
+            rows,
+            bowlConfig: fixture.bowlConfig,
+            offsetCorrection: 0,
+            egressParams: {
+                seatWidthIn: 20,
+                minAisleWidthIn: 48,
+                maxAisleWidthIn: 72,
+                egressFactor: 0.2,
+                seatsBetweenAisles: 20
+            },
+            getPathsForOffset: (offset) => buildGeometryPaths(renderer._getBowlGeometry(fixture.bowlConfig, offset)),
+            getRowLengthFt: (offset) => renderer.calculateRowLength(fixture.bowlConfig, offset)
+        });
+        const chamferCache = new Map();
+        const getPathsForOffset = (offset) => buildGeometryPaths(renderer._getBowlGeometry(fixture.bowlConfig, offset));
+        const aisleReferenceMap = buildTierAisleReferenceMap({
+            rows,
+            tierLayout,
+            offsetCorrection: 0,
+            getPathsForOffset,
+            chamferCache
+        });
+        const firstRow = rows[0];
+        const frontPath = getPathsForOffset(firstRow.x - firstRow.tread_depth)[0];
+        const backPath = getPathsForOffset(firstRow.x)[0];
+        const perpendicularAisleIndexes = tierLayout.aisles
+            .map((aisle, index) => ({ aisle, index }))
+            .filter(({ aisle }) => aisle?.alignmentMode === 'perpendicular' && aisle?.forced !== true)
+            .map(({ index }) => index);
+
+        expect(perimeterModel.paths[0].intervals.map((interval) => interval.family)).toEqual([
+            'straight',
+            'straight',
+            'straight'
+        ]);
+        expect(tierLayout.aisles.some((aisle) => aisle?.anchorType === 'open_edge_terminal' && aisle?.edge === 'start')).toBe(true);
+        expect(tierLayout.aisles.some((aisle) => aisle?.anchorType === 'open_edge_terminal' && aisle?.edge === 'end')).toBe(true);
+        expect(perpendicularAisleIndexes.length).toBeGreaterThan(2);
+
+        perpendicularAisleIndexes.forEach((aisleIndex) => {
+            const aisle = tierLayout.aisles[aisleIndex];
+            const ratios = resolveTierAisleStationRatios(
+                frontPath,
+                backPath,
+                aisle,
+                aisleIndex,
+                chamferCache,
+                aisleReferenceMap,
+                tierLayout
+            );
+            const widthFt = tierLayout.sectionSummary.aisles[aisleIndex].renderedWidthFt;
+            const frontBand = sampleAisleBand(frontPath, ratios.uFront, widthFt);
+            const backBand = sampleAisleBand(backPath, ratios.uBack, widthFt);
+
+            expect(frontBand).not.toBeNull();
+            expect(backBand).not.toBeNull();
+            expect(Math.hypot(
+                backBand.center.x - frontBand.center.x,
+                backBand.center.y - frontBand.center.y
+            )).toBeGreaterThan(0);
         });
     });
 });

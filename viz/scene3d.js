@@ -19,18 +19,19 @@ import { resolvePlanFocalYFt } from '../core/sports-templates.js';
 import {
     buildBowlGeometrySegments,
     buildBowlGeometrySubpaths,
-    buildFieldGeometrySegments
+    buildFieldGeometrySegments,
+    isPlanSubpathClosed
 } from './field-renderer.js';
 
 const SCENE_THEME_COLORS = {
     light: {
         sceneBg: 0xffffff,
-        gridMajor: 0xd6d6d2,
-        gridMinor: 0xeeeeea,
+        gridMajor: '#d6d6d2',
+        gridMinor: '#eeeeea',
         field: 0x7aae1a,       // JLG Green (website tone)
         fieldRunoff: 0xde850a, // JLG Orange
         focal: 0xde850a,       // Use brand orange for focal marker
-        tier: [0x505550, 0x888f87, 0xb7beb6], // Tier 1 dark, Tier 2 medium, Tier 3 light gray
+        tier: ['#606460', '#999e99', '#ccd1cb'], // Tier 1 dark, Tier 2 medium, Tier 3 light gray
         tierSeat: [0x6b706b, 0x9fa69e, 0xcfd5cd],
         tierAisle: [0xf7f7f6, 0xfbfbfa, 0xffffff],
         ambientIntensity: 0.5,
@@ -47,7 +48,7 @@ const SCENE_THEME_COLORS = {
         field: 0x8fcf33,
         fieldRunoff: 0xf19b2f,
         focal: 0xf19b2f,
-        tier: [0x9ea99d, 0x859183, 0x6f7b6d],
+        tier: ['#646864', '#979c96', '#b7beb6'],
         tierSeat: [0xc1c9be, 0xaab5a5, 0x95a08f],
         tierAisle: [0x2d3530, 0x38413b, 0x455049],
         ambientIntensity: 0.72,
@@ -67,6 +68,21 @@ let BRAND_COLORS = SCENE_THEME_COLORS.light;
 const MIDDLE_CLICK_DOUBLE_MS = 400;
 const MIDDLE_CLICK_DRAG_PX = 6;
 const SCENE_EXTENTS_VERTICAL_PADDING_PX = 40;
+const GRID_HELPER_Y = -0.01;
+const GRID_HELPER_SIZE = 1200;
+const GRID_HELPER_DIVISIONS = 48;
+const GRID_FADE_START_RATIO = 0.02;
+const GRID_FADE_POWER = 1.9;
+const FIELD_SURFACE_Y = 0.18;
+const RUNOFF_LINE_Y = 0.2;
+const AISLE_POLYGON_OFFSET_FACTOR = -2;
+const AISLE_POLYGON_OFFSET_UNITS = -2;
+const SEAT_DEFAULT_COLOR = '#ffffff';
+const SEAT_HIGHLIGHT_COLOR = '#de850a';
+const SPECTATOR_LOOK_DISTANCE_FT = 120;
+const SPECTATOR_ALT_LOOK_YAW_SPEED = 0.006;
+const SPECTATOR_ALT_LOOK_PITCH_SPEED = 0.004;
+const SPECTATOR_MAX_PITCH_RAD = Math.PI * 0.48;
 
 function syncSceneThemeColors(theme = 'light') {
     theme = normalizeThemeName(theme);
@@ -93,6 +109,9 @@ export class Scene3D {
     constructor(container, options = {}) {
         this.container = container;
         this._theme = normalizeThemeName(options?.theme);
+        this._onSpectatorViewChange = typeof options?.onSpectatorViewChange === 'function'
+            ? options.onSpectatorViewChange
+            : null;
         /** @type {any} */
         this.THREE = THREE;
         /** @type {any} */
@@ -131,6 +150,22 @@ export class Scene3D {
         this._middlePointerMoveHandler = null;
         this._middlePointerUpHandler = null;
         this._middlePointerCancelHandler = null;
+        /** @type {any} */
+        this._raycaster = null;
+        /** @type {any} */
+        this._hoveredSeatRef = null;
+        /** @type {any} */
+        this._selectedSeatRef = null;
+        this._spectatorView = null;
+        this._seatPointerMoveHandler = null;
+        this._seatPointerLeaveHandler = null;
+        this._seatClickHandler = null;
+        this._spectatorPointerDownHandler = null;
+        this._spectatorPointerMoveHandler = null;
+        this._spectatorPointerUpHandler = null;
+        this._spectatorPointerCancelHandler = null;
+        this._spectatorKeyDownHandler = null;
+        this._spectatorKeyUpHandler = null;
     }
 
     async init() {
@@ -158,7 +193,9 @@ export class Scene3D {
         this.renderer.domElement.style.width = '100%';
         this.renderer.domElement.style.height = '100%';
         this.renderer.domElement.style.display = 'block';
+        this.renderer.domElement.style.cursor = 'default';
         this.container.appendChild(this.renderer.domElement);
+        this._raycaster = new THREE.Raycaster();
 
         // Controls
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -225,6 +262,9 @@ export class Scene3D {
 
             // Small delay ensures OrbitControls processes pointerup and clears its drag state first.
             setTimeout(() => {
+                this._clearSeatHover();
+                this._clearSeatSelection();
+                this._clearSpectatorView();
                 this._fitCameraToBowl();
             }, 10);
         };
@@ -236,6 +276,25 @@ export class Scene3D {
         this.renderer.domElement.addEventListener('pointermove', this._middlePointerMoveHandler);
         this.renderer.domElement.addEventListener('pointerup', this._middlePointerUpHandler);
         this.renderer.domElement.addEventListener('pointercancel', this._middlePointerCancelHandler);
+
+        this._seatPointerMoveHandler = (event) => this._handleSeatPointerMove(event);
+        this._seatPointerLeaveHandler = () => this._clearSeatHover();
+        this._seatClickHandler = (event) => this._handleSeatClick(event);
+        this._spectatorPointerDownHandler = (event) => this._handleSpectatorPointerDown(event);
+        this._spectatorPointerMoveHandler = (event) => this._handleSpectatorPointerMove(event);
+        this._spectatorPointerUpHandler = (event) => this._handleSpectatorPointerUp(event);
+        this._spectatorPointerCancelHandler = () => this._cancelSpectatorPointerDrag();
+        this._spectatorKeyDownHandler = (event) => this._handleSpectatorKeyDown(event);
+        this._spectatorKeyUpHandler = (event) => this._handleSpectatorKeyUp(event);
+        this.renderer.domElement.addEventListener('pointermove', this._seatPointerMoveHandler);
+        this.renderer.domElement.addEventListener('pointerleave', this._seatPointerLeaveHandler);
+        this.renderer.domElement.addEventListener('click', this._seatClickHandler);
+        this.renderer.domElement.addEventListener('pointerdown', this._spectatorPointerDownHandler);
+        this.renderer.domElement.addEventListener('pointermove', this._spectatorPointerMoveHandler);
+        this.renderer.domElement.addEventListener('pointerup', this._spectatorPointerUpHandler);
+        this.renderer.domElement.addEventListener('pointercancel', this._spectatorPointerCancelHandler);
+        window.addEventListener('keydown', this._spectatorKeyDownHandler);
+        window.addEventListener('keyup', this._spectatorKeyUpHandler);
 
         // Resize observer for container
         this._resizeObserver = new ResizeObserver(() => this._onResize());
@@ -252,9 +311,55 @@ export class Scene3D {
     }
 
     _buildGridHelper() {
-        const grid = /** @type {any} */ (new this.THREE.GridHelper(1200, 24, BRAND_COLORS.gridMajor, BRAND_COLORS.gridMinor));
-        grid.position.y = 0.01;
+        const halfSize = GRID_HELPER_SIZE * 0.5;
+        const divisions = Math.max(1, GRID_HELPER_DIVISIONS);
+        const step = GRID_HELPER_SIZE / divisions;
+        const positions = [];
+        const colors = [];
+        const backgroundColor = new this.THREE.Color(BRAND_COLORS.sceneBg);
+        const majorColor = new this.THREE.Color(BRAND_COLORS.gridMajor);
+        const minorColor = new this.THREE.Color(BRAND_COLORS.gridMinor);
+
+        const pushSegment = (x1, z1, x2, z2, baseColor) => {
+            positions.push(x1, 0, z1, x2, 0, z2);
+            this._pushGridVertexColor(colors, baseColor, backgroundColor, halfSize, x1, z1);
+            this._pushGridVertexColor(colors, baseColor, backgroundColor, halfSize, x2, z2);
+        };
+
+        for (let row = 0; row <= divisions; row++) {
+            const axis = -halfSize + (row * step);
+            const lineColor = row === (divisions / 2) ? majorColor : minorColor;
+
+            for (let segment = 0; segment < divisions; segment++) {
+                const start = -halfSize + (segment * step);
+                const end = start + step;
+                pushSegment(start, axis, end, axis, lineColor);
+                pushSegment(axis, start, axis, end, lineColor);
+            }
+        }
+
+        const geometry = new this.THREE.BufferGeometry();
+        geometry.setAttribute('position', new this.THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new this.THREE.Float32BufferAttribute(colors, 3));
+        const material = new this.THREE.LineBasicMaterial({
+            vertexColors: true,
+            toneMapped: false,
+            depthWrite: false
+        });
+        const grid = /** @type {any} */ (new this.THREE.LineSegments(geometry, material));
+        grid.position.y = GRID_HELPER_Y;
+        grid.renderOrder = -10;
+        grid.userData = { isGridHelper: true };
         return grid;
+    }
+
+    _pushGridVertexColor(target, baseColor, backgroundColor, halfSize, x, z) {
+        const fadeStart = Math.max(0, halfSize * GRID_FADE_START_RATIO);
+        const fadeEnd = Math.max(fadeStart + 1e-3, halfSize);
+        const distance = Math.hypot(x, z);
+        const fadeT = Math.min(1, Math.max(0, (distance - fadeStart) / Math.max(fadeEnd - fadeStart, 1e-3)));
+        const mixedColor = baseColor.clone().lerp(backgroundColor, Math.pow(fadeT, GRID_FADE_POWER));
+        target.push(mixedColor.r, mixedColor.g, mixedColor.b);
     }
 
     applyTheme(theme = this._theme) {
@@ -316,7 +421,9 @@ export class Scene3D {
         this._animId = requestAnimationFrame(() => this._animate());
         if (this.controls) {
             this.controls.update();
-            this._stabilizeCameraDistance();
+            if (!this._spectatorView) {
+                this._stabilizeCameraDistance();
+            }
         }
         if (this.renderer && this.scene && this.camera) {
             try {
@@ -325,6 +432,22 @@ export class Scene3D {
                 console.warn('3D render error:', err);
             }
         }
+    }
+
+    setSpectatorViewChangeHandler(handler) {
+        this._onSpectatorViewChange = typeof handler === 'function' ? handler : null;
+        this._notifySpectatorViewChange();
+    }
+
+    isSpectatorViewActive() {
+        return !!this._spectatorView?.active;
+    }
+
+    exitSpectatorView() {
+        this._cancelSpectatorPointerDrag();
+        this._clearSeatHover();
+        this._clearSeatSelection();
+        this._clearSpectatorView();
     }
 
     /**
@@ -361,8 +484,9 @@ export class Scene3D {
             });
             const fieldMesh = /** @type {any} */ (new THREE.Mesh(fieldGeo, fieldMat));
             fieldMesh.rotation.x = -Math.PI / 2;
-            fieldMesh.position.y = 0.05;
+            fieldMesh.position.y = FIELD_SURFACE_Y;
             fieldMesh.receiveShadow = true;
+            fieldMesh.renderOrder = 1;
             this.fieldGroup.add(fieldMesh);
         }
 
@@ -371,7 +495,7 @@ export class Scene3D {
         if (runoffShape) {
             const runoffPoints = runoffShape.getPoints(64);
             const runoffGeo = new THREE.BufferGeometry().setFromPoints(
-                runoffPoints.map(p => new THREE.Vector3(p.x, 0.1, -p.y))
+                runoffPoints.map(p => new THREE.Vector3(p.x, RUNOFF_LINE_Y, -p.y))
             );
             const runoffMat = new THREE.LineDashedMaterial({
                 color: BRAND_COLORS.fieldRunoff,
@@ -411,6 +535,9 @@ export class Scene3D {
     updateBowl(solvers, bowlConfig, template, offsetCorrection = 0, tierAisleLayouts = [], seatPreviewOptions = null) {
         if (!this._initialized || !this.THREE) return;
         const THREE = this.THREE;
+        this._clearSeatHover();
+        this._clearSeatSelection();
+        this._clearSpectatorView();
 
         // Clear existing bowl
         while (this.bowlGroup.children.length) {
@@ -490,7 +617,10 @@ export class Scene3D {
                         metalness: 0.02,
                         side: THREE.DoubleSide,
                         transparent: true,
-                        opacity: 0.95
+                        opacity: 0.95,
+                        polygonOffset: true,
+                        polygonOffsetFactor: AISLE_POLYGON_OFFSET_FACTOR,
+                        polygonOffsetUnits: AISLE_POLYGON_OFFSET_UNITS
                     });
                     const aisleMesh = /** @type {any} */ (new THREE.Mesh(aisleGeometry, aisleMaterial));
                     aisleMesh.renderOrder = 5;
@@ -509,8 +639,7 @@ export class Scene3D {
                     bowlConfig,
                     tierAisleLayout || null,
                     seatWidthIn,
-                    offsetCorrection,
-                    index
+                    offsetCorrection
                 );
                 if (seatPreview && seatPreview.mesh) {
                     seatPreview.mesh.userData = seatPreview.mesh.userData || {};
@@ -548,8 +677,70 @@ export class Scene3D {
         }
     }
 
-    _resetCamera(size) {
+    _resetCamera(_size) {
         // Optional: adjust camera based on bowl size if needed
+    }
+
+    _duplicateVertex(positions, sourceIndex) {
+        if (!Array.isArray(positions) || !Number.isInteger(sourceIndex) || sourceIndex < 0) return -1;
+        const sourceOffset = sourceIndex * 3;
+        if (sourceOffset + 2 >= positions.length) return -1;
+        positions.push(
+            positions[sourceOffset],
+            positions[sourceOffset + 1],
+            positions[sourceOffset + 2]
+        );
+        return (positions.length / 3) - 1;
+    }
+
+    _appendOpenRowEndCaps(positions, indices, stripBase, pointCount) {
+        if (!Array.isArray(positions) || !Array.isArray(indices) || pointCount < 1) return;
+
+        const firstTriangle = [stripBase, stripBase + 1, stripBase + 2]
+            .map((sourceIndex) => this._duplicateVertex(positions, sourceIndex));
+        if (firstTriangle.every((vertexIndex) => vertexIndex >= 0)) {
+            indices.push(firstTriangle[0], firstTriangle[1], firstTriangle[2]);
+        }
+
+        const lastBase = stripBase + ((pointCount - 1) * 3);
+        const lastTriangle = [lastBase, lastBase + 2, lastBase + 1]
+            .map((sourceIndex) => this._duplicateVertex(positions, sourceIndex));
+        if (lastTriangle.every((vertexIndex) => vertexIndex >= 0)) {
+            indices.push(lastTriangle[0], lastTriangle[1], lastTriangle[2]);
+        }
+    }
+
+    _appendOpenStructuralEndCaps(positions, indices, stripBase, profile, pointCount) {
+        if (!Array.isArray(positions) || !Array.isArray(indices) || !Array.isArray(profile) || profile.length < 3 || pointCount < 1) return;
+        const contour = profile
+            .filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.z))
+            .map((point) => new this.THREE.Vector2(point.x, point.z));
+        if (contour.length < 3) return;
+
+        const capTriangles = this.THREE.ShapeUtils.triangulateShape(contour, []);
+        const endOffset = pointCount - 1;
+        const startCapVertices = profile.map((_, profileIndex) =>
+            this._duplicateVertex(positions, stripBase + (profileIndex * pointCount))
+        );
+        const endCapVertices = profile.map((_, profileIndex) =>
+            this._duplicateVertex(positions, stripBase + (profileIndex * pointCount) + endOffset)
+        );
+        if (startCapVertices.some((vertexIndex) => vertexIndex < 0) || endCapVertices.some((vertexIndex) => vertexIndex < 0)) return;
+
+        capTriangles.forEach((triangle) => {
+            if (!Array.isArray(triangle) || triangle.length !== 3) return;
+            const [a, b, c] = triangle;
+            indices.push(
+                startCapVertices[a],
+                startCapVertices[b],
+                startCapVertices[c]
+            );
+            indices.push(
+                endCapVertices[a],
+                endCapVertices[c],
+                endCapVertices[b]
+            );
+        });
     }
 
     _createTierGeometry(solver, bowlConfig, offsetCorrection = 0) {
@@ -569,9 +760,6 @@ export class Scene3D {
 
         const getPlanSubpathsForOffset = (offset) => buildBowlGeometrySubpaths(config, offset)
             .map((subpath) => subpath.map((point) => ({ x: point.x, z: -point.y })));
-
-        // We accumulate vertices for the whole tier to single mesh
-        let baseIndex = 0;
 
         solver.rows.forEach(row => {
             const zBottom = row.z - row.riser_height;
@@ -596,6 +784,8 @@ export class Scene3D {
                 if (!ptsFront || !ptsBack || ptsFront.length < 2 || ptsBack.length < 2) continue;
 
                 const n = Math.min(ptsFront.length, ptsBack.length);
+                const pathIsClosed = isPlanSubpathClosed(ptsFront) && isPlanSubpathClosed(ptsBack);
+                const stripBase = positions.length / 3;
 
                 // For each point along the contour
                 for (let i = 0; i < n; i++) {
@@ -613,13 +803,13 @@ export class Scene3D {
 
                     // If not last point, create quads connecting to next index
                     if (i < n - 1) {
-                        const i0 = baseIndex + i * 3;     // Curr Low
-                        const i1 = baseIndex + i * 3 + 1; // Curr High Front
-                        const i2 = baseIndex + i * 3 + 2; // Curr High Back
+                        const i0 = stripBase + i * 3;     // Curr Low
+                        const i1 = stripBase + i * 3 + 1; // Curr High Front
+                        const i2 = stripBase + i * 3 + 2; // Curr High Back
 
-                        const j0 = baseIndex + (i + 1) * 3;     // Next Low
-                        const j1 = baseIndex + (i + 1) * 3 + 1; // Next High Front
-                        const j2 = baseIndex + (i + 1) * 3 + 2; // Next High Back
+                        const j0 = stripBase + (i + 1) * 3;     // Next Low
+                        const j1 = stripBase + (i + 1) * 3 + 1; // Next High Front
+                        const j2 = stripBase + (i + 1) * 3 + 2; // Next High Back
 
                         // Riser Quad: i0 -> j0 -> j1 -> i1
                         indices.push(i0, j0, i1);
@@ -630,7 +820,9 @@ export class Scene3D {
                         indices.push(j1, j2, i2);
                     }
                 }
-                baseIndex += n * 3;
+                if (!pathIsClosed) {
+                    this._appendOpenRowEndCaps(positions, indices, stripBase, n);
+                }
             }
         });
 
@@ -775,8 +967,7 @@ export class Scene3D {
         bowlConfig,
         tierAisleLayout,
         seatWidthIn,
-        offsetCorrection = 0,
-        tierColorIndex = 0
+        offsetCorrection = 0
     ) {
         const THREE = this.THREE;
         if (!solver || !solver.rows || solver.rows.length === 0) return null;
@@ -786,6 +977,7 @@ export class Scene3D {
 
         const aisles = (tierAisleLayout && Array.isArray(tierAisleLayout.aisles)) ? tierAisleLayout.aisles : [];
         const seatPlacements = [];
+        const spectatorSeats = [];
         const zLift = 0.08;
 
         const pathCache = new Map();
@@ -808,6 +1000,12 @@ export class Scene3D {
         solver.rows.forEach(row => {
             const centerOffset = (row.x - (row.tread_depth * 0.5)) - offsetCorrection;
             const centerPaths = getPathsForOffset(centerOffset);
+            const eyeOffset = (
+                Number.isFinite(Number(row.eye_x))
+                    ? Number(row.eye_x)
+                    : (Number(row.x) - ((Number(row.tread_depth) || 0) * 0.5))
+            ) - offsetCorrection;
+            const eyePaths = getPathsForOffset(eyeOffset);
             if (!centerPaths.length) return;
 
             const blockedByPath = centerPaths.map(() => []);
@@ -851,11 +1049,16 @@ export class Scene3D {
             for (let pathIndex = 0; pathIndex < centerPaths.length; pathIndex++) {
                 const path = centerPaths[pathIndex];
                 if (!path || !Number.isFinite(path.length) || path.length <= 1e-6) continue;
+                const eyePath = eyePaths[pathIndex] || path;
 
                 const freeIntervals = this._computeSeatFreeIntervals(path, blockedByPath[pathIndex] || []);
                 if (!freeIntervals.length) continue;
 
-                const centerY = row.z + (seatSizeFt * 0.5) + zLift;
+                const rowZ = Number.isFinite(Number(row.z)) ? Number(row.z) : 0;
+                const centerY = rowZ + (seatSizeFt * 0.5) + zLift;
+                const eyeY = Number.isFinite(Number(row.eye_z))
+                    ? Number(row.eye_z)
+                    : (rowZ + Math.max(seatSizeFt * 0.5, Number(solver?.eyeHeight) || 0));
 
                 for (let j = 0; j < freeIntervals.length; j++) {
                     const interval = freeIntervals[j];
@@ -873,11 +1076,30 @@ export class Scene3D {
                     for (let s = 0; s < seatCount; s++) {
                         const u = dist / path.length;
                         const pt = samplePathPointByRatio(path, u);
+                        const eyePt = samplePathPointByRatio(eyePath, u);
                         seatPlacements.push({
                             x: pt.x,
                             y: centerY,
                             z: -pt.y,
                             yaw: Math.atan2(-pt.ty, pt.tx)
+                        });
+                        spectatorSeats.push({
+                            tierIndex: Number.isInteger(Number(solver?.tierIndex)) ? Number(solver.tierIndex) : 0,
+                            seatPosition: {
+                                x: pt.x,
+                                y: centerY,
+                                z: -pt.y
+                            },
+                            eyePosition: {
+                                x: eyePt.x,
+                                y: eyeY,
+                                z: -eyePt.y
+                            },
+                            lookTarget: {
+                                x: 0,
+                                y: FIELD_SURFACE_Y,
+                                z: 0
+                            }
                         });
                         dist += seatSizeFt;
                     }
@@ -888,12 +1110,12 @@ export class Scene3D {
         if (!seatPlacements.length) return null;
 
         const material = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
+            color: '#ffffff',
             roughness: 0.72,
             metalness: 0.0,
             transparent: true,
-            opacity: 0.5,
-            depthWrite: false
+            opacity: 0.6,
+            depthWrite: true
         });
         const geometry = new THREE.BoxGeometry(seatSizeFt, seatSizeFt, seatSizeFt);
         const mesh = /** @type {any} */ (new THREE.InstancedMesh(geometry, material, seatPlacements.length));
@@ -905,19 +1127,25 @@ export class Scene3D {
         mesh.renderOrder = 4;
 
         const dummy = /** @type {any} */ (new THREE.Object3D());
+        const instanceColor = new THREE.Color(SEAT_DEFAULT_COLOR);
         for (let i = 0; i < seatPlacements.length; i++) {
             const p = seatPlacements[i];
             dummy.position.set(p.x, p.y, p.z);
             dummy.rotation.set(0, p.yaw, 0);
             dummy.updateMatrix();
             mesh.setMatrixAt(i, dummy.matrix);
+            mesh.setColorAt(i, instanceColor);
         }
         mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) {
+            mesh.instanceColor.needsUpdate = true;
+        }
         if (typeof mesh.computeBoundingSphere === 'function') mesh.computeBoundingSphere();
         mesh.userData.seatPreview = {
             count: seatPlacements.length,
             seatWidthIn: Number(seatWidthIn) || 0,
-            tierIndex: solver.tierIndex
+            tierIndex: solver.tierIndex,
+            instances: spectatorSeats
         };
 
         return {
@@ -993,6 +1221,345 @@ export class Scene3D {
         return free;
     }
 
+    _seatRefsEqual(a, b) {
+        return !!a && !!b && a.mesh === b.mesh && a.instanceId === b.instanceId;
+    }
+
+    _getSeatPreviewInstance(mesh, instanceId) {
+        const instances = mesh?.userData?.seatPreview?.instances;
+        if (!Array.isArray(instances)) return null;
+        return instances[instanceId] || null;
+    }
+
+    _setSeatMeshInstanceColor(mesh, instanceId, colorHex) {
+        if (!mesh || !mesh.isInstancedMesh || typeof mesh.setColorAt !== 'function') return;
+        if (!Number.isInteger(instanceId) || instanceId < 0 || instanceId >= mesh.count) return;
+        mesh.setColorAt(instanceId, new this.THREE.Color(colorHex));
+        if (mesh.instanceColor) {
+            mesh.instanceColor.needsUpdate = true;
+        }
+    }
+
+    _applySeatRefColor(seatRef, colorHex) {
+        if (!seatRef) return;
+        this._setSeatMeshInstanceColor(seatRef.mesh, seatRef.instanceId, colorHex);
+    }
+
+    _notifySpectatorViewChange() {
+        this._onSpectatorViewChange?.({
+            active: this.isSpectatorViewActive()
+        });
+    }
+
+    _syncSeatCursor() {
+        const cursor = this._spectatorView?.dragging
+            ? 'grabbing'
+            : (this._spectatorView?.active
+                ? (this._spectatorView?.altKeyActive ? 'grab' : 'default')
+                : (this._hoveredSeatRef ? 'pointer' : 'default'));
+        if (this.renderer?.domElement?.style) {
+            this.renderer.domElement.style.cursor = cursor;
+        }
+    }
+
+    _setSeatHover(seatRef) {
+        if (this._seatRefsEqual(this._hoveredSeatRef, seatRef)) {
+            this._syncSeatCursor();
+            return;
+        }
+
+        const prevHover = this._hoveredSeatRef;
+        this._hoveredSeatRef = seatRef;
+
+        if (prevHover && !this._seatRefsEqual(prevHover, this._selectedSeatRef)) {
+            this._applySeatRefColor(prevHover, SEAT_DEFAULT_COLOR);
+        }
+        if (seatRef) {
+            this._applySeatRefColor(seatRef, SEAT_HIGHLIGHT_COLOR);
+        }
+        this._syncSeatCursor();
+    }
+
+    _clearSeatHover() {
+        this._setSeatHover(null);
+    }
+
+    _setSeatSelection(seatRef) {
+        if (this._seatRefsEqual(this._selectedSeatRef, seatRef)) {
+            this._syncSeatCursor();
+            return;
+        }
+
+        const prevSelection = this._selectedSeatRef;
+        this._selectedSeatRef = seatRef;
+
+        if (prevSelection && !this._seatRefsEqual(prevSelection, this._hoveredSeatRef)) {
+            this._applySeatRefColor(prevSelection, SEAT_DEFAULT_COLOR);
+        }
+        if (seatRef) {
+            this._applySeatRefColor(seatRef, SEAT_HIGHLIGHT_COLOR);
+        }
+        this._syncSeatCursor();
+    }
+
+    _clearSeatSelection() {
+        this._setSeatSelection(null);
+    }
+
+    _getSeatPickFromPointerEvent(event) {
+        if (!event || !this._raycaster || !this.renderer?.domElement || !this.camera) return null;
+        const seatMeshes = this.seatGroup?.children || [];
+        if (!seatMeshes.length) return null;
+
+        const rect = this.renderer.domElement.getBoundingClientRect?.();
+        if (!rect || !(rect.width > 0) || !(rect.height > 0)) return null;
+
+        const pointer = new this.THREE.Vector2(
+            ((Number(event.clientX) - rect.left) / rect.width) * 2 - 1,
+            -(((Number(event.clientY) - rect.top) / rect.height) * 2 - 1)
+        );
+        this._raycaster.setFromCamera(pointer, this.camera);
+        const intersections = this._raycaster.intersectObjects(seatMeshes, false);
+
+        for (let i = 0; i < intersections.length; i++) {
+            const hit = intersections[i];
+            if (!hit?.object?.isInstancedMesh || !Number.isInteger(hit.instanceId)) continue;
+            if (!this._getSeatPreviewInstance(hit.object, hit.instanceId)) continue;
+            return {
+                mesh: hit.object,
+                instanceId: hit.instanceId
+            };
+        }
+
+        return null;
+    }
+
+    _handleSeatPointerMove(event) {
+        if (this._spectatorView?.dragging) return;
+        this._setSeatHover(this._getSeatPickFromPointerEvent(event));
+    }
+
+    _handleSeatClick(event) {
+        if (!event || (event.button !== undefined && event.button !== 0)) return;
+        if (this._spectatorView?.dragging) return;
+        if (this._spectatorView?.suppressNextSeatClick) {
+            this._spectatorView.suppressNextSeatClick = false;
+            return;
+        }
+
+        const seatRef = this._getSeatPickFromPointerEvent(event);
+        if (!seatRef) return;
+
+        const spectatorSeat = this._getSeatPreviewInstance(seatRef.mesh, seatRef.instanceId);
+        if (!spectatorSeat) return;
+
+        this._setSeatSelection(seatRef);
+        this._enterSpectatorView(spectatorSeat);
+    }
+
+    _getSpectatorDirectionFromAngles(yaw, pitch) {
+        const horizontal = Math.cos(pitch);
+        return new this.THREE.Vector3(
+            Math.sin(yaw) * horizontal,
+            Math.sin(pitch),
+            Math.cos(yaw) * horizontal
+        ).normalize();
+    }
+
+    _getSpectatorAnglesFromDirection(direction) {
+        const safeDirection = direction?.clone?.() ?? new this.THREE.Vector3(0, 0, -1);
+        if (safeDirection.lengthSq() <= 1e-9) {
+            safeDirection.set(0, 0, -1);
+        } else {
+            safeDirection.normalize();
+        }
+        const horizontal = Math.hypot(safeDirection.x, safeDirection.z);
+        return {
+            yaw: Math.atan2(safeDirection.x, safeDirection.z),
+            pitch: Math.atan2(safeDirection.y, Math.max(horizontal, 1e-6))
+        };
+    }
+
+    _applySpectatorViewPose() {
+        const spectatorView = this._spectatorView;
+        if (!spectatorView || !this.camera || !this.controls) return;
+
+        const direction = this._getSpectatorDirectionFromAngles(spectatorView.yaw, spectatorView.pitch);
+        this.camera.position.copy(spectatorView.eyePosition);
+        this.controls.target.copy(spectatorView.eyePosition).addScaledVector(direction, spectatorView.lookDistance);
+        this.controls.update?.();
+    }
+
+    _captureOrbitView() {
+        if (!this.camera || !this.controls) return null;
+        return {
+            cameraPosition: this.camera.position.clone(),
+            target: this.controls.target.clone()
+        };
+    }
+
+    _restoreOrbitView(orbitView) {
+        if (!orbitView || !this.camera || !this.controls) return;
+        this.camera.position.copy(orbitView.cameraPosition);
+        this.controls.target.copy(orbitView.target);
+        this._stabilizeCameraDistance();
+        this.controls.update?.();
+    }
+
+    _enterSpectatorView(spectatorSeat) {
+        if (!spectatorSeat || !this.THREE || !this.camera || !this.controls) return;
+
+        const eyePosition = new this.THREE.Vector3(
+            Number(spectatorSeat.eyePosition?.x) || 0,
+            Number(spectatorSeat.eyePosition?.y) || 0,
+            Number(spectatorSeat.eyePosition?.z) || 0
+        );
+        const lookTarget = new this.THREE.Vector3(
+            Number(spectatorSeat.lookTarget?.x) || 0,
+            Number(spectatorSeat.lookTarget?.y) || 0,
+            Number(spectatorSeat.lookTarget?.z) || 0
+        );
+        const direction = lookTarget.clone().sub(eyePosition);
+        const lookDistance = Math.max(SPECTATOR_LOOK_DISTANCE_FT, direction.length());
+        const angles = this._getSpectatorAnglesFromDirection(direction);
+        const previousView = this._spectatorView;
+        const orbitView = previousView?.orbitView || this._captureOrbitView();
+        const controlsState = previousView?.controlsState || {
+            enabled: this.controls.enabled,
+            enableRotate: this.controls.enableRotate,
+            enablePan: this.controls.enablePan,
+            enableZoom: this.controls.enableZoom
+        };
+
+        this._spectatorView = {
+            active: true,
+            altKeyActive: previousView?.altKeyActive ?? false,
+            dragging: false,
+            suppressNextSeatClick: false,
+            pointerId: null,
+            lastClientX: 0,
+            lastClientY: 0,
+            eyePosition,
+            lookDistance,
+            yaw: angles.yaw,
+            pitch: angles.pitch,
+            orbitView,
+            controlsState
+        };
+
+        this.controls.enabled = false;
+        this.controls.enableRotate = false;
+        this.controls.enablePan = false;
+        this.controls.enableZoom = false;
+        this._applySpectatorViewPose();
+        this._syncSeatCursor();
+        this._notifySpectatorViewChange();
+    }
+
+    _clearSpectatorView() {
+        const spectatorView = this._spectatorView;
+        if (!spectatorView || !this.controls) {
+            this._spectatorView = null;
+            this._syncSeatCursor();
+            this._notifySpectatorViewChange();
+            return;
+        }
+
+        this._spectatorView = null;
+        this.controls.enabled = spectatorView.controlsState?.enabled ?? true;
+        this.controls.enableRotate = spectatorView.controlsState?.enableRotate ?? true;
+        this.controls.enablePan = spectatorView.controlsState?.enablePan ?? true;
+        this.controls.enableZoom = spectatorView.controlsState?.enableZoom ?? true;
+        this._restoreOrbitView(spectatorView.orbitView);
+        this.controls.update?.();
+        this._syncSeatCursor();
+        this._notifySpectatorViewChange();
+    }
+
+    _rotateSpectatorView(deltaX, deltaY) {
+        const spectatorView = this._spectatorView;
+        if (!spectatorView) return;
+
+        spectatorView.yaw -= deltaX * SPECTATOR_ALT_LOOK_YAW_SPEED;
+        spectatorView.pitch = Math.max(
+            -SPECTATOR_MAX_PITCH_RAD,
+            Math.min(SPECTATOR_MAX_PITCH_RAD, spectatorView.pitch - (deltaY * SPECTATOR_ALT_LOOK_PITCH_SPEED))
+        );
+        this._applySpectatorViewPose();
+    }
+
+    _cancelSpectatorPointerDrag() {
+        if (!this._spectatorView) {
+            this._syncSeatCursor();
+            return;
+        }
+        const pointerId = this._spectatorView.pointerId;
+        if (pointerId !== null) {
+            try {
+                this.renderer?.domElement?.releasePointerCapture?.(pointerId);
+            } catch (error) {
+                console.warn('3D spectator pointer release error:', error);
+            }
+        }
+        this._spectatorView.dragging = false;
+        this._spectatorView.pointerId = null;
+        this._syncSeatCursor();
+    }
+
+    _handleSpectatorPointerDown(event) {
+        if (!this._spectatorView?.active || !event?.altKey || event.button !== 0) return;
+        this._spectatorView.dragging = true;
+        this._spectatorView.pointerId = event.pointerId ?? null;
+        this._spectatorView.lastClientX = Number(event.clientX) || 0;
+        this._spectatorView.lastClientY = Number(event.clientY) || 0;
+        this.renderer?.domElement?.setPointerCapture?.(event.pointerId);
+        event.preventDefault?.();
+        this._syncSeatCursor();
+    }
+
+    _handleSpectatorPointerMove(event) {
+        const spectatorView = this._spectatorView;
+        if (!spectatorView?.dragging) return;
+        if (spectatorView.pointerId !== null && event?.pointerId !== undefined && spectatorView.pointerId !== event.pointerId) return;
+
+        const nextX = Number(event.clientX) || 0;
+        const nextY = Number(event.clientY) || 0;
+        const dx = nextX - spectatorView.lastClientX;
+        const dy = nextY - spectatorView.lastClientY;
+        spectatorView.lastClientX = nextX;
+        spectatorView.lastClientY = nextY;
+        if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
+            spectatorView.suppressNextSeatClick = true;
+        }
+        this._rotateSpectatorView(dx, dy);
+        event.preventDefault?.();
+    }
+
+    _handleSpectatorPointerUp(event) {
+        const spectatorView = this._spectatorView;
+        if (!spectatorView?.dragging) return;
+        if (spectatorView.pointerId !== null && event?.pointerId !== undefined && spectatorView.pointerId !== event.pointerId) return;
+        this._cancelSpectatorPointerDrag();
+    }
+
+    _handleSpectatorKeyDown(event) {
+        if (!event) return;
+        if (event.key === 'Escape' && this._spectatorView?.active) {
+            this.exitSpectatorView();
+            return;
+        }
+        if (event.key === 'Alt' && this._spectatorView?.active) {
+            this._spectatorView.altKeyActive = true;
+            this._syncSeatCursor();
+        }
+    }
+
+    _handleSpectatorKeyUp(event) {
+        if (!event || event.key !== 'Alt' || !this._spectatorView?.active) return;
+        this._spectatorView.altKeyActive = false;
+        this._cancelSpectatorPointerDrag();
+    }
+
     _createTierGeometryWithDepth(solver, bowlConfig, structuralDepthFt, offsetCorrection = 0) {
         const THREE = this.THREE;
         const positions = [];
@@ -1018,7 +1585,6 @@ export class Scene3D {
         if (pathSets.some(paths => !paths || paths.length === 0)) return null;
 
         const profileCount = profile.length;
-        let baseIndex = 0;
         let numPaths = Infinity;
         for (const paths of pathSets) {
             numPaths = Math.min(numPaths, paths.length);
@@ -1038,7 +1604,8 @@ export class Scene3D {
             }
             if (!Number.isFinite(n) || n < 2) continue;
 
-            const stripBase = baseIndex;
+            const stripBase = positions.length / 3;
+            const pathIsClosed = pathSets.every((paths) => isPlanSubpathClosed(paths[pathIdx]));
 
             // Vertex grid: profile index x contour index.
             for (let p = 0; p < profileCount; p++) {
@@ -1065,7 +1632,9 @@ export class Scene3D {
                 }
             }
 
-            baseIndex += profileCount * n;
+            if (!pathIsClosed) {
+                this._appendOpenStructuralEndCaps(positions, indices, stripBase, profile, n);
+            }
         }
 
         if (positions.length === 0 || indices.length === 0) return null;
@@ -1226,6 +1795,7 @@ export class Scene3D {
 
     _fitCameraToBowl() {
         if (!this.bowlGroup || this.bowlGroup.children.length === 0 || !this.camera || !this.controls) return;
+        this._clearSpectatorView();
 
         const box = new this.THREE.Box3().setFromObject(this.bowlGroup);
         if (box.isEmpty()) return;
@@ -1301,6 +1871,9 @@ export class Scene3D {
         if (this._animId) cancelAnimationFrame(this._animId);
         if (this._resizeHandler) window.removeEventListener('resize', this._resizeHandler);
         if (this._resizeObserver) this._resizeObserver.disconnect();
+        this._clearSeatHover();
+        this._clearSeatSelection();
+        this._clearSpectatorView();
         if (this.renderer) {
             if (this._middlePointerDownHandler) {
                 this.renderer.domElement.removeEventListener('pointerdown', this._middlePointerDownHandler);
@@ -1314,10 +1887,37 @@ export class Scene3D {
             if (this._middlePointerCancelHandler) {
                 this.renderer.domElement.removeEventListener('pointercancel', this._middlePointerCancelHandler);
             }
+            if (this._seatPointerMoveHandler) {
+                this.renderer.domElement.removeEventListener('pointermove', this._seatPointerMoveHandler);
+            }
+            if (this._seatPointerLeaveHandler) {
+                this.renderer.domElement.removeEventListener('pointerleave', this._seatPointerLeaveHandler);
+            }
+            if (this._seatClickHandler) {
+                this.renderer.domElement.removeEventListener('click', this._seatClickHandler);
+            }
+            if (this._spectatorPointerDownHandler) {
+                this.renderer.domElement.removeEventListener('pointerdown', this._spectatorPointerDownHandler);
+            }
+            if (this._spectatorPointerMoveHandler) {
+                this.renderer.domElement.removeEventListener('pointermove', this._spectatorPointerMoveHandler);
+            }
+            if (this._spectatorPointerUpHandler) {
+                this.renderer.domElement.removeEventListener('pointerup', this._spectatorPointerUpHandler);
+            }
+            if (this._spectatorPointerCancelHandler) {
+                this.renderer.domElement.removeEventListener('pointercancel', this._spectatorPointerCancelHandler);
+            }
             this.renderer.dispose();
             if (this.renderer.domElement && this.renderer.domElement.parentNode) {
                 this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
             }
+        }
+        if (this._spectatorKeyDownHandler) {
+            window.removeEventListener('keydown', this._spectatorKeyDownHandler);
+        }
+        if (this._spectatorKeyUpHandler) {
+            window.removeEventListener('keyup', this._spectatorKeyUpHandler);
         }
     }
 }

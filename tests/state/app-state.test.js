@@ -18,6 +18,7 @@ import {
     getRunoffDistance,
     resolveSportBowlTypeOptions
 } from '../../state/app-state.js';
+import { getTemplate } from '../../core/sports-templates.js';
 
 describe('AppState', () => {
     beforeEach(() => {
@@ -171,6 +172,32 @@ describe('AppState', () => {
             { value: 'Sides3', label: '3-Sided' },
             { value: 'Sides4', label: '4-Sided' }
         ]);
+    });
+
+    test('applies baseball defaults and exposes the baseball-only bowl type palette', () => {
+        const baseballTemplate = getTemplate('Baseball');
+
+        AppState.fromJSON(createDefaultAppStateData());
+        AppState.applySportDefaults({
+            sport: 'Baseball',
+            template: baseballTemplate
+        });
+
+        expect(AppState.sport).toBe('Baseball');
+        expect(AppState.bowl.type).toBe('BaseballStandard');
+        expect(resolveSportBowlTypeOptions(baseballTemplate)).toEqual([
+            { value: 'Side1', label: '1-Sided' },
+            { value: 'Sides', label: '2-Sided' },
+            { value: 'BaseballStandard', label: 'Standard' }
+        ]);
+        expect(buildFieldVisibility(AppState)).toEqual({
+            showSeating: true,
+            t1: true,
+            t2: false,
+            t3: false,
+            colorByCValue: true,
+            showSectionMetrics: false
+        });
     });
 
     test('creates a fresh default app state payload for project creation flows', () => {
@@ -434,13 +461,13 @@ describe('AppState', () => {
         });
     });
 
-    test('suppresses baseball seating display while leaving canonical state selectors pure', () => {
+    test('keeps baseball seating display enabled while leaving canonical state selectors pure', () => {
         const state = createDefaultAppStateData();
         state.sport = 'Baseball';
         state.tiers[1].enabled = true;
 
         expect(buildFieldVisibility(state)).toEqual({
-            showSeating: false,
+            showSeating: true,
             t1: true,
             t2: true,
             t3: false,

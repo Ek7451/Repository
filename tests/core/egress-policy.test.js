@@ -10,6 +10,7 @@ import {
     computeMinimumBlockCountForSeatLimit,
     computeRequiredAisleWidthIn,
     estimateWorstOccupantsPerSectionInTaperedInterval,
+    estimateWorstTributaryOccupancyInTaperedInterval,
     computeRequiredBlockCountForWidthCap,
     computeTierEgressMetrics,
     computeTributaryOccupancyPerAisle,
@@ -86,11 +87,29 @@ describe('egress policy helpers', () => {
             measureSegments: () => [0, 0.5, 1]
         })).toBe(285);
 
+        expect(estimateWorstTributaryOccupancyInTaperedInterval({
+            frontIntervalLengthFt: 60,
+            backIntervalLengthFt: 100,
+            distributedCount: 1,
+            rowCount: 1,
+            aisleWidthFt: 0,
+            seatWidthIn: 12,
+            measureSegments: () => [0, 0.2, 1]
+        })).toBe(40);
+
         expect(findRequiredIntervalAisleCountForAisleLoad({
             maxOccupantsPerAisle: 330,
             rowCount: 15,
             measureWorstSeatsForCount: (count) => [51, 24, 14][count] ?? 0,
             measureWorstOccupantsPerSectionForCount: (count) => [700, 285, 210][count] ?? 0,
+            maxCount: 10
+        })).toBe(1);
+
+        expect(findRequiredIntervalAisleCountForAisleLoad({
+            maxOccupantsPerAisle: 45,
+            rowCount: 1,
+            measureWorstSeatsForCount: (count) => [64, 64][count] ?? 0,
+            measureWorstTributaryOccupancyForCount: (count) => [70, 40][count] ?? 0,
             maxCount: 10
         })).toBe(1);
     });

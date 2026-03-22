@@ -35,6 +35,7 @@ export class Scene3DController {
             bookmarksListEl?: HTMLElement | null,
             saveBookmarkBtnEl?: HTMLElement | null,
             toggleBookmarksBtnEl?: HTMLElement | null,
+            exitSeatViewBtnEl?: HTMLButtonElement | null,
             getTheme?: (() => string),
             getBookmarks?: (() => Array<object>),
             getSportName?: (() => string),
@@ -50,6 +51,7 @@ export class Scene3DController {
         this.bookmarksListEl = settings.bookmarksListEl ?? getDefaultElement('cameraBookmarksList');
         this.saveBookmarkBtnEl = settings.saveBookmarkBtnEl ?? getDefaultElement('saveCameraViewBtn');
         this.toggleBookmarksBtnEl = settings.toggleBookmarksBtnEl ?? getDefaultElement('toggleBookmarksBtn');
+        this.exitSeatViewBtnEl = settings.exitSeatViewBtnEl ?? /** @type {HTMLButtonElement | null} */ (getDefaultElement('exitSeatViewBtn'));
         this.getTheme = typeof settings.getTheme === 'function'
             ? settings.getTheme
             : () => 'light';
@@ -73,6 +75,7 @@ export class Scene3DController {
         this._scene3dReady = false;
         this._scene3dLoading = false;
         this._lastSnapshot = null;
+        this._handleExitSeatViewClick = () => this.scene3D?.exitSpectatorView?.();
         this.cameraBookmarks = new CameraBookmarks({
             barEl: this.bookmarksBarEl,
             listEl: this.bookmarksListEl,
@@ -88,6 +91,8 @@ export class Scene3DController {
                 this.scene3D?.forceResize?.();
             }
         });
+        this.exitSeatViewBtnEl?.addEventListener('click', this._handleExitSeatViewClick);
+        this._syncSeatViewExitButton(false);
     }
 
     async activate() {
@@ -159,6 +164,8 @@ export class Scene3DController {
     }
 
     destroy() {
+        this.exitSeatViewBtnEl?.removeEventListener('click', this._handleExitSeatViewClick);
+        this._syncSeatViewExitButton(false);
         this.cameraBookmarks?.destroy();
         this.cameraBookmarks = null;
         this.scene3D?.dispose?.();
@@ -182,9 +189,11 @@ export class Scene3DController {
 
             this.containerEl.innerHTML = '';
             this.scene3D = new Scene3D(this.containerEl, {
-                theme: normalizeThemeName(this.getTheme())
+                theme: normalizeThemeName(this.getTheme()),
+                onSpectatorViewChange: ({ active }) => this._syncSeatViewExitButton(!!active)
             });
             await this.scene3D.init();
+            this._syncSeatViewExitButton(this.scene3D.isSpectatorViewActive?.() ?? false);
             this.applyTheme(this.getTheme());
             this._scene3dReady = true;
             this.update(null, { isActive: true });
@@ -196,5 +205,11 @@ export class Scene3DController {
         } finally {
             this._scene3dLoading = false;
         }
+    }
+
+    _syncSeatViewExitButton(isActive) {
+        if (!this.exitSeatViewBtnEl) return;
+        this.exitSeatViewBtnEl.hidden = !isActive;
+        this.exitSeatViewBtnEl.setAttribute('aria-hidden', isActive ? 'false' : 'true');
     }
 }

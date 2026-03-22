@@ -202,6 +202,7 @@ export function findRequiredIntervalAisleCount({
  *   rowCount?: number,
  *   measureWorstSeatsForCount?: ((count: number) => number),
  *   measureWorstOccupantsPerSectionForCount?: ((count: number) => number),
+ *   measureWorstTributaryOccupancyForCount?: ((count: number) => number),
  *   maxCount?: number
  * }} [options]
  */
@@ -210,6 +211,7 @@ export function findRequiredIntervalAisleCountForAisleLoad({
     rowCount,
     measureWorstSeatsForCount,
     measureWorstOccupantsPerSectionForCount,
+    measureWorstTributaryOccupancyForCount,
     maxCount = 500
 } = {}) {
     const loadCap = Number(maxOccupantsPerAisle);
@@ -220,14 +222,18 @@ export function findRequiredIntervalAisleCountForAisleLoad({
     const safeMaxCount = Math.max(0, Math.floor(Number(maxCount) || 0));
     let required = 0;
     while (required < safeMaxCount) {
-        const worstSeatsPerSection = Math.max(0, Number(measureWorstSeatsForCount(required)) || 0);
-        const occupantsPerSection = typeof measureWorstOccupantsPerSectionForCount === 'function'
-            ? Math.max(0, Number(measureWorstOccupantsPerSectionForCount(required)) || 0)
-            : (worstSeatsPerSection * resolvedRowCount);
-        const tributaryOccupancy = computeTributaryOccupancyPerAisle({
-            occupantsPerBlock: occupantsPerSection,
-            blockCount: required + 1
-        });
+        const tributaryOccupancy = typeof measureWorstTributaryOccupancyForCount === 'function'
+            ? Math.max(0, Number(measureWorstTributaryOccupancyForCount(required)) || 0)
+            : (() => {
+                const worstSeatsPerSection = Math.max(0, Number(measureWorstSeatsForCount(required)) || 0);
+                const occupantsPerSection = typeof measureWorstOccupantsPerSectionForCount === 'function'
+                    ? Math.max(0, Number(measureWorstOccupantsPerSectionForCount(required)) || 0)
+                    : (worstSeatsPerSection * resolvedRowCount);
+                return computeTributaryOccupancyPerAisle({
+                    occupantsPerBlock: occupantsPerSection,
+                    blockCount: required + 1
+                });
+            })();
         if (tributaryOccupancy <= loadCap + 1e-9) break;
         required += 1;
     }
@@ -393,6 +399,57 @@ export function estimateWorstOccupantsPerSectionInTaperedInterval({
     }
 
     return worstOccupancy;
+}
+
+/**
+ * @param {{
+ *   frontIntervalLengthFt?: number,
+ *   backIntervalLengthFt?: number,
+ *   distributedCount?: number,
+ *   rowCount?: number,
+ *   aisleWidthFt?: number,
+ *   seatWidthIn?: number,
+ *   measureSegments?: ((count: number) => number[])
+ * }} [options]
+ */
+export function estimateWorstTributaryOccupancyInTaperedInterval({
+    frontIntervalLengthFt,
+    backIntervalLengthFt,
+    distributedCount,
+    rowCount,
+    aisleWidthFt,
+    seatWidthIn,
+    measureSegments
+} = {}) {
+    const resolvedRowCount = Math.max(1, Math.round(Number(rowCount) || 1));
+    const frontSeatCounts = buildIntervalSectionSeatCounts(frontIntervalLengthFt, distributedCount, {
+        aisleWidthFt,
+        seatWidthIn,
+        measureSegments
+    });
+    const backSeatCounts = buildIntervalSectionSeatCounts(backIntervalLengthFt, distributedCount, {
+        aisleWidthFt,
+        seatWidthIn,
+        measureSegments
+    });
+    const sectionCount = Math.max(frontSeatCounts.length, backSeatCounts.length);
+    const sections = [];
+
+    for (let i = 0; i < sectionCount; i += 1) {
+        const frontSeats = Math.max(0, Number(frontSeatCounts[i] ?? backSeatCounts[i]) || 0);
+        const backSeats = Math.max(0, Number(backSeatCounts[i] ?? frontSeatCounts[i]) || 0);
+        const estimatedAverageSeats = Math.ceil((frontSeats + backSeats) * 0.5);
+        sections.push({
+            occupancy: estimatedAverageSeats * resolvedRowCount,
+            aisleIndexA: i,
+            aisleIndexB: i + 1
+        });
+    }
+
+    return Math.max(0, ...computeAisleTributaryOccupancies({
+        aisleCount: sectionCount + 1,
+        sections
+    }));
 }
 
 export function computeTierEgressMetrics({

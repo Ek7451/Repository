@@ -320,6 +320,125 @@ function formatComputedLabelNumber(value, maxDecimals = 12) {
     return `${numericValue}`;
 }
 
+const SIDE_BOWL_NUMBERING_TYPES = new Set(['Side1', 'Side2', 'Sides', 'Sides3', 'Sides4']);
+
+function compareFiniteNumbers(a, b) {
+    const delta = (Number(a) || 0) - (Number(b) || 0);
+    if (Math.abs(delta) <= 1e-6) return 0;
+    return delta;
+}
+
+function buildDefaultOpenSectionSlotOrder(slots) {
+    return slots.map((_, idx) => idx).sort((aIdx, bIdx) => {
+        const a = slots[aIdx].midPt || { x: -Infinity, y: -Infinity };
+        const b = slots[bIdx].midPt || { x: -Infinity, y: -Infinity };
+        if (Math.abs(b.x - a.x) > 1e-6) return b.x - a.x;
+        return b.y - a.y;
+    });
+}
+
+function classifySideBowlPathSegment(slots) {
+    const points = slots
+        .map((slot) => slot?.midPt)
+        .filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y));
+    if (!points.length) return 'top';
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    let sumX = 0;
+    let sumY = 0;
+
+    points.forEach((point) => {
+        minX = Math.min(minX, point.x);
+        maxX = Math.max(maxX, point.x);
+        minY = Math.min(minY, point.y);
+        maxY = Math.max(maxY, point.y);
+        sumX += point.x;
+        sumY += point.y;
+    });
+
+    const centerX = sumX / points.length;
+    const centerY = sumY / points.length;
+    const spanX = maxX - minX;
+    const spanY = maxY - minY;
+
+    if (spanX >= spanY) {
+        return centerY <= 0 ? 'bottom' : 'top';
+    }
+    return centerX <= 0 ? 'left' : 'right';
+}
+
+function getSideBowlPathRank(segment) {
+    if (segment === 'bottom') return 0;
+    if (segment === 'left') return 1;
+    if (segment === 'top') return 2;
+    if (segment === 'right') return 3;
+    return 99;
+}
+
+function buildSideBowlSectionSlotOrder(slots, segment) {
+    return slots.map((_, idx) => idx).sort((aIdx, bIdx) => {
+        const a = slots[aIdx];
+        const b = slots[bIdx];
+        const aPoint = a.midPt || { x: 0, y: 0 };
+        const bPoint = b.midPt || { x: 0, y: 0 };
+
+        if (segment === 'bottom') {
+            return (compareFiniteNumbers(bPoint.x, aPoint.x))
+                || (compareFiniteNumbers(aPoint.y, bPoint.y))
+                || (compareFiniteNumbers(b.midU, a.midU))
+                || (compareFiniteNumbers(b.slotIndex, a.slotIndex));
+        }
+        if (segment === 'top') {
+            return (compareFiniteNumbers(aPoint.x, bPoint.x))
+                || (compareFiniteNumbers(bPoint.y, aPoint.y))
+                || (compareFiniteNumbers(a.midU, b.midU))
+                || (compareFiniteNumbers(a.slotIndex, b.slotIndex));
+        }
+        if (segment === 'left') {
+            return (compareFiniteNumbers(aPoint.y, bPoint.y))
+                || (compareFiniteNumbers(aPoint.x, bPoint.x))
+                || (compareFiniteNumbers(a.midU, b.midU))
+                || (compareFiniteNumbers(a.slotIndex, b.slotIndex));
+        }
+        if (segment === 'right') {
+            return (compareFiniteNumbers(bPoint.y, aPoint.y))
+                || (compareFiniteNumbers(aPoint.x, bPoint.x))
+                || (compareFiniteNumbers(b.midU, a.midU))
+                || (compareFiniteNumbers(b.slotIndex, a.slotIndex));
+        }
+
+        return (compareFiniteNumbers(a.midU, b.midU))
+            || (compareFiniteNumbers(a.slotIndex, b.slotIndex));
+    });
+}
+
+function resolveOpenPathSectionTraversal(normalizedType, bowlConfig, slots, pathIndex) {
+    if (bowlConfig?.shape === 'arc') return null;
+
+    if (normalizedType === 'U-End1') {
+        return {
+            pathRank: pathIndex,
+            slotOrder: slots.map((_, idx) => idx).sort((aIdx, bIdx) => {
+                const a = slots[aIdx];
+                const b = slots[bIdx];
+                return (compareFiniteNumbers(b.midU, a.midU))
+                    || (compareFiniteNumbers(b.slotIndex, a.slotIndex));
+            })
+        };
+    }
+
+    if (!SIDE_BOWL_NUMBERING_TYPES.has(normalizedType)) return null;
+
+    const segment = classifySideBowlPathSegment(slots);
+    return {
+        pathRank: getSideBowlPathRank(segment),
+        slotOrder: buildSideBowlSectionSlotOrder(slots, segment)
+    };
+}
+
 const PLAN_SEGMENT_ARC_RESOLUTION_DEG = 5;
 
 export function buildFieldGeometrySegments(template, extraRunoff = 0) {
@@ -453,9 +572,203 @@ function buildBowlParams(bowlConfig, offset) {
     return { pts, type, corner, r_eff };
 }
 
+function dedupePolylinePoints(points = [], tol = 1e-6) {
+    const safePoints = [];
+    (points || []).forEach((point) => {
+        if (!point) return;
+        const x = Number(point.x);
+        const y = Number(point.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+        const lastPoint = safePoints[safePoints.length - 1];
+        if (
+            lastPoint &&
+            Math.abs(lastPoint.x - x) <= tol &&
+            Math.abs(lastPoint.y - y) <= tol
+        ) {
+            return;
+        }
+
+        safePoints.push({ x, y });
+    });
+    return safePoints;
+}
+
+function offsetPoint(point, normal, offset) {
+    return {
+        x: point.x + (normal.x * offset),
+        y: point.y + (normal.y * offset)
+    };
+}
+
+function buildRightNormal(start, end) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.hypot(dx, dy);
+    if (length <= 1e-6) return null;
+
+    return {
+        x: dy / length,
+        y: -dx / length
+    };
+}
+
+function intersectInfiniteLines(a1, a2, b1, b2) {
+    const ax = a2.x - a1.x;
+    const ay = a2.y - a1.y;
+    const bx = b2.x - b1.x;
+    const by = b2.y - b1.y;
+    const denominator = (ax * by) - (ay * bx);
+    if (Math.abs(denominator) <= 1e-6) return null;
+
+    const dx = b1.x - a1.x;
+    const dy = b1.y - a1.y;
+    const t = ((dx * by) - (dy * bx)) / denominator;
+
+    return {
+        x: a1.x + (ax * t),
+        y: a1.y + (ay * t)
+    };
+}
+
+function buildOffsetOpenPolyline(points = [], offset = 0) {
+    const safePoints = dedupePolylinePoints(points);
+    if (safePoints.length < 2) return safePoints;
+
+    const safeOffset = Math.max(0, Number(offset) || 0);
+    if (safeOffset <= 0) return safePoints.map((point) => ({ ...point }));
+
+    const segmentNormals = [];
+    for (let index = 0; index < safePoints.length - 1; index += 1) {
+        const normal = buildRightNormal(safePoints[index], safePoints[index + 1]);
+        if (!normal) continue;
+        segmentNormals.push({
+            startIndex: index,
+            endIndex: index + 1,
+            normal
+        });
+    }
+
+    if (!segmentNormals.length) return safePoints.map((point) => ({ ...point }));
+
+    const offsetPoints = [];
+    for (let index = 0; index < safePoints.length; index += 1) {
+        if (index === 0) {
+            offsetPoints.push(offsetPoint(safePoints[index], segmentNormals[0].normal, safeOffset));
+            continue;
+        }
+
+        if (index === safePoints.length - 1) {
+            offsetPoints.push(offsetPoint(
+                safePoints[index],
+                segmentNormals[segmentNormals.length - 1].normal,
+                safeOffset
+            ));
+            continue;
+        }
+
+        const previousNormal = segmentNormals[index - 1]?.normal;
+        const nextNormal = segmentNormals[index]?.normal;
+        if (!previousNormal && !nextNormal) {
+            offsetPoints.push({ ...safePoints[index] });
+            continue;
+        }
+        if (!previousNormal) {
+            offsetPoints.push(offsetPoint(safePoints[index], nextNormal, safeOffset));
+            continue;
+        }
+        if (!nextNormal) {
+            offsetPoints.push(offsetPoint(safePoints[index], previousNormal, safeOffset));
+            continue;
+        }
+
+        const prevLineStart = offsetPoint(safePoints[index - 1], previousNormal, safeOffset);
+        const prevLineEnd = offsetPoint(safePoints[index], previousNormal, safeOffset);
+        const nextLineStart = offsetPoint(safePoints[index], nextNormal, safeOffset);
+        const nextLineEnd = offsetPoint(safePoints[index + 1], nextNormal, safeOffset);
+        const intersection = intersectInfiniteLines(prevLineStart, prevLineEnd, nextLineStart, nextLineEnd);
+
+        offsetPoints.push(intersection || offsetPoint(safePoints[index], previousNormal, safeOffset));
+    }
+
+    return dedupePolylinePoints(offsetPoints);
+}
+
+function scaleVector(direction, distance) {
+    return {
+        x: direction.x * distance,
+        y: direction.y * distance
+    };
+}
+
+function buildBaseballBasePolylines(bowlConfig) {
+    const legLength = Math.max(
+        0,
+        Number(
+            bowlConfig?.sideLength
+            ?? bowlConfig?.endLength
+            ?? bowlConfig?.radius_arc
+            ?? 325
+        ) || 0
+    );
+    const chamferLength = Math.max(0, Math.min(
+        legLength,
+        Number(bowlConfig?.radius) || 0
+    ));
+    const halfAngle = ((bowlConfig?.arc_angle || 90) / 2) * Math.PI / 180;
+    const rightAngle = (Math.PI / 2) - halfAngle;
+    const leftAngle = (Math.PI / 2) + halfAngle;
+    const apex = { x: 0, y: 0 };
+    const leftDirection = { x: Math.cos(leftAngle), y: Math.sin(leftAngle) };
+    const rightDirection = { x: Math.cos(rightAngle), y: Math.sin(rightAngle) };
+    const leftEnd = scaleVector(leftDirection, legLength);
+    const rightEnd = scaleVector(rightDirection, legLength);
+    const leftChamfer = scaleVector(leftDirection, chamferLength);
+    const rightChamfer = scaleVector(rightDirection, chamferLength);
+    const type = normalizeBowlType(bowlConfig?.type);
+
+    if (type === 'Side1') {
+        return [[leftEnd, apex]];
+    }
+
+    if (type === 'Sides') {
+        return [
+            [leftEnd, apex],
+            [apex, rightEnd]
+        ];
+    }
+
+    if (type === 'BaseballStandard') {
+        return [[leftEnd, leftChamfer, rightChamfer, rightEnd]];
+    }
+
+    return null;
+}
+
+function buildBaseballBowlSegments(bowlConfig, offset) {
+    const type = normalizeBowlType(bowlConfig?.type);
+    if (!['Side1', 'Sides', 'BaseballStandard'].includes(type)) {
+        return null;
+    }
+
+    const polylines = buildBaseballBasePolylines(bowlConfig);
+    if (!Array.isArray(polylines) || polylines.length === 0) {
+        return null;
+    }
+
+    const segments = [];
+    polylines.forEach((polyline) => {
+        const offsetPolyline = buildOffsetOpenPolyline(polyline, offset);
+        pushPolylineSegments(segments, offsetPolyline);
+    });
+
+    return segments.length ? segments : null;
+}
+
 function normalizeBowlType(type) {
     if (type === 'U-Shape (End 1)' || type === 'C-Shape') return 'U-End1';
     if (type === 'U-Shape (End 2)' || type === 'U-Shape') return 'U-End2';
+    if (type === 'Standard' || type === 'Baseball Standard') return 'BaseballStandard';
     return String(type || 'Full');
 }
 
@@ -583,6 +896,11 @@ function resolveUOpenTerminal(bowlConfig, normalizedType, pts) {
 
 export function buildBowlGeometrySegments(bowlConfig, offset) {
     if (bowlConfig.shape === 'arc') {
+        const baseballSegments = buildBaseballBowlSegments(bowlConfig, offset);
+        if (Array.isArray(baseballSegments) && baseballSegments.length > 0) {
+            return baseballSegments;
+        }
+
         const r = (bowlConfig.radius_arc || 325) + offset;
         const halfAngle = ((bowlConfig.arc_angle || 90) / 2) * Math.PI / 180;
         const startAngle = Math.PI / 2 - halfAngle;
@@ -594,7 +912,7 @@ export function buildBowlGeometrySegments(bowlConfig, offset) {
         const addArc = (x, y, rad, sa, ea, ccw) => segments.push({ cmd: 'arc', x, y, r: rad, sa, ea, ccw });
         const addClose = () => segments.push({ cmd: 'closePath' });
 
-        let type = bowlConfig.type || 'Full';
+        const type = normalizeBowlType(bowlConfig.type || 'Full');
         const dx1 = r * Math.cos(startAngle);
         const dy1 = r * Math.sin(startAngle);
         const dx2 = r * Math.cos(endAngle);
@@ -862,6 +1180,16 @@ export function buildPlanSubpathsFromSegments(segments, arcResolutionDeg = PLAN_
     return subpaths.filter((subpath) => subpath.length > 0);
 }
 
+export function isPlanSubpathClosed(points = []) {
+    if (!Array.isArray(points) || points.length < 2) return false;
+    const first = points[0];
+    const last = points[points.length - 1];
+    const firstSecondary = Number(first?.y ?? first?.z ?? 0);
+    const lastSecondary = Number(last?.y ?? last?.z ?? 0);
+    return Math.abs((first?.x || 0) - (last?.x || 0)) < 1e-9
+        && Math.abs(firstSecondary - lastSecondary) < 1e-9;
+}
+
 export function buildBowlGeometrySubpaths(bowlConfig, offset, arcResolutionDeg = PLAN_SEGMENT_ARC_RESOLUTION_DEG) {
     return buildPlanSubpathsFromSegments(
         buildBowlGeometrySegments(bowlConfig, offset),
@@ -1043,28 +1371,40 @@ export class FieldRenderer {
     }
 
     _getFitViewport() {
-        const viewport = {
+        const rect = this.canvas?.getBoundingClientRect?.();
+        const rectWidth = Math.round(rect?.width || 0);
+        const rectHeight = Math.round(rect?.height || 0);
+        if (rectWidth > 0 && rectHeight > 0) {
+            return {
+                offsetX: 0,
+                offsetY: 0,
+                width: rectWidth,
+                height: rectHeight
+            };
+        }
+
+        const parent = this.canvas?.parentElement;
+        if (parent && typeof getComputedStyle === 'function') {
+            const style = getComputedStyle(parent);
+            const paddingLeft = parseFloat(style.paddingLeft) || 0;
+            const paddingRight = parseFloat(style.paddingRight) || 0;
+            const paddingTop = parseFloat(style.paddingTop) || 0;
+            const paddingBottom = parseFloat(style.paddingBottom) || 0;
+
+            return {
+                offsetX: paddingLeft,
+                offsetY: paddingTop,
+                width: Math.max(1, this.canvas.width - paddingLeft - paddingRight),
+                height: Math.max(1, this.canvas.height - paddingTop - paddingBottom)
+            };
+        }
+
+        return {
             offsetX: 0,
             offsetY: 0,
             width: this.canvas.width,
             height: this.canvas.height
         };
-        const parent = this.canvas?.parentElement;
-        if (!parent || typeof getComputedStyle !== 'function') {
-            return viewport;
-        }
-
-        const style = getComputedStyle(parent);
-        const paddingLeft = parseFloat(style.paddingLeft) || 0;
-        const paddingRight = parseFloat(style.paddingRight) || 0;
-        const paddingTop = parseFloat(style.paddingTop) || 0;
-        const paddingBottom = parseFloat(style.paddingBottom) || 0;
-
-        viewport.offsetX = paddingLeft;
-        viewport.offsetY = paddingTop;
-        viewport.width = Math.max(1, this.canvas.width - paddingLeft - paddingRight);
-        viewport.height = Math.max(1, this.canvas.height - paddingTop - paddingBottom);
-        return viewport;
     }
 
     _getBaseFitState(bounds, viewport = this._getFitViewport()) {
@@ -1133,7 +1473,14 @@ export class FieldRenderer {
             // Need base auto-fit variables to convert back to panX/Y
             const template = this._lastArgs[0];
             const runoff = this._lastArgs[1] != null ? this._lastArgs[1] : template.runoff;
-            const bounds = this._getBounds(template, runoff, this._lastArgs[2], this._lastArgs[3]);
+            const bounds = this._getBounds(
+                template,
+                runoff,
+                this._lastArgs[2],
+                this._lastArgs[3],
+                this._lastArgs[5],
+                this._lastArgs[6]
+            );
             const fitViewport = this._getFitViewport();
             const baseFit = this._getBaseFitState(bounds, fitViewport);
             const baseTx = baseFit.tx;
@@ -1202,7 +1549,7 @@ export class FieldRenderer {
         const runoff = customRunoff != null ? customRunoff : template.runoff;
 
         // Calculate bounds for auto-fit, including seating if visible
-        const bounds = this._getBounds(template, runoff, solvers, visibility);
+        const bounds = this._getBounds(template, runoff, solvers, visibility, bowlConfig, offsetCorrection);
         // Base auto-fit calculations
         const fitViewport = this._getFitViewport();
         const baseFit = this._getBaseFitState(bounds, fitViewport);
@@ -1267,7 +1614,7 @@ export class FieldRenderer {
 
 
 
-    _getBounds(template, runoff, solvers, visibility) {
+    _getBounds(template, runoff, solvers, visibility, bowlConfig = null, offsetCorrection = 0) {
         // Start with field bounds
         const shape = template.shape;
         let maxX, maxY;
@@ -1287,28 +1634,38 @@ export class FieldRenderer {
         // Expand for seating — include full bowl perimeter in all directions
         if (solvers && visibility && visibility.showSeating) {
             let maxDist = 0;
-            let minDist = 0;
             let hasSeating = false;
 
-            solvers.forEach((s, i) => {
-                if (i === 0 && !visibility.t1) return;
-                if (i === 1 && !visibility.t2) return;
-                if (i === 2 && !visibility.t3) return;
-                if (s.rows && s.rows.length) {
+            solvers.forEach((solver, solverIndex) => {
+                if (solverIndex === 0 && !visibility.t1) return;
+                if (solverIndex === 1 && !visibility.t2) return;
+                if (solverIndex === 2 && !visibility.t3) return;
+                if (solver.rows && solver.rows.length) {
                     hasSeating = true;
-                    const last = s.rows[s.rows.length - 1];
-                    const first = s.rows[0];
+                    const last = solver.rows[solver.rows.length - 1];
+                    const first = solver.rows[0];
                     if (last.x > maxDist) maxDist = last.x;
-                    if (first.x < minDist) minDist = first.x;
+                    if (shape === 'arc' && bowlConfig) {
+                        const offsets = [
+                            (first.x - first.tread_depth) - offsetCorrection,
+                            last.x - offsetCorrection
+                        ];
+                        offsets.forEach((rowOffset) => {
+                            const segmentBounds = this._computeBowlBounds(bowlConfig, rowOffset);
+                            if (!segmentBounds) return;
+
+                            bounds.minX = Math.min(bounds.minX, segmentBounds.minX);
+                            bounds.maxX = Math.max(bounds.maxX, segmentBounds.maxX);
+                            bounds.minY = Math.min(bounds.minY, segmentBounds.minY);
+                            bounds.maxY = Math.max(bounds.maxY, segmentBounds.maxY);
+                        });
+                    }
                 }
             });
 
             if (hasSeating) {
                 const fy = 0;
-                if (shape === 'arc') {
-                    if (maxDist > bounds.maxY) bounds.maxY = maxDist;
-                    if (maxDist > bounds.maxX) bounds.maxX = maxDist;
-                } else {
+                if (shape !== 'arc') {
                     // Bowl wraps around all sides — expand in all 4 directions
                     const bottomY = fy - maxDist;
                     if (bottomY < bounds.minY) bounds.minY = bottomY;
@@ -1602,7 +1959,7 @@ export class FieldRenderer {
         return pickBestRowAisleSampling(centerOffset, getPathsForOffset, tierLayout, chamferCache, aisleReferenceMap);
     }
 
-    _buildTierSectionTemplates(referencePaths, tierLayout, sectionBase) {
+    _buildTierSectionTemplates(referencePaths, tierLayout, sectionBase, bowlConfig = null) {
         const out = new Map();
         if (!tierLayout) return out;
 
@@ -1619,7 +1976,9 @@ export class FieldRenderer {
         const summarySections = Array.isArray(tierLayout?.sectionSummary?.sections)
             ? tierLayout.sectionSummary.sections
             : [];
+        const normalizedType = normalizeBowlType(bowlConfig?.type);
         let nextSectionNumber = sectionBase;
+        const numberedPathTemplates = [];
         const pathCount = Math.max(
             Array.isArray(referencePaths) ? referencePaths.length : 0,
             Array.isArray(tierLayout.sectionBoundaries) ? tierLayout.sectionBoundaries.length : 0
@@ -1699,6 +2058,7 @@ export class FieldRenderer {
             if (slots.length < 1) continue;
 
             let order = slots.map((_, idx) => idx);
+            let pathRank = pathIndex;
             if (path.closed) {
                 const isPathClockwise = approximatePathSignedArea(path) < 0;
                 if (!isPathClockwise) order = order.reverse();
@@ -1719,19 +2079,33 @@ export class FieldRenderer {
                 }
                 order = order.slice(startPos).concat(order.slice(0, startPos));
             } else {
-                order.sort((aIdx, bIdx) => {
-                    const a = slots[aIdx].midPt || { x: -Infinity, y: -Infinity };
-                    const b = slots[bIdx].midPt || { x: -Infinity, y: -Infinity };
-                    if (Math.abs(b.x - a.x) > 1e-6) return b.x - a.x;
-                    return b.y - a.y;
-                });
+                const explicitTraversal = resolveOpenPathSectionTraversal(
+                    normalizedType,
+                    bowlConfig,
+                    slots,
+                    pathIndex
+                );
+                if (explicitTraversal) {
+                    order = explicitTraversal.slotOrder;
+                    pathRank = explicitTraversal.pathRank;
+                } else {
+                    order = buildDefaultOpenSectionSlotOrder(slots);
+                }
             }
+
+            numberedPathTemplates.push({ pathIndex, pathRank, slots, order });
+            out.set(pathIndex, slots);
+        }
+
+        numberedPathTemplates.sort((a, b) => (
+            compareFiniteNumbers(a.pathRank, b.pathRank)
+            || compareFiniteNumbers(a.pathIndex, b.pathIndex)
+        ));
+        numberedPathTemplates.forEach(({ slots, order }) => {
             for (let i = 0; i < order.length; i++) {
                 slots[order[i]].sectionNumber = nextSectionNumber++;
             }
-
-            out.set(pathIndex, slots);
-        }
+        });
 
         return out;
     }
@@ -1975,7 +2349,7 @@ export class FieldRenderer {
             getPathsForOffset,
             chamferCache
         );
-        const sectionTemplates = this._buildTierSectionTemplates(labelPaths, tierLayout, sectionBase);
+        const sectionTemplates = this._buildTierSectionTemplates(labelPaths, tierLayout, sectionBase, bowlConfig);
         if (!sectionTemplates.size) return { sectionLabels: [], rowSeatLabels: [] };
         const sectionByKey = new Map(
             sections.map((section) => [`${section.pathIndex}:${section.slotIndex}`, section])

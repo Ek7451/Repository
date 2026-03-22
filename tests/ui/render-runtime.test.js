@@ -291,7 +291,7 @@ describe('RenderRuntime', () => {
         }));
     });
 
-    test('hides baseball seating from plan and 3d display payloads without removing solver data elsewhere', () => {
+    test('keeps baseball seating in the shared plan and 3d display payloads without suppressing solver data', () => {
         const state = AppState.reset();
         const runtime = new RenderRuntime();
         const fieldGeometryPort = createFieldGeometryPort();
@@ -304,7 +304,7 @@ describe('RenderRuntime', () => {
         expect(snapshot.solvers).toHaveLength(2);
         expect(snapshot.activeSolvers).toHaveLength(2);
         expect(snapshot.visibility).toEqual(expect.objectContaining({
-            showSeating: false,
+            showSeating: true,
             t1: true,
             t2: true,
             t3: false
@@ -314,8 +314,8 @@ describe('RenderRuntime', () => {
             visibility: snapshot.visibility
         }));
         expect(snapshot.scene3DInput).toEqual(expect.objectContaining({
-            solvers: null,
-            tierAisleLayouts: []
+            solvers: snapshot.solvers,
+            tierAisleLayouts: snapshot.tierAisleLayouts
         }));
         expect(snapshot.statsViewModel).toEqual(expect.objectContaining({
             summary: expect.objectContaining({
