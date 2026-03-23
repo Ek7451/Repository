@@ -1,5 +1,5 @@
 import { resolvePlanFocalYFt } from '../core/sports-templates.js';
-import { buildStructuralProfileGeometry } from '../core/profile-solver.js';
+import { buildStructuralProfileGeometry, getSolverTierIndex } from '../core/profile-solver.js';
 
 const DXF_VERSION = 'AC1009';
 
@@ -259,8 +259,16 @@ export function buildProfileDxf({
         const textLayer = `Tier_${tierIndex + 1}_Metrics`;
 
         const firstRow = solver.rows[0];
-        const solverTierIndex = solver.tierIndex !== undefined ? solver.tierIndex : tierIndex;
-        const baseZ = solverTierIndex === 0 ? 0 : (firstRow.z - firstRow.riser_height);
+        const solverTierIndex = getSolverTierIndex(solver, tierIndex);
+        const structuralGeometry = structuralDepthFt > 0
+            ? buildStructuralProfileGeometry(solver, {
+                structuralDepthFt,
+                structuralProfileMode,
+                tierIndex: solverTierIndex
+            })
+            : null;
+        const baseZ = structuralGeometry?.topProfile?.[0]?.z
+            ?? (solverTierIndex === 0 ? 0 : (firstRow.z - firstRow.riser_height));
         const startX = firstRow.x - solver.treadDepthFt;
 
         appendDxfLine(writer, profLayer, startX * 12, baseZ * 12, startX * 12, firstRow.z * 12);
@@ -272,11 +280,6 @@ export function buildProfileDxf({
         }
 
         if (structuralDepthFt > 0) {
-            const structuralGeometry = buildStructuralProfileGeometry(solver, {
-                structuralDepthFt,
-                structuralProfileMode,
-                tierIndex: tierIndex
-            });
             const undersideProfile = structuralGeometry?.undersideProfile ?? [];
             const topProfile = structuralGeometry?.topProfile ?? [];
             const topEnd = topProfile[topProfile.length - 1];

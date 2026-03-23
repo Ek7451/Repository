@@ -63,6 +63,14 @@ function createPlanTemplateCases() {
     ];
 }
 
+function buildLineEntitySnippet(layer, x1, y1, x2, y2) {
+    return (
+        `0\nLINE\n8\n${layer}\n` +
+        `10\n${x1.toFixed(4)}\n20\n${y1.toFixed(4)}\n30\n0.0000\n` +
+        `11\n${x2.toFixed(4)}\n21\n${y2.toFixed(4)}\n31\n0.0000\n`
+    );
+}
+
 describe('buildProfileDxf', () => {
     test('writes a complete R12 DXF document with normalized layer names', () => {
         const dxf = buildProfileDxf({
@@ -151,6 +159,60 @@ describe('buildProfileDxf', () => {
         expect(dxf).toContain('Tier_1_Profile');
         expect(dxf).not.toContain('NaN');
         expect(dxf).not.toContain('Infinity');
+    });
+
+    test('uses the structural front depth for upper-tier profile exports in both modes', () => {
+        const solver = {
+            tierIndex: 1,
+            treadDepthFt: 2,
+            rows: [
+                {
+                    x: 10,
+                    z: 6,
+                    tread_depth: 2,
+                    riser_height: 1,
+                    eye_x: 9.5,
+                    eye_z: 9.5,
+                    c_value: 3.25
+                },
+                {
+                    x: 12,
+                    z: 7,
+                    tread_depth: 2,
+                    riser_height: 1,
+                    eye_x: 11.5,
+                    eye_z: 10.5,
+                    c_value: 3.5
+                }
+            ],
+            getStepGeometry() {
+                return [
+                    [{ x: 8, z: 6 }, { x: 10, z: 6 }],
+                    [{ x: 10, z: 6 }, { x: 10, z: 7 }],
+                    [{ x: 10, z: 7 }, { x: 12, z: 7 }]
+                ];
+            }
+        };
+        const expectedFrontRiser = buildLineEntitySnippet('Tier_1_Profile', 96, 54, 96, 72);
+        const oldFrontRiser = buildLineEntitySnippet('Tier_1_Profile', 96, 60, 96, 72);
+
+        /** @type {Array<[string, number]>} */
+        const modeCases = [['stepped', 114], ['sloped', 120]];
+
+        for (const [mode, expectedFrontClosureX] of modeCases) {
+            const dxf = buildProfileDxf({
+                solvers: [solver],
+                structuralDepthFt: 1.5,
+                structuralProfileMode: mode,
+                focalPointFt: { x: 0, z: 0 }
+            });
+
+            expect(dxf).toContain(expectedFrontRiser);
+            expect(dxf).not.toContain(oldFrontRiser);
+            expect(dxf).toContain(
+                buildLineEntitySnippet('Tier_1_Profile', 96, 54, expectedFrontClosureX, 54)
+            );
+        }
     });
 });
 

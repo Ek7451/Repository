@@ -365,6 +365,32 @@ describe('EditorExportController', () => {
         expect(descriptor.content).toContain('Tier_1_Aisles');
     });
 
+    test('includes the last row back edge when building plan export artifacts', () => {
+        const exportContext = createExportContext();
+        const fieldGeometryPort = createFieldRenderer();
+        fieldGeometryPort.getBowlGeometrySegments = vi.fn((_bowlConfig, offset) => ([
+            { cmd: 'moveTo', x: offset, y: 0 },
+            { cmd: 'lineTo', x: offset + 1, y: 0 }
+        ]));
+        const controller = new EditorExportController({
+            getExportContext: () => exportContext,
+            getFieldGeometryPort: () => fieldGeometryPort,
+            getSceneGeometryPort: () => createSceneGeometryPort()
+        });
+
+        const artifacts = controller._buildTierRuntimeArtifacts(exportContext);
+
+        expect(artifacts).toHaveLength(1);
+        expect(artifacts[0].rowGeometries).toHaveLength(exportContext.activeSolvers[0].rows.length + 1);
+        expect(artifacts[0].rowGeometries.at(-1)).toEqual([
+            { cmd: 'moveTo', x: 19, y: 0 },
+            { cmd: 'lineTo', x: 20, y: 0 }
+        ]);
+        expect(fieldGeometryPort.getBowlGeometrySegments).toHaveBeenNthCalledWith(1, exportContext.bowlConfig, 12);
+        expect(fieldGeometryPort.getBowlGeometrySegments).toHaveBeenNthCalledWith(2, exportContext.bowlConfig, 16);
+        expect(fieldGeometryPort.getBowlGeometrySegments).toHaveBeenNthCalledWith(3, exportContext.bowlConfig, 19);
+    });
+
     test('short-circuits rhino export when there is no scene geometry', async () => {
         const getSceneGeometryPort = vi.fn(() => ({
             getExportSceneData: () => null

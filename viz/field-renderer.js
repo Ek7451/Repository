@@ -1150,6 +1150,57 @@ export function buildBowlBandPolygons(bowlConfig, frontOffset, backOffset, arcRe
     return polygons;
 }
 
+function buildTierAislePolygonPoints(pathFront, pathBack, ratios, widthFt, aisle = null) {
+    if (!pathFront || !pathBack || !ratios || !(Number(widthFt) > 0)) return null;
+
+    const bandFront = sampleAisleBand(pathFront, ratios.uFront, widthFt);
+    const bandBack = sampleAisleBand(pathBack, ratios.uBack, widthFt);
+    if (!bandFront || !bandBack) return null;
+
+    const isFixedChamferCornerAisle = aisle?.anchorType === 'forced_chamfer'
+        || Number.isFinite(Number(aisle?.cornerOrdinal));
+    if (!isFixedChamferCornerAisle) {
+        return [
+            { x: bandFront.left.x, y: bandFront.left.y },
+            { x: bandFront.right.x, y: bandFront.right.y },
+            { x: bandBack.right.x, y: bandBack.right.y },
+            { x: bandBack.left.x, y: bandBack.left.y }
+        ];
+    }
+
+    const frontCenter = samplePathPointByRatio(pathFront, ratios.uFront);
+    const backCenter = samplePathPointByRatio(pathBack, ratios.uBack);
+    const dx = backCenter.x - frontCenter.x;
+    const dy = backCenter.y - frontCenter.y;
+    const centerlineLength = Math.hypot(dx, dy);
+    if (!(centerlineLength > 1e-6)) {
+        return [
+            { x: bandFront.left.x, y: bandFront.left.y },
+            { x: bandFront.right.x, y: bandFront.right.y },
+            { x: bandBack.right.x, y: bandBack.right.y },
+            { x: bandBack.left.x, y: bandBack.left.y }
+        ];
+    }
+
+    let normalX = -dy / centerlineLength;
+    let normalY = dx / centerlineLength;
+    const frontOrientationDot =
+        ((bandFront.left.x - frontCenter.x) * normalX) +
+        ((bandFront.left.y - frontCenter.y) * normalY);
+    if (frontOrientationDot < 0) {
+        normalX *= -1;
+        normalY *= -1;
+    }
+
+    const halfWidthFt = widthFt * 0.5;
+    return [
+        { x: frontCenter.x + (normalX * halfWidthFt), y: frontCenter.y + (normalY * halfWidthFt) },
+        { x: frontCenter.x - (normalX * halfWidthFt), y: frontCenter.y - (normalY * halfWidthFt) },
+        { x: backCenter.x - (normalX * halfWidthFt), y: backCenter.y - (normalY * halfWidthFt) },
+        { x: backCenter.x + (normalX * halfWidthFt), y: backCenter.y + (normalY * halfWidthFt) }
+    ];
+}
+
 function pushUniqueIntersectionY(intersections, nextY) {
     if (!Number.isFinite(nextY)) return;
     if (intersections.some((value) => Math.abs(value - nextY) <= SECTION_CUT_LINE_INTERSECTION_EPSILON)) {
@@ -2312,21 +2363,15 @@ export class FieldRenderer {
 
                 const widthFt = getTierRenderedAisleWidthFt(tierLayout, i);
                 if (widthFt <= 0) continue;
-                const bandFront = sampleAisleBand(pathFront, ratios.uFront, widthFt);
-                const bandBack = sampleAisleBand(pathBack, ratios.uBack, widthFt);
-                if (!bandFront || !bandBack) continue;
+                const points = buildTierAislePolygonPoints(pathFront, pathBack, ratios, widthFt, aisle);
+                if (!points || points.length < 4) continue;
 
                 polygons.push({
                     tierIndex: solver.tierIndex !== undefined ? solver.tierIndex : 0,
                     rowIndex: r,
                     aisleIndex: i,
                     pathIndex,
-                    points: [
-                        { x: bandFront.left.x, y: bandFront.left.y },
-                        { x: bandFront.right.x, y: bandFront.right.y },
-                        { x: bandBack.right.x, y: bandBack.right.y },
-                        { x: bandBack.left.x, y: bandBack.left.y }
-                    ]
+                    points
                 });
             }
         }
@@ -2759,15 +2804,14 @@ export class FieldRenderer {
 
                 const widthFt = getTierRenderedAisleWidthFt(tierLayout, i);
                 if (widthFt <= 0) continue;
-                const bandFront = sampleAisleBand(pathFront, ratios.uFront, widthFt);
-                const bandBack = sampleAisleBand(pathBack, ratios.uBack, widthFt);
-                if (!bandFront || !bandBack) continue;
+                const points = buildTierAislePolygonPoints(pathFront, pathBack, ratios, widthFt, aisle);
+                if (!points || points.length < 4) continue;
 
                 ctx.beginPath();
-                ctx.moveTo(bandFront.left.x, bandFront.left.y);
-                ctx.lineTo(bandFront.right.x, bandFront.right.y);
-                ctx.lineTo(bandBack.right.x, bandBack.right.y);
-                ctx.lineTo(bandBack.left.x, bandBack.left.y);
+                ctx.moveTo(points[0].x, points[0].y);
+                for (let pointIndex = 1; pointIndex < points.length; pointIndex++) {
+                    ctx.lineTo(points[pointIndex].x, points[pointIndex].y);
+                }
                 ctx.closePath();
                 ctx.fill();
             }

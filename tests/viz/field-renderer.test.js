@@ -1117,6 +1117,50 @@ describe('FieldRenderer helper delegation surface', () => {
         expect(overlay.widthLabels[0].text).not.toBe('60"');
     });
 
+    it('keeps fixed chamfer corner aisle polygons at their rendered widths in plan view', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const solver = createTierSolver();
+        const bowlConfig = createFullChamferBowlConfig({
+            straightAisleMode: 'radial',
+            chamferAisleMode: 'perpendicular'
+        });
+        const tierLayout = renderer.generateTierAisleLayout(
+            solver,
+            bowlConfig,
+            createTierMetrics(),
+            0,
+            createEgressParams()
+        );
+        const forcedChamferAisleIndices = tierLayout.aisles
+            .map((aisle, aisleIndex) => ({ aisle, aisleIndex }))
+            .filter(({ aisle }) => aisle.anchorType === 'forced_chamfer');
+        const polygons = renderer.getTierAisleBandPolygons(solver, bowlConfig, tierLayout, 0);
+
+        expect(forcedChamferAisleIndices.length).toBeGreaterThan(0);
+
+        forcedChamferAisleIndices.forEach(({ aisleIndex }) => {
+            const expectedWidthFt = Number(tierLayout.sectionSummary?.aisles?.[aisleIndex]?.renderedWidthFt) || 0;
+            const aislePolygons = polygons.filter((polygon) => polygon.aisleIndex === aisleIndex);
+
+            expect(expectedWidthFt).toBeGreaterThan(0);
+            expect(aislePolygons).toHaveLength(solver.rows.length);
+
+            aislePolygons.forEach((polygon) => {
+                const frontWidthFt = Math.hypot(
+                    polygon.points[0].x - polygon.points[1].x,
+                    polygon.points[0].y - polygon.points[1].y
+                );
+                const backWidthFt = Math.hypot(
+                    polygon.points[2].x - polygon.points[3].x,
+                    polygon.points[2].y - polygon.points[3].y
+                );
+
+                expect(frontWidthFt).toBeCloseTo(expectedWidthFt, 6);
+                expect(backWidthFt).toBeCloseTo(expectedWidthFt, 6);
+            });
+        });
+    });
+
     it('builds section overlays from U-end terminal aisle summaries instead of edge slivers', () => {
         const renderer = Object.create(FieldRenderer.prototype);
         const solver = createTierSolver();

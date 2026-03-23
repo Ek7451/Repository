@@ -190,6 +190,15 @@ export class EditorExportController {
                 const frontOffset = (row.x - row.tread_depth) - exportContext.offsetCorrection;
                 return fieldGeometryPort.getBowlGeometrySegments(exportContext.bowlConfig, frontOffset);
             });
+            const lastRow = solver.rows[solver.rows.length - 1];
+            if (lastRow) {
+                rowGeometries.push(
+                    fieldGeometryPort.getBowlGeometrySegments(
+                        exportContext.bowlConfig,
+                        lastRow.x - exportContext.offsetCorrection
+                    )
+                );
+            }
 
             return {
                 tierIndex,
