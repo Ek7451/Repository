@@ -7,7 +7,7 @@ import {
 
 const APP_STATE_VERSION = 'phase6-app-state';
 const VALID_VIEW_TABS = new Set(['profile', 'field', 'scene3d']);
-const VALID_RESULTS_TABS = new Set(['statsTab', 'accessibilityTab', 'detailsTab']);
+const VALID_RESULTS_TABS = new Set(['statsTab', 'accessibilityTab', 'detailsTab', 'sectionMetricsTab']);
 
 /**
  * @typedef {{ x: number, y: number, z: number }} VectorState

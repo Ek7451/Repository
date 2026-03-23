@@ -79,6 +79,7 @@ export class Scene3DController {
         this._scene3dReady = false;
         this._scene3dLoading = false;
         this._lastSnapshot = null;
+        this._metricsHoverTarget = null;
         this._handleExitSeatViewClick = () => this.scene3D?.exitSpectatorView?.();
         this.cameraBookmarks = new CameraBookmarks({
             barEl: this.bookmarksBarEl,
@@ -115,6 +116,13 @@ export class Scene3DController {
         return nextTheme;
     }
 
+    setMetricsHoverTarget(target = null) {
+        this._metricsHoverTarget = target && typeof target === 'object'
+            ? { ...target }
+            : null;
+        this.scene3D?.setMetricsHoverTarget?.(this._metricsHoverTarget);
+    }
+
     update(snapshot = null, { isActive = false } = {}) {
         if (snapshot) {
             this._lastSnapshot = snapshot;
@@ -141,6 +149,7 @@ export class Scene3DController {
                 this._lastSnapshot.tierAisleLayouts || [],
                 this._lastSnapshot.seatPreviewOptions
             );
+            this.scene3D.setMetricsHoverTarget?.(this._metricsHoverTarget);
         } catch (error) {
             console.warn('3D update error:', error);
         }
@@ -200,6 +209,7 @@ export class Scene3DController {
             await this.scene3D.init();
             this._syncSeatViewExitButton(this.scene3D.isSpectatorViewActive?.() ?? false);
             this.applyTheme(this.getTheme());
+            this.scene3D.setMetricsHoverTarget?.(this._metricsHoverTarget);
             this._scene3dReady = true;
             this.update(null, { isActive: true });
             console.log('3D scene initialized successfully');

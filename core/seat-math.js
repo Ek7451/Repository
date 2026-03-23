@@ -35,10 +35,14 @@ export function computeAverageSeatsPerBlock({ seatsPerRow, blockCount }) {
     return resolvedSeatsPerRow / resolvedBlockCount;
 }
 
-export function sectionBoundaryGapToSeatCount(centerGapFt, leftAisleWidthFt, rightAisleWidthFt, seatWidthIn) {
+export function sectionBoundaryGapToSeatingLengthFt(centerGapFt, leftAisleWidthFt, rightAisleWidthFt) {
     const leftAisleFt = normalizeAisleWidthFt(leftAisleWidthFt);
     const rightAisleFt = normalizeAisleWidthFt(rightAisleWidthFt);
-    const seatingGapFt = Math.max(0, (Number(centerGapFt) || 0) - (leftAisleFt * 0.5) - (rightAisleFt * 0.5));
+    return Math.max(0, (Number(centerGapFt) || 0) - (leftAisleFt * 0.5) - (rightAisleFt * 0.5));
+}
+
+export function sectionBoundaryGapToSeatCount(centerGapFt, leftAisleWidthFt, rightAisleWidthFt, seatWidthIn) {
+    const seatingGapFt = sectionBoundaryGapToSeatingLengthFt(centerGapFt, leftAisleWidthFt, rightAisleWidthFt);
     return seatingLengthToSeatCount(seatingGapFt, seatWidthIn);
 }
 

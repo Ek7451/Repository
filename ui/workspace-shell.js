@@ -32,7 +32,7 @@ function normalizeViewTab(tab) {
 }
 
 function normalizeResultsTab(targetId) {
-    if (targetId === 'accessibilityTab' || targetId === 'detailsTab') {
+    if (targetId === 'accessibilityTab' || targetId === 'detailsTab' || targetId === 'sectionMetricsTab') {
         return targetId;
     }
     return 'statsTab';

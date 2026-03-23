@@ -142,6 +142,159 @@ describe('StatsPanel', () => {
         expect(detailsEl.innerHTML).toContain('row-table-row');
     });
 
+    test('renders the new section metrics table with the shared sections icon', () => {
+        const viewModel = buildStatsDto({
+            solvers: [createSolver()],
+            focalPointFt: { x: 0, z: 0 },
+            bowlConfig: { type: 'Full' },
+            egressParams: { egressFactor: 0.2 },
+            tierMetricsByIndex: new Map([[0, createMetrics({
+                sectionDetails: [{
+                    sectionNumber: 100,
+                    occupancy: 44,
+                    seatWidthIn: 20,
+                    longestRowBySeatCount: { rowNumber: 2, seatCount: 24 },
+                    shortestRowBySeatCount: { rowNumber: 1, seatCount: 20 },
+                    longestRowByLength: { rowNumber: 2, seatingLengthFt: 40.5 },
+                    shortestRowByLength: { rowNumber: 1, seatingLengthFt: 33.3 }
+                }]
+            })]])
+        });
+        const statsEl = { innerHTML: '' };
+        const detailsEl = {
+            innerHTML: '',
+            querySelectorAll: vi.fn(() => [])
+        };
+        const sectionMetricsEl = {
+            innerHTML: '',
+            querySelectorAll: vi.fn(() => [])
+        };
+        const panel = new StatsPanel({
+            statsEl: /** @type {any} */ (statsEl),
+            detailsEl: /** @type {any} */ (detailsEl),
+            sectionMetricsEl: /** @type {any} */ (sectionMetricsEl)
+        });
+
+        panel.update(viewModel);
+
+        expect(detailsEl.innerHTML).not.toContain('SECTION METRICS');
+        expect(sectionMetricsEl.innerHTML).toContain('SECTION METRICS');
+        expect(sectionMetricsEl.innerHTML).toContain('results-data-table__title-icon');
+        expect(sectionMetricsEl.innerHTML).toContain('icon-sections');
+        expect(sectionMetricsEl.innerHTML).toContain('Longest Row / Seats');
+        expect(sectionMetricsEl.innerHTML).toContain('<span>100</span>');
+        expect(sectionMetricsEl.innerHTML).toContain('R2 / 24');
+        expect(sectionMetricsEl.innerHTML).not.toContain('Nearest Row / Dist');
+        expect(sectionMetricsEl.innerHTML).not.toContain('Farthest Row / Dist');
+    });
+
+    test('emits row and section hover targets for the rendered metrics tables', () => {
+        const onHoverTargetChanged = vi.fn();
+        const globalAny = /** @type {any} */ (globalThis);
+        const OriginalHTMLElement = globalAny.HTMLElement;
+        const FakeHTMLElement = /** @type {any} */ (class {});
+        globalAny.HTMLElement = FakeHTMLElement;
+
+        const createHoverRow = (dataset = {}) => {
+            const row = /** @type {any} */ (new FakeHTMLElement());
+            row.dataset = { ...dataset };
+            row.closest = vi.fn(() => row);
+            row.onmouseenter = null;
+            row.onmouseleave = null;
+            return row;
+        };
+        const createContainer = (rows = []) => {
+            const container = /** @type {any} */ (new FakeHTMLElement());
+            container.innerHTML = '';
+            container.querySelectorAll = vi.fn((selector) => (
+                selector === '[data-results-hover-type]' ? rows : []
+            ));
+            container.querySelector = vi.fn((selector) => rows.find((row) => {
+                const matchesType = selector.includes(`[data-results-hover-type="${row.dataset.resultsHoverType}"]`);
+                const matchesTier = selector.includes(`[data-results-hover-tier-index="${row.dataset.resultsHoverTierIndex}"]`);
+                const matchesRow = !selector.includes('data-results-hover-row-index')
+                    || selector.includes(`[data-results-hover-row-index="${row.dataset.resultsHoverRowIndex}"]`);
+                const matchesSection = !selector.includes('data-results-hover-section-number')
+                    || selector.includes(`[data-results-hover-section-number="${row.dataset.resultsHoverSectionNumber}"]`);
+                return matchesType && matchesTier && matchesRow && matchesSection;
+            }) || null);
+            container.contains = vi.fn((candidate) => rows.includes(candidate));
+            return container;
+        };
+
+        const detailRow = createHoverRow({
+            resultsHoverType: 'row',
+            resultsHoverTierIndex: '0',
+            resultsHoverRowIndex: '1'
+        });
+        const sectionRow = createHoverRow({
+            resultsHoverType: 'section',
+            resultsHoverTierIndex: '0',
+            resultsHoverSectionNumber: '100'
+        });
+        const viewModel = buildStatsDto({
+            solvers: [createSolver({
+                rows: [
+                    createRow({ row_number: 1 }),
+                    createRow({
+                        row_number: 2,
+                        x: 13,
+                        z: 2,
+                        computedLength: 42,
+                        computedSeats: 22
+                    })
+                ]
+            })],
+            focalPointFt: { x: 0, z: 0 },
+            bowlConfig: { type: 'Full' },
+            egressParams: { egressFactor: 0.2 },
+            tierMetricsByIndex: new Map([[0, createMetrics({
+                sectionDetails: [{
+                    sectionNumber: 100,
+                    occupancy: 44,
+                    seatWidthIn: 20,
+                    longestRowBySeatCount: { rowNumber: 2, seatCount: 24 },
+                    shortestRowBySeatCount: { rowNumber: 1, seatCount: 20 },
+                    longestRowByLength: { rowNumber: 2, seatingLengthFt: 40.5 },
+                    shortestRowByLength: { rowNumber: 1, seatingLengthFt: 33.3 }
+                }]
+            })]])
+        });
+        const statsEl = { innerHTML: '' };
+        const detailsEl = createContainer([detailRow]);
+        const sectionMetricsEl = createContainer([sectionRow]);
+        const panel = new StatsPanel({
+            statsEl: /** @type {any} */ (statsEl),
+            detailsEl: /** @type {any} */ (detailsEl),
+            sectionMetricsEl: /** @type {any} */ (sectionMetricsEl),
+            onHoverTargetChanged
+        });
+
+        try {
+            panel.update(viewModel);
+
+            detailRow.onmouseenter?.();
+            detailRow.onmouseleave?.({ relatedTarget: null });
+            sectionRow.onmouseenter?.();
+            sectionRow.onmouseleave?.({ relatedTarget: null });
+
+            expect(onHoverTargetChanged).toHaveBeenNthCalledWith(1, {
+                type: 'row',
+                tierIndex: 0,
+                rowIndex: 1
+            });
+            expect(onHoverTargetChanged).toHaveBeenNthCalledWith(2, null);
+            expect(onHoverTargetChanged).toHaveBeenNthCalledWith(3, {
+                type: 'section',
+                tierIndex: 0,
+                sectionNumber: 100
+            });
+            expect(onHoverTargetChanged).toHaveBeenNthCalledWith(4, null);
+        } finally {
+            globalAny.HTMLElement = OriginalHTMLElement;
+        }
+    });
+
     test('renders dedicated accessibility markup from the shared view model', () => {
         const viewModel = buildStatsDto({
             solvers: [createSolver()],

@@ -227,6 +227,17 @@ describe('AppState', () => {
         expect(second.tiers[0].firstRowElev).toBe(2);
     });
 
+    test('preserves the dedicated section metrics results tab through hydration', () => {
+        AppState.fromJSON({
+            ui: {
+                activeResultsTab: 'sectionMetricsTab'
+            }
+        });
+
+        expect(AppState.ui.activeResultsTab).toBe('sectionMetricsTab');
+        expect(AppState.toJSON().ui.activeResultsTab).toBe('sectionMetricsTab');
+    });
+
     test('clamps focalX while hydrating and when the selected sport changes', () => {
         AppState.fromJSON({
             sport: 'Football',

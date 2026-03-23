@@ -67,6 +67,90 @@ function escapeHtml(value) {
         .replace(/>/g, '&gt;');
 }
 
+function isHtmlElement(value) {
+    return typeof HTMLElement !== 'undefined' && value instanceof HTMLElement;
+}
+
+function normalizeHoverTarget(target = null) {
+    if (!target || typeof target !== 'object') return null;
+    const tierIndex = Math.max(0, Math.floor(Number(target.tierIndex) || 0));
+    if (target.type === 'row') {
+        return {
+            type: 'row',
+            tierIndex,
+            rowIndex: Math.max(0, Math.floor(Number(target.rowIndex) || 0))
+        };
+    }
+    if (target.type === 'section') {
+        const sectionNumber = Math.max(0, Math.round(Number(target.sectionNumber) || 0));
+        if (!(sectionNumber > 0)) return null;
+        return {
+            type: 'section',
+            tierIndex,
+            sectionNumber
+        };
+    }
+    return null;
+}
+
+function hoverTargetsEqual(a, b) {
+    const targetA = normalizeHoverTarget(a);
+    const targetB = normalizeHoverTarget(b);
+    if (!targetA && !targetB) return true;
+    if (!targetA || !targetB) return false;
+    if (targetA.type !== targetB.type || targetA.tierIndex !== targetB.tierIndex) return false;
+    if (targetA.type === 'row') return targetA.rowIndex === targetB.rowIndex;
+    return targetA.sectionNumber === targetB.sectionNumber;
+}
+
+function applyHoverTargetAttributes(element, target = null) {
+    if (!isHtmlElement(element)) return;
+    const normalizedTarget = normalizeHoverTarget(target);
+    if (!normalizedTarget) return;
+
+    element.dataset.resultsHoverType = normalizedTarget.type;
+    element.dataset.resultsHoverTierIndex = String(normalizedTarget.tierIndex);
+    delete element.dataset.resultsHoverRowIndex;
+    delete element.dataset.resultsHoverSectionNumber;
+
+    if (normalizedTarget.type === 'row') {
+        element.dataset.resultsHoverRowIndex = String(normalizedTarget.rowIndex);
+        return;
+    }
+
+    element.dataset.resultsHoverSectionNumber = String(normalizedTarget.sectionNumber);
+}
+
+function buildHoverTargetAttributeMarkup(target = null) {
+    const normalizedTarget = normalizeHoverTarget(target);
+    if (!normalizedTarget) return '';
+
+    const attrs = [
+        ['data-results-hover-type', normalizedTarget.type],
+        ['data-results-hover-tier-index', normalizedTarget.tierIndex]
+    ];
+
+    if (normalizedTarget.type === 'row') {
+        attrs.push(['data-results-hover-row-index', normalizedTarget.rowIndex]);
+    } else {
+        attrs.push(['data-results-hover-section-number', normalizedTarget.sectionNumber]);
+    }
+
+    return attrs
+        .map(([name, value]) => ` ${name}="${escapeHtml(String(value))}"`)
+        .join('');
+}
+
+function parseHoverTargetFromElement(element = null) {
+    if (!isHtmlElement(element)) return null;
+    return normalizeHoverTarget({
+        type: element.dataset.resultsHoverType,
+        tierIndex: element.dataset.resultsHoverTierIndex,
+        rowIndex: element.dataset.resultsHoverRowIndex,
+        sectionNumber: element.dataset.resultsHoverSectionNumber
+    });
+}
+
 function setAccordionState(sectionEl, triggerEl, panelEl, isCollapsed, panelId) {
     if (!(sectionEl instanceof HTMLElement) || !(triggerEl instanceof HTMLElement) || !(panelEl instanceof HTMLElement)) {
         return;
@@ -386,6 +470,133 @@ function createMetricItem(label, iconKind, mainValue, suffixText = '') {
     return item;
 }
 
+function buildSectionsIconMarkup() {
+    return `
+        <svg class="tier-metric-icon icon-sections results-data-table__title-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M4 4h6v16H4z M12 4h8v7h-8z M12 13h8v7h-8z"></path>
+        </svg>
+    `;
+}
+
+function createResultsTableSectionTitle(label, iconKind = '') {
+    const title = createElement('div', 'results-data-table__title');
+    if (iconKind) {
+        const icon = createMetricIcon(iconKind);
+        icon.classList.add('results-data-table__title-icon');
+        title.appendChild(icon);
+    }
+    title.appendChild(createElement('span', '', label));
+    return title;
+}
+
+function buildResultsTableSectionTitleMarkup(label, iconKind = '') {
+    const iconMarkup = iconKind === 'sections' ? buildSectionsIconMarkup() : '';
+    return `
+        <div class="results-data-table__title">
+            ${iconMarkup}
+            <span>${escapeHtml(label)}</span>
+        </div>
+    `;
+}
+
+function createSectionMetricsRow(section, rowIndex, tierIndex) {
+    const rowEl = createElement(
+        'div',
+        `section-table-row results-data-table__row results-data-table__row--sections${rowIndex % 2 === 1 ? ' results-data-table__row--alt' : ''}`
+    );
+    applyHoverTargetAttributes(rowEl, {
+        type: 'section',
+        tierIndex,
+        sectionNumber: section.sectionNumber
+    });
+    [
+        section.sectionNumberDisplay,
+        section.totalSeatsDisplay,
+        section.seatSizeDisplay,
+        section.longestRowSeatsDisplay,
+        section.shortestRowSeatsDisplay,
+        section.longestRowLengthDisplay,
+        section.shortestRowLengthDisplay
+    ].forEach((value) => {
+        rowEl.appendChild(createElement('span', '', value));
+    });
+    return rowEl;
+}
+
+function buildSectionMetricsRowMarkup(section, rowIndex, tierIndex) {
+    const rowClass = `section-table-row results-data-table__row results-data-table__row--sections${rowIndex % 2 === 1 ? ' results-data-table__row--alt' : ''}`;
+    const hoverAttrs = buildHoverTargetAttributeMarkup({
+        type: 'section',
+        tierIndex,
+        sectionNumber: section.sectionNumber
+    });
+    const cells = [
+        section.sectionNumberDisplay,
+        section.totalSeatsDisplay,
+        section.seatSizeDisplay,
+        section.longestRowSeatsDisplay,
+        section.shortestRowSeatsDisplay,
+        section.longestRowLengthDisplay,
+        section.shortestRowLengthDisplay
+    ];
+    return `
+        <div class="${rowClass}"${hoverAttrs}>
+            ${cells.map((value) => `<span>${escapeHtml(value)}</span>`).join('')}
+        </div>
+    `;
+}
+
+function appendSectionMetricsTable(panel, tier) {
+    const sections = Array.isArray(tier?.sections) ? tier.sections : [];
+    if (!sections.length) return;
+
+    const table = createElement('div', 'results-data-table results-data-table--sections');
+    table.appendChild(createResultsTableSectionTitle('SECTION METRICS', 'sections'));
+
+    const header = createElement('div', 'section-table-header results-data-table__header results-data-table__header--sections');
+    [
+        'Section',
+        'Seats',
+        'Seat Size',
+        'Longest Row / Seats',
+        'Shortest Row / Seats',
+        'Longest Row / Length',
+        'Shortest Row / Length'
+    ].forEach((label) => header.appendChild(createElement('span', '', label)));
+    table.appendChild(header);
+
+    sections.forEach((section, rowIndex) => {
+        table.appendChild(createSectionMetricsRow(section, rowIndex, tier?.tierIndex));
+    });
+
+    panel.appendChild(table);
+}
+
+function buildSectionMetricsTableMarkup(tier) {
+    const sections = Array.isArray(tier?.sections) ? tier.sections : [];
+    if (!sections.length) return '';
+
+    const headerLabels = [
+        'Section',
+        'Seats',
+        'Seat Size',
+        'Longest Row / Seats',
+        'Shortest Row / Seats',
+        'Longest Row / Length',
+        'Shortest Row / Length'
+    ];
+
+    return `
+        <div class="results-data-table results-data-table--sections">
+            ${buildResultsTableSectionTitleMarkup('SECTION METRICS', 'sections')}
+            <div class="section-table-header results-data-table__header results-data-table__header--sections">
+                ${headerLabels.map((label) => `<span>${escapeHtml(label)}</span>`).join('')}
+            </div>
+            ${sections.map((section, rowIndex) => buildSectionMetricsRowMarkup(section, rowIndex, tier?.tierIndex)).join('')}
+        </div>
+    `;
+}
+
 function createAccessibilityOverview(summary = {}) {
     const section = createElement('section', 'accessibility-overview');
     section.appendChild(createElement('div', 'total-occupancy-label results-section-title--center results-section-title--spaced', 'ACCESSIBILITY'));
@@ -658,18 +869,34 @@ function createAccessibilityMetricCard(tier) {
 }
 
 export class StatsPanel {
-    constructor({ statsEl = null, accessibilityEl = null, detailsEl = null } = {}) {
+    constructor({
+        statsEl = null,
+        accessibilityEl = null,
+        detailsEl = null,
+        sectionMetricsEl = null,
+        onHoverTargetChanged = null
+    } = {}) {
         this.statsEl = statsEl ?? getDefaultElement('statsContent');
         this.accessibilityEl = accessibilityEl ?? getDefaultElement('accessibilityContent');
         this.detailsEl = detailsEl ?? getDefaultElement('detailsContent');
+        this.sectionMetricsEl = sectionMetricsEl ?? getDefaultElement('sectionMetricsContent');
         this.openDetailSections = new Set();
+        this.openSectionMetricSections = new Set();
+        this._onHoverTargetChanged = typeof onHoverTargetChanged === 'function'
+            ? onHoverTargetChanged
+            : null;
+        this._activeHoverTarget = null;
     }
 
     update(viewModel = null) {
         if (!this.statsEl) return;
-        if (!viewModel || !Array.isArray(viewModel.tiers) || viewModel.tiers.length === 0) return;
+        if (!viewModel || !Array.isArray(viewModel.tiers) || viewModel.tiers.length === 0) {
+            this._emitHoverTargetChanged(null);
+            return;
+        }
 
-        this._captureOpenDetailSections();
+        this._captureOpenAccordionSections(this.detailsEl, this.openDetailSections);
+        this._captureOpenAccordionSections(this.sectionMetricsEl, this.openSectionMetricSections);
 
         if (canRenderWithDom(this.statsEl)) {
             this.statsEl.replaceChildren(this._buildStatsContent(viewModel));
@@ -689,17 +916,77 @@ export class StatsPanel {
             } else {
                 this.detailsEl.innerHTML = this._buildDetailsMarkup(viewModel);
             }
+            this._bindHoverRows(this.detailsEl);
+        }
+        if (this.sectionMetricsEl) {
+            if (canRenderWithDom(this.sectionMetricsEl)) {
+                this.sectionMetricsEl.replaceChildren(this._buildSectionMetricsContent(viewModel));
+            } else {
+                this.sectionMetricsEl.innerHTML = this._buildSectionMetricsMarkup(viewModel);
+            }
+            this._bindHoverRows(this.sectionMetricsEl);
+        }
+
+        this._syncHoverTargetPresence();
+    }
+
+    _emitHoverTargetChanged(target = null) {
+        const normalizedTarget = normalizeHoverTarget(target);
+        if (hoverTargetsEqual(this._activeHoverTarget, normalizedTarget)) return;
+        this._activeHoverTarget = normalizedTarget;
+        this._onHoverTargetChanged?.(normalizedTarget);
+    }
+
+    _bindHoverRows(containerEl) {
+        if (!isHtmlElement(containerEl) || typeof containerEl.querySelectorAll !== 'function') return;
+
+        containerEl.querySelectorAll('[data-results-hover-type]').forEach((rowEl) => {
+            if (!isHtmlElement(rowEl)) return;
+
+            rowEl.onmouseenter = () => {
+                this._emitHoverTargetChanged(parseHoverTargetFromElement(rowEl));
+            };
+            rowEl.onmouseleave = (event) => {
+                const relatedTarget = isHtmlElement(event?.relatedTarget)
+                    ? event.relatedTarget.closest?.('[data-results-hover-type]') ?? null
+                    : null;
+                if (isHtmlElement(relatedTarget) && containerEl.contains(relatedTarget)) {
+                    return;
+                }
+                this._emitHoverTargetChanged(null);
+            };
+        });
+    }
+
+    _hasRenderedHoverTarget(containerEl, target = null) {
+        if (!isHtmlElement(containerEl) || typeof containerEl.querySelectorAll !== 'function') return false;
+        const normalizedTarget = normalizeHoverTarget(target);
+        if (!normalizedTarget) return false;
+
+        const selector = normalizedTarget.type === 'row'
+            ? `[data-results-hover-type="row"][data-results-hover-tier-index="${normalizedTarget.tierIndex}"][data-results-hover-row-index="${normalizedTarget.rowIndex}"]`
+            : `[data-results-hover-type="section"][data-results-hover-tier-index="${normalizedTarget.tierIndex}"][data-results-hover-section-number="${normalizedTarget.sectionNumber}"]`;
+        return !!containerEl.querySelector(selector);
+    }
+
+    _syncHoverTargetPresence() {
+        if (!this._activeHoverTarget) return;
+
+        const isRendered = this._hasRenderedHoverTarget(this.detailsEl, this._activeHoverTarget)
+            || this._hasRenderedHoverTarget(this.sectionMetricsEl, this._activeHoverTarget);
+        if (!isRendered) {
+            this._emitHoverTargetChanged(null);
         }
     }
 
-    _captureOpenDetailSections() {
-        this.openDetailSections.clear();
-        if (!this.detailsEl) return;
+    _captureOpenAccordionSections(containerEl, destinationSet) {
+        destinationSet.clear();
+        if (!containerEl || typeof containerEl.querySelectorAll !== 'function') return;
 
-        this.detailsEl.querySelectorAll('.results-details:not(.collapsed)').forEach((el) => {
+        containerEl.querySelectorAll('.results-details:not(.collapsed)').forEach((el) => {
             const tierClass = Array.from(el.classList).find((className) => className.startsWith('tier-section-'));
             if (tierClass) {
-                this.openDetailSections.add(tierClass);
+                destinationSet.add(tierClass);
             }
         });
     }
@@ -763,14 +1050,24 @@ export class StatsPanel {
                 isCollapsed: !this.openDetailSections.has(tier.sectionClass),
                 sectionId: `resultsTierPanel-${index + 1}`,
                 contentBuilder: (panel) => {
-                    const header = createElement('div', 'row-table-header');
+                    const rowTable = createElement('div', 'results-data-table results-data-table--rows');
+                    const header = createElement('div', 'row-table-header results-data-table__header results-data-table__header--rows');
                     ['Row', 'Riser', 'Elev', 'C-Value', 'Tread', 'Dist->Focal', 'Angle', 'Length', 'Seats']
                         .forEach((label) => header.appendChild(createElement('span', '', label)));
-                    panel.appendChild(header);
+                    rowTable.appendChild(header);
 
-                    (tier.rows || []).forEach((row) => {
+                    (tier.rows || []).forEach((row, rowIndex) => {
                         const rowEl = cloneTemplateElement('resultsDetailRowTemplate');
                         if (!rowEl) return;
+                        rowEl.classList.add('results-data-table__row', 'results-data-table__row--rows');
+                        if (rowIndex % 2 === 1) {
+                            rowEl.classList.add('results-data-table__row--alt');
+                        }
+                        applyHoverTargetAttributes(rowEl, {
+                            type: 'row',
+                            tierIndex: tier.tierIndex,
+                            rowIndex: row.rowIndex
+                        });
 
                         rowEl.querySelector('[data-results-row-number]')?.replaceChildren(document.createTextNode(String(row.rowNumber)));
 
@@ -799,8 +1096,41 @@ export class StatsPanel {
                         rowEl.querySelector('[data-results-row-length]')?.replaceChildren(document.createTextNode(row.rowLengthDisplay));
                         rowEl.querySelector('[data-results-row-seats]')?.replaceChildren(document.createTextNode(row.rowSeatsDisplay));
 
-                        panel.appendChild(rowEl);
+                        rowTable.appendChild(rowEl);
                     });
+
+                    panel.appendChild(rowTable);
+                }
+            });
+
+            if (section) {
+                root.appendChild(section);
+            }
+        });
+
+        return root;
+    }
+
+    _buildSectionMetricsContent(viewModel) {
+        const root = createElement('div', 'results-summary-container');
+        root.appendChild(createElement('div', 'total-occupancy-label results-section-title--center results-section-title--spaced', 'SECTION METRICS'));
+
+        const tiersWithSections = viewModel.tiers.filter((tier) => Array.isArray(tier?.sections) && tier.sections.length > 0);
+        if (!tiersWithSections.length) {
+            const emptyRow = createElement('div', 'stat-row');
+            emptyRow.appendChild(createElement('span', 'stat-label stat-label--empty', 'Section metrics will appear here'));
+            root.appendChild(emptyRow);
+            return root;
+        }
+
+        tiersWithSections.forEach((tier) => {
+            const section = createResultsDetailsSection({
+                title: `Tier ${tier.tierNumber} Section Metrics`,
+                classes: [tier.sectionClass],
+                isCollapsed: !this.openSectionMetricSections.has(tier.sectionClass),
+                sectionId: `resultsSectionMetricsPanel-${tier.tierNumber}`,
+                contentBuilder: (panel) => {
+                    appendSectionMetricsTable(panel, tier);
                 }
             });
 
@@ -824,7 +1154,7 @@ export class StatsPanel {
                 ['Required Width', egress.capacityWidth, '"'],
                 ['Sections' + egress.countsTag, egress.displaySections, ''],
                 ['Largest Section', egress.occupantsPerSection, ''],
-                ['Max Seats/Row', egress.maxSeatsPerSectionRow, ''],
+                ['Max Seats/Row/Section', egress.maxSeatsPerSectionRow, ''],
                 ['Max Load/Aisle', egress.occupantsPerAisleLine, 'occ']
             ].map(([label, value, suffix]) => `
                 <div class="tier-metric-item">
@@ -910,12 +1240,16 @@ export class StatsPanel {
     _buildDetailsMarkup(viewModel) {
         const sectionsMarkup = viewModel.tiers.map((tier) => {
             const isCollapsed = !this.openDetailSections.has(tier.sectionClass);
-            const rowsMarkup = (tier.rows || []).map((row) => `
-                <div class="row-table-row">
+            const rowsMarkup = (tier.rows || []).map((row, rowIndex) => `
+                <div class="row-table-row results-data-table__row results-data-table__row--rows${rowIndex % 2 === 1 ? ' results-data-table__row--alt' : ''}"${buildHoverTargetAttributeMarkup({
+        type: 'row',
+        tierIndex: tier.tierIndex,
+        rowIndex: row.rowIndex
+    })}>
                     <span>${escapeHtml(String(row.rowNumber))}</span>
                     <span${row.riserWarning ? ' class="row-table-cell--warning" title="Riser is 22 inches or greater!"' : ''}>${escapeHtml(row.riserDisplay)}</span>
                     <span>${escapeHtml(row.elevationDisplay)}</span>
-                    <span class="row-table-cell--accent">${escapeHtml(row.cValueDisplay)}</span>
+                    <span class="row-table-cell--accent" style="--row-cell-color:${escapeHtml(row.cValueColor)}">${escapeHtml(row.cValueDisplay)}</span>
                     <span>${escapeHtml(row.treadDisplay)}</span>
                     <span>${escapeHtml(row.distToFocalDisplay)}</span>
                     <span>${escapeHtml(row.angleDisplay)}</span>
@@ -923,15 +1257,16 @@ export class StatsPanel {
                     <span class="row-table-cell--muted">${escapeHtml(row.rowSeatsDisplay)}</span>
                 </div>
             `).join('');
-
             return `
                 <section class="results-details ${escapeHtml(tier.sectionClass)}${isCollapsed ? ' collapsed' : ''}">
                     <button type="button" class="accordion__trigger results-details__trigger" aria-expanded="${isCollapsed ? 'false' : 'true'}">${escapeHtml(tier.title)}</button>
                     <div class="section-body results-details__panel"${isCollapsed ? ' hidden' : ''}>
-                        <div class="row-table-header">
-                            <span>Row</span><span>Riser</span><span>Elev</span><span>C-Value</span><span>Tread</span><span>Dist-&gt;Focal</span><span>Angle</span><span>Length</span><span>Seats</span>
+                        <div class="results-data-table results-data-table--rows">
+                            <div class="row-table-header results-data-table__header results-data-table__header--rows">
+                                <span>Row</span><span>Riser</span><span>Elev</span><span>C-Value</span><span>Tread</span><span>Dist-&gt;Focal</span><span>Angle</span><span>Length</span><span>Seats</span>
+                            </div>
+                            ${rowsMarkup}
                         </div>
-                        ${rowsMarkup}
                     </div>
                 </section>
             `;
@@ -941,6 +1276,36 @@ export class StatsPanel {
             <div class="results-summary-container">
                 <div class="total-occupancy-label results-section-title--center results-section-title--spaced">TIER ROW DETAILS</div>
                 ${sectionsMarkup}
+            </div>
+        `;
+    }
+
+    _buildSectionMetricsMarkup(viewModel) {
+        const tiersWithSections = viewModel.tiers.filter((tier) => Array.isArray(tier?.sections) && tier.sections.length > 0);
+        const sectionsMarkup = tiersWithSections.map((tier) => {
+            const isCollapsed = !this.openSectionMetricSections.has(tier.sectionClass);
+            return `
+                <section class="results-details ${escapeHtml(tier.sectionClass)}${isCollapsed ? ' collapsed' : ''}">
+                    <button type="button" class="accordion__trigger results-details__trigger" aria-expanded="${isCollapsed ? 'false' : 'true'}">Tier ${escapeHtml(String(tier.tierNumber))} Section Metrics</button>
+                    <div class="section-body results-details__panel"${isCollapsed ? ' hidden' : ''}>
+                        ${buildSectionMetricsTableMarkup(tier)}
+                    </div>
+                </section>
+            `;
+        }).join('');
+
+        const emptyMarkup = tiersWithSections.length === 0
+            ? `
+                <div class="stat-row">
+                    <span class="stat-label stat-label--empty">Section metrics will appear here</span>
+                </div>
+            `
+            : '';
+
+        return `
+            <div class="results-summary-container">
+                <div class="total-occupancy-label results-section-title--center results-section-title--spaced">SECTION METRICS</div>
+                ${sectionsMarkup || emptyMarkup}
             </div>
         `;
     }

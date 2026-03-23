@@ -378,6 +378,93 @@ function stampSolverRowsFromSummary(solver, summary, mirrorRuns) {
     });
 }
 
+function getRowNumber(row, rowIndex) {
+    return Number.isFinite(Number(row?.row_number)) ? Number(row.row_number) : (rowIndex + 1);
+}
+
+function pickSectionRowMetric(entries = [], valueKey = '', direction = 'max') {
+    let best = null;
+
+    entries.forEach((entry) => {
+        const value = Number(entry?.[valueKey]);
+        if (!Number.isFinite(value)) return;
+
+        if (!best) {
+            best = entry;
+            return;
+        }
+
+        if (direction === 'min') {
+            if (value < Number(best[valueKey])) {
+                best = entry;
+                return;
+            }
+            if (value === Number(best[valueKey]) && entry.rowNumber < best.rowNumber) {
+                best = entry;
+            }
+            return;
+        }
+
+        if (value > Number(best[valueKey])) {
+            best = entry;
+            return;
+        }
+        if (value === Number(best[valueKey]) && entry.rowNumber < best.rowNumber) {
+            best = entry;
+        }
+    });
+
+    return best;
+}
+
+function buildSectionDetailMetrics(solver, summary) {
+    const rows = Array.isArray(solver?.rows) ? solver.rows : [];
+    const sections = Array.isArray(summary?.sections) ? summary.sections : [];
+    const seatWidthIn = Math.max(0, Number(summary?.seatWidthIn) || 0);
+
+    return sections.map((section) => {
+        const rowSeatCounts = Array.isArray(section?.rowSeatCounts) ? section.rowSeatCounts : [];
+        const rowSeatingLengthsFt = Array.isArray(section?.rowSeatingLengthsFt) ? section.rowSeatingLengthsFt : [];
+        const measuredRows = rows.map((row, rowIndex) => ({
+            rowIndex,
+            rowNumber: getRowNumber(row, rowIndex),
+            seatCount: Math.max(0, Number(rowSeatCounts[rowIndex]) || 0),
+            seatingLengthFt: Math.max(0, Number(rowSeatingLengthsFt[rowIndex]) || 0)
+        })).filter((entry) => entry.seatCount > 0 || entry.seatingLengthFt > 0);
+
+        return {
+            sectionNumber: Math.max(0, Math.round(Number(section?.sectionNumber) || 0)),
+            occupancy: Math.max(0, Number(section?.occupancy) || 0),
+            seatWidthIn,
+            frontRowSeats: Math.max(0, Number(section?.frontRowSeats) || 0),
+            backRowSeats: Math.max(0, Number(section?.backRowSeats) || 0),
+            minSeatsPerRow: Math.max(0, Number(section?.minSeatsPerRow) || 0),
+            maxSeatsPerRow: Math.max(0, Number(section?.maxSeatsPerRow) || 0),
+            avgSeatsPerRow: Math.max(0, Number(section?.avgSeatsPerRow) || 0),
+            longestRowBySeatCount: pickSectionRowMetric(
+                measuredRows.filter((entry) => entry.seatCount > 0),
+                'seatCount',
+                'max'
+            ),
+            shortestRowBySeatCount: pickSectionRowMetric(
+                measuredRows.filter((entry) => entry.seatCount > 0),
+                'seatCount',
+                'min'
+            ),
+            longestRowByLength: pickSectionRowMetric(
+                measuredRows.filter((entry) => entry.seatingLengthFt > 0),
+                'seatingLengthFt',
+                'max'
+            ),
+            shortestRowByLength: pickSectionRowMetric(
+                measuredRows.filter((entry) => entry.seatingLengthFt > 0),
+                'seatingLengthFt',
+                'min'
+            )
+        };
+    });
+}
+
 function buildLegacyMetricsFromLayout({
     solver,
     layout,
@@ -391,6 +478,7 @@ function buildLegacyMetricsFromLayout({
     stampSolverRowsFromSummary(solver, summary, mirrorRuns);
 
     const rowSummaries = Array.isArray(summary.rowSummaries) ? summary.rowSummaries : [];
+    const sectionDetails = buildSectionDetailMetrics(solver, summary);
     const totalRowLengthFt = rowSummaries.reduce((sum, rowSummary) => (
         sum + Math.max(0, Number(rowSummary?.linearLengthPerRunFt ?? rowSummary?.linearLengthFt) || 0)
     ), 0);
@@ -473,6 +561,7 @@ function buildLegacyMetricsFromLayout({
         invalidTopologyRowIndices: Array.isArray(summary?.invalidTopologyRowIndices)
             ? summary.invalidTopologyRowIndices.slice()
             : [],
+        sectionDetails,
         seatCapCompliant: summary?.compliance?.seatCapCompliant,
         egressCapCompliant: summary?.compliance?.egressCapCompliant,
         renderedWidthCompliant: summary?.compliance?.renderedWidthCompliant

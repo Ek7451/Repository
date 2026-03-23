@@ -331,6 +331,89 @@ function buildGroupedOpenFixtureAnalysis({
     };
 }
 
+function normalizeWrappedTestU(u) {
+    let out = Number(u) || 0;
+    out %= 1;
+    if (out < 0) out += 1;
+    return out;
+}
+
+function computeWrappedTestSpan(startU, endU) {
+    const start = normalizeWrappedTestU(startU);
+    let end = normalizeWrappedTestU(endU);
+    if (end <= start + 1e-6) end += 1;
+    return { start, end, span: end - start };
+}
+
+function resolveWrappedTestOffset(startU, u) {
+    let offset = normalizeWrappedTestU(u) - normalizeWrappedTestU(startU);
+    if (offset < 0) offset += 1;
+    return offset;
+}
+
+function findUpperRightChamferStartSlotIndex(sections, referencePath, bowlConfig) {
+    const perimeterModel = __testHooks.buildPerimeterModel([referencePath], [referencePath], bowlConfig);
+    const upperRightChamfer = perimeterModel.paths[0].intervals
+        .filter((interval) => interval?.family === 'chamfer')
+        .map((interval) => {
+            const side = interval.front || interval.back;
+            const midU = normalizeWrappedTestU(side.startU + (computeWrappedTestSpan(side.startU, side.endU).span * 0.5));
+            const point = samplePathPointByRatio(referencePath, midU);
+            return {
+                interval,
+                point,
+                score: (Number(point?.x) || 0) + (Number(point?.y) || 0)
+            };
+        })
+        .sort((left, right) => (
+            (right.score - left.score)
+            || ((Number(right.point?.x) || 0) - (Number(left.point?.x) || 0))
+            || ((Number(right.point?.y) || 0) - (Number(left.point?.y) || 0))
+        ))[0]?.interval;
+    const side = upperRightChamfer?.front || upperRightChamfer?.back;
+    if (!side) return null;
+
+    const intervalSpan = computeWrappedTestSpan(side.startU, side.endU).span;
+    /** @type {{ slotIndex: number, endOffset: number } | null} */
+    let bestContained = null;
+    /** @type {{ slotIndex: number, overlap: number, endOffset: number } | null} */
+    let bestOverlap = null;
+
+    sections.forEach((section) => {
+        const sectionRange = computeWrappedTestSpan(section.startU, section.endU);
+        const startOffset = resolveWrappedTestOffset(side.startU, sectionRange.start);
+        const endOffset = startOffset + sectionRange.span;
+        const overlap = Math.max(0, Math.min(endOffset, intervalSpan) - Math.max(startOffset, 0));
+
+        if (
+            !bestOverlap
+            || overlap > bestOverlap.overlap + 1e-6
+            || (
+                Math.abs(overlap - bestOverlap.overlap) <= 1e-6
+                && endOffset > bestOverlap.endOffset + 1e-6
+            )
+        ) {
+            bestOverlap = {
+                slotIndex: section.slotIndex,
+                overlap,
+                endOffset
+            };
+        }
+
+        if (!(overlap > 1e-6) || endOffset > intervalSpan + 1e-6) return;
+        if (!bestContained || endOffset > bestContained.endOffset + 1e-6) {
+            bestContained = {
+                slotIndex: section.slotIndex,
+                endOffset
+            };
+        }
+    });
+
+    if (bestContained) return bestContained.slotIndex;
+    if (bestOverlap) return bestOverlap.slotIndex;
+    return null;
+}
+
 function buildRetryGroupedOpenAnalysis({
     type,
     sideLength = 269,
@@ -1795,6 +1878,7 @@ describe('aisle layout geometry seam', () => {
         });
 
         expect(summary).toMatchObject({
+            seatWidthIn: 20,
             actualAisles: 3,
             actualSections: 2,
             allSectionPathsClosed: false,
@@ -1819,14 +1903,20 @@ describe('aisle layout geometry seam', () => {
         });
         expect(summary.sections).toEqual([
             expect.objectContaining({
+                slotIndex: 1,
+                sectionNumber: 101,
                 pathIndex: 0,
                 occupancy: 4,
-                rowSeatCounts: [2, 2]
+                rowSeatCounts: [2, 2],
+                rowSeatingLengthsFt: [4, 4]
             }),
             expect.objectContaining({
+                slotIndex: 2,
+                sectionNumber: 100,
                 pathIndex: 0,
                 occupancy: 4,
-                rowSeatCounts: [2, 2]
+                rowSeatCounts: [2, 2],
+                rowSeatingLengthsFt: [4, 4]
             })
         ]);
         expect(summary.aisles).toEqual([
@@ -1956,6 +2046,106 @@ describe('aisle layout geometry seam', () => {
         expect(summary.invalidTopologyRowIndices).toEqual([0]);
         expect(summary.failureReason).toBe('invalid_topology');
         expect(summary.compliance.isCompliant).toBe(false);
+    });
+
+    it('preserves closed-path slot numbering when a zero-seat slot drops out of the measured summary', () => {
+        const referencePaths = buildGeometryPaths(buildClosedRectangleSegments({
+            width: 20,
+            height: 20
+        }));
+        const sampledAisleMap = new Map([
+            [0, 0],
+            [1, 0.01],
+            [2, 0.5],
+            [3, 0.75]
+        ]);
+        const tierLayout = {
+            tierIndex: 0,
+            aisleWidthFt: 0,
+            aisles: [
+                { pathIndex: 0, u: 0 },
+                { pathIndex: 0, u: 0.01 },
+                { pathIndex: 0, u: 0.5 },
+                { pathIndex: 0, u: 0.75 }
+            ],
+            sectionBoundaries: [[
+                { aisleIndex: 0, u: 0, boundaryKind: 'aisle', boundaryKey: 'aisle:0' },
+                { aisleIndex: 1, u: 0.01, boundaryKind: 'aisle', boundaryKey: 'aisle:1' },
+                { aisleIndex: 2, u: 0.5, boundaryKind: 'aisle', boundaryKey: 'aisle:2' },
+                { aisleIndex: 3, u: 0.75, boundaryKind: 'aisle', boundaryKey: 'aisle:3' }
+            ]]
+        };
+        const buildSummary = (seatWidthIn) => buildTierAisleLayoutSummary({
+            rows: [{ row_number: 1 }, { row_number: 2 }],
+            tierLayout,
+            referencePaths,
+            resolveRowAisleSampling: () => ({
+                paths: referencePaths,
+                aisleRatiosByPath: new Map([[0, sampledAisleMap]])
+            }),
+            seatWidthIn,
+            minAisleWidthIn: 0,
+            maxAisleWidthIn: 120,
+            egressFactor: 0,
+            bowlConfig: { type: 'Full', corner: 'None' }
+        });
+
+        const allSectionsSummary = buildSummary(1);
+        const filteredSummary = buildSummary(24);
+        const sectionNumberBySlot = new Map(
+            allSectionsSummary.sections.map((section) => [section.slotIndex, section.sectionNumber])
+        );
+
+        expect(allSectionsSummary.sections).toHaveLength(4);
+        expect(filteredSummary.sections.map((section) => section.slotIndex)).toEqual([1, 2, 3]);
+        filteredSummary.sections.forEach((section) => {
+            expect(section.sectionNumber).toBe(sectionNumberBySlot.get(section.slotIndex));
+        });
+    });
+
+    it('anchors authoritative full-bowl section numbering to the last section on the upper-right chamfer across varying tier counts', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const fixture = buildRendererBowlFixture('Full', {
+            straightAisleMode: 'perpendicular',
+            chamferAisleMode: 'radial'
+        });
+        const egressParams = {
+            seatWidthIn: 20,
+            seatsBetweenAisles: 24,
+            egressFactor: 0.2,
+            minAisleWidthIn: 48,
+            maxAisleWidthIn: 72
+        };
+        const tierCases = [
+            { tierIndex: 0, startX: 24, count: 5 },
+            { tierIndex: 1, startX: 52, count: 5 },
+            { tierIndex: 2, startX: 68, count: 5 }
+        ];
+
+        tierCases.forEach(({ tierIndex, startX, count }) => {
+            const rows = buildTierRows({ count, startX });
+            const analysis = buildTierAisleAnalysisForFixture({
+                fixture,
+                rows,
+                egressParams,
+                tierIndex
+            });
+            const lastRow = rows[rows.length - 1];
+            const referencePaths = buildGeometryPaths(
+                renderer._getBowlGeometry(fixture.bowlConfig, lastRow.x - (lastRow.tread_depth * 0.5))
+            );
+            const pathSections = analysis.sectionSummary.sections.filter((section) => section.pathIndex === 0);
+            const baseSectionNumber = (tierIndex + 1) * 100;
+            const baseSection = pathSections.find((section) => section.sectionNumber === baseSectionNumber);
+            const expectedStartSlotIndex = findUpperRightChamferStartSlotIndex(
+                pathSections,
+                referencePaths[0],
+                fixture.bowlConfig
+            );
+
+            expect(baseSection).toBeTruthy();
+            expect(baseSection.slotIndex).toBe(expectedStartSlotIndex);
+        });
     });
 
     it('conserves row seats for valid closed-path sampling and stops aisle escalation on topology failure', () => {

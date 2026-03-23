@@ -120,6 +120,36 @@ function buildStabilityWarning() {
     return 'Layout did not fully stabilize, but the final aisle widths were widened conservatively.';
 }
 
+function formatSectionRowMetric(entry, valueKey, formatter = (value) => String(value)) {
+    const rowNumber = Math.max(1, Math.round(Number(entry?.rowNumber) || 0));
+    const value = Number(entry?.[valueKey]);
+    if (!(rowNumber > 0) || !Number.isFinite(value)) return '--';
+    return `R${rowNumber} / ${formatter(value)}`;
+}
+
+function formatSectionNumberDisplay(sectionNumber) {
+    const numericValue = Math.round(Number(sectionNumber) || 0);
+    return numericValue > 0 ? String(numericValue) : '--';
+}
+
+function buildSectionDisplayData(metrics) {
+    if (!Array.isArray(metrics?.sectionDetails)) return [];
+
+    return metrics.sectionDetails
+        .slice()
+        .sort((a, b) => (Math.round(Number(a?.sectionNumber) || 0) - Math.round(Number(b?.sectionNumber) || 0)))
+        .map((section) => ({
+            sectionNumber: Math.max(0, Math.round(Number(section?.sectionNumber) || 0)),
+            sectionNumberDisplay: formatSectionNumberDisplay(section?.sectionNumber),
+            totalSeatsDisplay: Math.max(0, Math.round(Number(section?.occupancy) || 0)).toLocaleString(),
+            seatSizeDisplay: `${Math.max(0, Number(section?.seatWidthIn) || 0).toFixed(1)}"`,
+            longestRowSeatsDisplay: formatSectionRowMetric(section?.longestRowBySeatCount, 'seatCount', (value) => Math.round(value).toLocaleString()),
+            shortestRowSeatsDisplay: formatSectionRowMetric(section?.shortestRowBySeatCount, 'seatCount', (value) => Math.round(value).toLocaleString()),
+            longestRowLengthDisplay: formatSectionRowMetric(section?.longestRowByLength, 'seatingLengthFt', (value) => `${value.toFixed(1)}'`),
+            shortestRowLengthDisplay: formatSectionRowMetric(section?.shortestRowByLength, 'seatingLengthFt', (value) => `${value.toFixed(1)}'`)
+        }));
+}
+
 function buildNonConvergenceWarning(metrics, egressParams = {}) {
     if (!metrics || metrics.converged !== false) return '';
 
@@ -192,6 +222,7 @@ function buildTierStatsViewModel({
         const riserInches = tierOneFirstRow ? (rowZ * 12) : (riserHeight * 12);
 
         return {
+            rowIndex,
             rowNumber: Number.isFinite(Number(row?.row_number)) ? Number(row.row_number) : (rowIndex + 1),
             riserDisplay: `${riserInches.toFixed(2)}"`,
             riserWarning: !tierOneFirstRow && riserInches >= 22,
@@ -200,7 +231,7 @@ function buildTierStatsViewModel({
             cValueColor: isFirstRow ? 'var(--text-muted)' : (cValueQuality?.color || 'var(--text-primary)'),
             treadDisplay: `${(treadDepth * 12).toFixed(2)}"`,
             distToFocalDisplay: `${((rowX - treadDepth) - (Number(focalPointFt?.x) || 0)).toFixed(2)}'`,
-            angleDisplay: `${sightlineAngle.toFixed(2)}&deg;`,
+            angleDisplay: `${sightlineAngle.toFixed(2)}\u00B0`,
             rowLengthDisplay: isMirroredSidesMode && lengthPerSide !== null
                 ? `${totalLength.toFixed(0)}' (${lengthPerSide.toFixed(0)}'/side)`
                 : `${totalLength.toFixed(0)}'`,
@@ -284,6 +315,7 @@ function buildTierStatsViewModel({
             baseSeatCount: Math.max(0, Number(metrics?.capacity) || 0)
         },
         egress,
+        sections: buildSectionDisplayData(metrics),
         rows
     };
 }

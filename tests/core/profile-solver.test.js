@@ -180,6 +180,7 @@ describe('profile solver helper exports', () => {
             tierLayouts: [{
                 tierIndex: 0,
                 sectionSummary: {
+                    seatWidthIn: 20,
                     actualAisles: 2,
                     actualSections: 1,
                     tierSeatCount: 22,
@@ -231,6 +232,17 @@ describe('profile solver helper exports', () => {
                             sectionCountPerRun: 1
                         }
                     ],
+                    sections: [{
+                        sectionNumber: 100,
+                        occupancy: 22,
+                        frontRowSeats: 10,
+                        backRowSeats: 12,
+                        minSeatsPerRow: 10,
+                        maxSeatsPerRow: 12,
+                        avgSeatsPerRow: 11,
+                        rowSeatCounts: [10, 12],
+                        rowSeatingLengthsFt: [16.7, 20]
+                    }],
                     aisles: [
                         { legalMaxOccupantsPerAisle: 360 },
                         { legalMaxOccupantsPerAisle: 360 }
@@ -271,6 +283,17 @@ describe('profile solver helper exports', () => {
             invalidTopologyRowIndices: [1],
             renderedWidthCompliant: true
         });
+        expect(tierMetricsByIndex.get(0)?.sectionDetails).toEqual([
+            expect.objectContaining({
+                sectionNumber: 100,
+                occupancy: 22,
+                seatWidthIn: 20,
+                longestRowBySeatCount: expect.objectContaining({ rowNumber: 2, seatCount: 12 }),
+                shortestRowBySeatCount: expect.objectContaining({ rowNumber: 1, seatCount: 10 }),
+                longestRowByLength: expect.objectContaining({ rowNumber: 2, seatingLengthFt: 20 }),
+                shortestRowByLength: expect.objectContaining({ rowNumber: 1, seatingLengthFt: 16.7 })
+            })
+        ]);
         expect(solver.rows[0]).toMatchObject({
             computedLength: 40,
             computedSeats: 10,

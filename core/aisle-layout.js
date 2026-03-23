@@ -21,7 +21,8 @@ import {
 import {
     countSeatsFromCenterlineGapFt,
     normalizeSeatWidthIn,
-    sectionBoundaryGapToSeatCount
+    sectionBoundaryGapToSeatCount,
+    sectionBoundaryGapToSeatingLengthFt
 } from './seat-math.js';
 
 const EPS = 1e-6;
@@ -3658,8 +3659,452 @@ function widestVectorInCycle(vectors = []) {
 function buildSectionRecords(slots, rowCount) {
     return (slots || []).map((slot) => ({
         ...slot,
-        rowSeatCounts: new Array(Math.max(0, Math.floor(Number(rowCount) || 0))).fill(0)
+        rowSeatCounts: new Array(Math.max(0, Math.floor(Number(rowCount) || 0))).fill(0),
+        rowSeatingLengthsFt: new Array(Math.max(0, Math.floor(Number(rowCount) || 0))).fill(0)
     }));
+}
+
+const SIDE_BOWL_SECTION_NUMBERING_TYPES = new Set(['Side1', 'Side2', 'Sides', 'Sides3', 'Sides4']);
+
+function normalizeSectionNumberingBowlType(type) {
+    if (type === 'U-Shape (End 1)' || type === 'C-Shape') return 'U-End1';
+    if (type === 'U-Shape (End 2)' || type === 'U-Shape') return 'U-End2';
+    if (type === 'Standard' || type === 'Baseball Standard') return 'BaseballStandard';
+    return String(type || 'Full');
+}
+
+function interpolatePathSectionU(path, startU, endU, t) {
+    const tt = Math.max(0, Math.min(1, Number(t) || 0));
+    if (path?.closed) {
+        const start = normalizeUnit(startU);
+        let end = normalizeUnit(endU);
+        if (end <= start) end += 1;
+        return normalizeUnit(start + ((end - start) * tt));
+    }
+
+    const start = clamp01(startU);
+    const end = clamp01(endU);
+    return clamp01(start + ((end - start) * tt));
+}
+
+function compareFiniteNumbers(a, b) {
+    const delta = (Number(a) || 0) - (Number(b) || 0);
+    if (Math.abs(delta) <= 1e-6) return 0;
+    return delta;
+}
+
+function buildDefaultOpenSectionSlotOrder(slots) {
+    return slots.map((_, idx) => idx).sort((aIdx, bIdx) => {
+        const a = slots[aIdx].midPt || { x: -Infinity, y: -Infinity };
+        const b = slots[bIdx].midPt || { x: -Infinity, y: -Infinity };
+        if (Math.abs(b.x - a.x) > 1e-6) return b.x - a.x;
+        return b.y - a.y;
+    });
+}
+
+function classifySideBowlPathSegment(slots) {
+    const points = slots
+        .map((slot) => slot?.midPt)
+        .filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y));
+    if (!points.length) return 'top';
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    let sumX = 0;
+    let sumY = 0;
+
+    points.forEach((point) => {
+        minX = Math.min(minX, point.x);
+        maxX = Math.max(maxX, point.x);
+        minY = Math.min(minY, point.y);
+        maxY = Math.max(maxY, point.y);
+        sumX += point.x;
+        sumY += point.y;
+    });
+
+    const centerX = sumX / points.length;
+    const centerY = sumY / points.length;
+    const spanX = maxX - minX;
+    const spanY = maxY - minY;
+
+    if (spanX >= spanY) {
+        return centerY <= 0 ? 'bottom' : 'top';
+    }
+    return centerX <= 0 ? 'left' : 'right';
+}
+
+function getSideBowlPathRank(segment) {
+    if (segment === 'bottom') return 0;
+    if (segment === 'left') return 1;
+    if (segment === 'top') return 2;
+    if (segment === 'right') return 3;
+    return 99;
+}
+
+function buildSideBowlSectionSlotOrder(slots, segment) {
+    return slots.map((_, idx) => idx).sort((aIdx, bIdx) => {
+        const a = slots[aIdx];
+        const b = slots[bIdx];
+        const aPoint = a.midPt || { x: 0, y: 0 };
+        const bPoint = b.midPt || { x: 0, y: 0 };
+
+        if (segment === 'bottom') {
+            return (compareFiniteNumbers(bPoint.x, aPoint.x))
+                || (compareFiniteNumbers(aPoint.y, bPoint.y))
+                || (compareFiniteNumbers(b.midU, a.midU))
+                || (compareFiniteNumbers(b.slotIndex, a.slotIndex));
+        }
+        if (segment === 'top') {
+            return (compareFiniteNumbers(aPoint.x, bPoint.x))
+                || (compareFiniteNumbers(bPoint.y, aPoint.y))
+                || (compareFiniteNumbers(a.midU, b.midU))
+                || (compareFiniteNumbers(a.slotIndex, b.slotIndex));
+        }
+        if (segment === 'left') {
+            return (compareFiniteNumbers(aPoint.y, bPoint.y))
+                || (compareFiniteNumbers(aPoint.x, bPoint.x))
+                || (compareFiniteNumbers(a.midU, b.midU))
+                || (compareFiniteNumbers(a.slotIndex, b.slotIndex));
+        }
+        if (segment === 'right') {
+            return (compareFiniteNumbers(bPoint.y, aPoint.y))
+                || (compareFiniteNumbers(aPoint.x, bPoint.x))
+                || (compareFiniteNumbers(b.midU, a.midU))
+                || (compareFiniteNumbers(b.slotIndex, a.slotIndex));
+        }
+
+        return (compareFiniteNumbers(a.midU, b.midU))
+            || (compareFiniteNumbers(a.slotIndex, b.slotIndex));
+    });
+}
+
+function resolveOpenPathSectionTraversal(normalizedType, bowlConfig, slots, pathIndex) {
+    if (bowlConfig?.shape === 'arc') return null;
+
+    if (normalizedType === 'U-End1') {
+        return {
+            pathRank: pathIndex,
+            slotOrder: slots.map((_, idx) => idx).sort((aIdx, bIdx) => {
+                const a = slots[aIdx];
+                const b = slots[bIdx];
+                return (compareFiniteNumbers(b.midU, a.midU))
+                    || (compareFiniteNumbers(b.slotIndex, a.slotIndex));
+            })
+        };
+    }
+
+    if (!SIDE_BOWL_SECTION_NUMBERING_TYPES.has(normalizedType)) return null;
+
+    const segment = classifySideBowlPathSegment(slots);
+    return {
+        pathRank: getSideBowlPathRank(segment),
+        slotOrder: buildSideBowlSectionSlotOrder(slots, segment)
+    };
+}
+
+function approximatePathSignedArea(path, samples = 160) {
+    if (!path || !(path.length > 0) || !path.closed) return 0;
+    const pts = [];
+    const sampleCount = Math.max(24, Math.floor(samples));
+    for (let i = 0; i < sampleCount; i += 1) {
+        pts.push(samplePathPointByRatio(path, i / sampleCount));
+    }
+    let area2 = 0;
+    for (let i = 0; i < pts.length; i += 1) {
+        const a = pts[i];
+        const b = pts[(i + 1) % pts.length];
+        area2 += (a.x * b.y) - (b.x * a.y);
+    }
+    return area2 * 0.5;
+}
+
+function findClosedPathSectionAnchorU(path, samples = 720) {
+    if (!path || !(path.length > 0) || !path.closed) return 0;
+
+    let bestU = 0;
+    let bestX = -Infinity;
+    let bestAbsY = Infinity;
+    let bestY = -Infinity;
+    const sampleCount = Math.max(120, Math.floor(samples));
+
+    for (let i = 0; i < sampleCount; i += 1) {
+        const u = i / sampleCount;
+        const point = samplePathPointByRatio(path, u);
+        const x = Number(point?.x);
+        const y = Number(point?.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+
+        const absY = Math.abs(y);
+        if (
+            x > bestX + EPS
+            || (
+                Math.abs(x - bestX) <= EPS
+                && (
+                    absY < bestAbsY - EPS
+                    || (Math.abs(absY - bestAbsY) <= EPS && y > bestY + EPS)
+                )
+            )
+        ) {
+            bestU = u;
+            bestX = x;
+            bestAbsY = absY;
+            bestY = y;
+        }
+    }
+
+    return bestU;
+}
+
+function resolveClosedPathOffsetFromStart(startU, u) {
+    let offset = normalizeUnit(u) - normalizeUnit(startU);
+    if (offset < 0) offset += 1;
+    return offset;
+}
+
+function findUpperRightChamferInterval(path) {
+    if (!path || !(path.length > 0) || !path.closed) return null;
+
+    const transitionAnchors = collectTransitionAnchors(path);
+    const intervals = buildPerimeterIntervals(path, path, transitionAnchors);
+    /** @type {{ interval: any, point: { x: number, y: number } } | null} */
+    let bestInterval = null;
+    let bestScore = -Infinity;
+
+    intervals.forEach((interval) => {
+        const side = interval?.front || interval?.back;
+        if (!side || interval?.family !== 'chamfer') return;
+
+        const midU = interpolateWrappedU(side.startU, side.endU, 0.5);
+        const point = samplePathPointByRatio(path, midU);
+        const x = Number(point?.x);
+        const y = Number(point?.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+        const score = x + y;
+        if (
+            score > bestScore + EPS
+            || (
+                Math.abs(score - bestScore) <= EPS
+                && (
+                    x > Number(bestInterval?.point?.x) + EPS
+                    || (
+                        Math.abs(x - Number(bestInterval?.point?.x)) <= EPS
+                        && y > Number(bestInterval?.point?.y) + EPS
+                    )
+                )
+            )
+        ) {
+            bestInterval = {
+                interval,
+                point
+            };
+            bestScore = score;
+        }
+    });
+
+    return bestInterval ? bestInterval.interval : null;
+}
+
+function findLastContainedSectionIndex(pathSections = [], startU, endU) {
+    const intervalSpan = computeWrappedSpan(startU, endU).span;
+    /** @type {number} */
+    let bestContainedIndex = -1;
+    /** @type {number} */
+    let bestContainedEnd = -Infinity;
+    /** @type {number} */
+    let bestOverlapIndex = -1;
+    /** @type {number} */
+    let bestOverlap = -Infinity;
+    /** @type {number} */
+    let bestOverlapEnd = -Infinity;
+
+    pathSections.forEach((sectionEntry, sectionIndex) => {
+        const sectionRange = computeWrappedSpan(
+            Number(sectionEntry?.section?.startU) || 0,
+            Number(sectionEntry?.section?.endU) || 0
+        );
+        const startOffset = resolveClosedPathOffsetFromStart(startU, sectionRange.start);
+        const endOffset = startOffset + sectionRange.span;
+        const overlap = Math.max(0, Math.min(endOffset, intervalSpan) - Math.max(startOffset, 0));
+
+        if (
+            overlap > bestOverlap + EPS
+            || (
+                Math.abs(overlap - bestOverlap) <= EPS
+                && endOffset > bestOverlapEnd + EPS
+            )
+        ) {
+            bestOverlapIndex = sectionIndex;
+            bestOverlap = overlap;
+            bestOverlapEnd = endOffset;
+        }
+
+        if (!(overlap > EPS) || endOffset > intervalSpan + EPS) return;
+        if (endOffset > bestContainedEnd + EPS) {
+            bestContainedIndex = sectionIndex;
+            bestContainedEnd = endOffset;
+        }
+    });
+
+    return bestContainedIndex >= 0 ? bestContainedIndex : bestOverlapIndex;
+}
+
+function findFullBowlChamferStartSectionIndex(path, pathSections = []) {
+    const upperRightChamfer = findUpperRightChamferInterval(path);
+    const chamferSide = upperRightChamfer?.front || upperRightChamfer?.back;
+    if (!chamferSide) return -1;
+
+    return findLastContainedSectionIndex(
+        pathSections,
+        chamferSide.startU,
+        chamferSide.endU
+    );
+}
+
+function findClosedPathStartSectionIndex(normalizedType, bowlConfig, path, pathSections = []) {
+    if (normalizedType === 'Full' && String(bowlConfig?.corner || '') === 'Chamfer') {
+        const fullBowlStartSectionIndex = findFullBowlChamferStartSectionIndex(path, pathSections);
+        if (fullBowlStartSectionIndex >= 0) return fullBowlStartSectionIndex;
+    }
+
+    const anchorU = findClosedPathSectionAnchorU(path);
+    return pathSections.findIndex((sectionEntry) => (
+        closedPathSectionContainsU(sectionEntry?.section, anchorU)
+    ));
+}
+
+function closedPathSectionContainsU(section, anchorU) {
+    const startU = normalizeUnit(Number(section?.startU) || 0);
+    let endU = normalizeUnit(Number(section?.endU) || 0);
+    let targetU = normalizeUnit(anchorU);
+
+    if (endU <= startU) endU += 1;
+    if (targetU < startU) targetU += 1;
+
+    return targetU >= (startU - EPS) && targetU < (endU - EPS);
+}
+
+function assignAuthoritativeSectionNumbers({
+    sections = [],
+    numberingSections = null,
+    referencePaths = [],
+    bowlConfig = null,
+    tierIndex = 0
+} = {}) {
+    const safeSections = Array.isArray(sections) ? sections : [];
+    if (!safeSections.length) return [];
+    const safeNumberingSections = Array.isArray(numberingSections) && numberingSections.length
+        ? numberingSections
+        : safeSections;
+
+    const normalizedType = normalizeSectionNumberingBowlType(bowlConfig?.type);
+    const numberingBase = (Math.max(0, Math.floor(Number(tierIndex) || 0)) + 1) * 100;
+    const buildPathEntries = (sourceSections) => {
+        const entries = new Map();
+        (sourceSections || []).forEach((section) => {
+            const pathIndex = Math.max(0, Math.floor(Number(section?.pathIndex) || 0));
+            const path = Array.isArray(referencePaths) ? referencePaths[pathIndex] : null;
+            const startU = normalizePathU(path, Number(section?.startU) || 0);
+            const endU = normalizePathU(path, Number(section?.endU) || 0);
+            const midU = interpolatePathSectionU(path, startU, endU, 0.5);
+            const midPt = path ? samplePathPointByRatio(path, midU) : null;
+            if (!entries.has(pathIndex)) {
+                entries.set(pathIndex, {
+                    pathIndex,
+                    path,
+                    sections: []
+                });
+            }
+            entries.get(pathIndex).sections.push({
+                section,
+                pathIndex,
+                slotIndex: Math.max(0, Math.floor(Number(section?.slotIndex) || 0)),
+                midU,
+                midPt
+            });
+        });
+        return entries;
+    };
+
+    const measuredPathEntries = buildPathEntries(safeSections);
+    const numberingPathEntries = buildPathEntries(safeNumberingSections);
+    const numberedPathSections = Array.from(measuredPathEntries.values()).map((entry) => {
+        const numberingEntry = numberingPathEntries.get(entry.pathIndex);
+        return {
+            pathIndex: entry.pathIndex,
+            path: entry.path,
+            sections: entry.path?.closed && numberingEntry?.sections?.length
+                ? numberingEntry.sections.slice()
+                : entry.sections.slice(),
+            order: [],
+            pathRank: entry.pathIndex
+        };
+    });
+
+    numberedPathSections.forEach((entry) => {
+        const { path, pathIndex, sections: pathSections } = entry;
+        let order = pathSections.map((_, idx) => idx);
+        let pathRank = pathIndex;
+
+        if (path?.closed) {
+            const isPathClockwise = approximatePathSignedArea(path) < 0;
+            if (!isPathClockwise) order = order.reverse();
+
+            const startSectionIndex = findClosedPathStartSectionIndex(
+                normalizedType,
+                bowlConfig,
+                path,
+                pathSections
+            );
+            let startPos = order.findIndex((sectionIndex) => sectionIndex === startSectionIndex);
+            if (startPos < 0) startPos = 0;
+            order = order.slice(startPos).concat(order.slice(0, startPos));
+        } else {
+            const explicitTraversal = resolveOpenPathSectionTraversal(
+                normalizedType,
+                bowlConfig,
+                pathSections,
+                pathIndex
+            );
+            if (explicitTraversal) {
+                order = explicitTraversal.slotOrder;
+                pathRank = explicitTraversal.pathRank;
+            } else {
+                order = buildDefaultOpenSectionSlotOrder(pathSections);
+            }
+        }
+
+        entry.order = order;
+        entry.pathRank = pathRank;
+    });
+
+    numberedPathSections.sort((a, b) => (
+        compareFiniteNumbers(a.pathRank, b.pathRank)
+        || compareFiniteNumbers(a.pathIndex, b.pathIndex)
+    ));
+
+    const numberByKey = new Map();
+    let nextSectionNumber = numberingBase;
+    numberedPathSections.forEach((entry) => {
+        entry.order.forEach((sectionIndex) => {
+            const section = entry.sections[sectionIndex];
+            numberByKey.set(`${entry.pathIndex}:${section.slotIndex}`, nextSectionNumber++);
+        });
+    });
+
+    return safeSections.map((section, sectionIndex) => {
+        const pathIndex = Math.max(0, Math.floor(Number(section?.pathIndex) || 0));
+        const slotIndex = Math.max(0, Math.floor(Number(section?.slotIndex) || 0));
+        const sectionNumber = numberByKey.get(`${pathIndex}:${slotIndex}`);
+        return {
+            ...section,
+            sectionNumber: Number.isFinite(sectionNumber)
+                ? sectionNumber
+                : (numberingBase + sectionIndex)
+        };
+    });
 }
 
 function shouldKeepMeasuredSection(section, aisles = []) {
@@ -3746,6 +4191,11 @@ function measureSectionsFromRenderedWidths({
                     rightRenderedWidthFt,
                     resolvedSeatWidthIn
                 );
+                section.rowSeatingLengthsFt[rowIndex] = sectionBoundaryGapToSeatingLengthFt(
+                    gapRecord.centerGapFt,
+                    leftRenderedWidthFt,
+                    rightRenderedWidthFt
+                );
             }
         }
     }
@@ -3753,6 +4203,8 @@ function measureSectionsFromRenderedWidths({
     const sections = safeSectionRecords.map((section) => {
         const rowSeatCounts = section.rowSeatCounts
             .map((value) => Math.max(0, Math.round(Number(value) || 0)));
+        const rowSeatingLengthsFt = section.rowSeatingLengthsFt
+            .map((value) => Math.max(0, Number(value) || 0));
         const occupancy = rowSeatCounts.reduce((sum, value) => sum + value, 0);
         const backRowSeats = rowSeatCounts.length ? rowSeatCounts[rowSeatCounts.length - 1] : 0;
         const frontRowSeats = rowSeatCounts.length ? rowSeatCounts[0] : 0;
@@ -3766,13 +4218,15 @@ function measureSectionsFromRenderedWidths({
             ...section,
             occupancy,
             rowSeatCounts,
+            rowSeatingLengthsFt,
             frontRowSeats,
             backRowSeats,
             minSeatsPerRow,
             maxSeatsPerRow,
             avgSeatsPerRow
         };
-    }).filter((section) => shouldKeepMeasuredSection(section, aisles));
+    })
+        .filter((section) => shouldKeepMeasuredSection(section, aisles));
 
     const rowSummaries = safeRows.map((row, rowIndex) => {
         const pathSeatCounts = new Map();
@@ -4018,7 +4472,13 @@ export function buildTierAisleLayoutSummary({
         }
     }
 
-    const sections = evaluated.sections;
+    const sections = assignAuthoritativeSectionNumbers({
+        sections: evaluated.sections,
+        numberingSections: slots,
+        referencePaths,
+        bowlConfig,
+        tierIndex: tierLayout?.tierIndex
+    });
     const rowSummaries = evaluated.rowSummaries;
     const aisleOccupancyTotals = evaluated.aisleOccupancyTotals;
     const aisleSummaries = evaluated.aisleSummaries;
@@ -4063,6 +4523,7 @@ export function buildTierAisleLayoutSummary({
         : (!measurementValid ? (evaluated.failureReason || 'invalid_measurement') : null);
 
     return {
+        seatWidthIn: resolvedSeatWidthIn,
         bowlType: String(bowlConfig?.type || ''),
         actualAisles: safeAisles.length,
         actualSections: sections.length,

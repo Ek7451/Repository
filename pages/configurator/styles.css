@@ -42,6 +42,9 @@
     --tier-1-surface: rgba(35, 35, 35, 0.04);
     --tier-2-surface: rgba(111, 117, 110, 0.06);
     --tier-3-surface: rgba(158, 166, 157, 0.12);
+    --tier-1-row-stripe: rgba(35, 35, 35, 0.06);
+    --tier-2-row-stripe: rgba(111, 117, 110, 0.08);
+    --tier-3-row-stripe: rgba(158, 166, 157, 0.12);
     --quality-excellent: #7aae1a;
     --quality-good: #37996e;
     --quality-acceptable: #de850a;
@@ -3114,36 +3117,125 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
     font-variant-numeric: tabular-nums;
 }
 
-.row-table-header,
-.row-table-row {
-    display: grid;
-    grid-template-columns: 24px 36px 36px 46px 36px 50px 38px 50px 1fr;
-    gap: 2px;
-    font-size: 10px;
-    padding: 3px 2px;
+.results-data-table {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
     min-width: max-content;
 }
 
-.row-table-header {
+.results-data-table + .results-data-table {
+    margin-top: 18px;
+}
+
+.results-data-table__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 8px 0 2px;
+}
+
+.results-data-table__title-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+.row-table-header,
+.row-table-row,
+.section-table-header,
+.section-table-row,
+.results-data-table__header,
+.results-data-table__row {
+    display: grid;
+    gap: 10px;
+    font-size: 11px;
+    padding: 7px 8px;
+    min-width: max-content;
+    align-items: center;
+}
+
+.row-table-header,
+.row-table-row,
+.results-data-table__header--rows,
+.results-data-table__row--rows {
+    grid-template-columns:
+        minmax(36px, 0.5fr)
+        minmax(60px, 0.8fr)
+        minmax(60px, 0.8fr)
+        minmax(68px, 0.9fr)
+        minmax(60px, 0.8fr)
+        minmax(92px, 1fr)
+        minmax(74px, 0.85fr)
+        minmax(126px, 1.2fr)
+        minmax(126px, 1.15fr);
+}
+
+.section-table-header,
+.section-table-row,
+.results-data-table__header--sections,
+.results-data-table__row--sections {
+    grid-template-columns:
+        minmax(82px, 0.75fr)
+        minmax(76px, 0.8fr)
+        minmax(74px, 0.75fr)
+        minmax(122px, 1fr)
+        minmax(122px, 1fr)
+        minmax(130px, 1.05fr)
+        minmax(130px, 1.05fr);
+}
+
+.row-table-header,
+.section-table-header,
+.results-data-table__header {
     color: var(--text-muted);
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0;
+    letter-spacing: 0.04em;
     border-bottom: 1px solid var(--border-color);
-    padding-bottom: var(--gap-xs);
-    margin-bottom: var(--gap-xs);
+    padding-bottom: 6px;
+    margin-bottom: 2px;
 }
 
-.row-table-row {
+.row-table-header span,
+.section-table-header span,
+.results-data-table__header span {
+    white-space: normal;
+    line-height: 1.2;
+}
+
+.row-table-row,
+.section-table-row,
+.results-data-table__row {
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
-    border-radius: 4px;
-    transition: background 0.15s;
+    border-radius: 6px;
+    transition: background 0.15s, color 0.15s;
 }
 
-.row-table-row:hover {
+.row-table-row span,
+.section-table-row span,
+.results-data-table__row span {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.results-data-table__row--alt {
+    background: var(--results-row-stripe, transparent);
+}
+
+.row-table-row:hover,
+.section-table-row:hover,
+.results-data-table__row:hover {
     color: var(--text-primary);
-    background: var(--bg-hover);
+    background: var(--results-row-hover, var(--bg-hover));
 }
 
 .row-table-cell--warning {
@@ -3451,16 +3543,19 @@ body.project-option-manager-open .jlg-shell .right-sidebar {
 .results-details.tier-section-1 {
     border-left-color: var(--accent-blue);
     background: var(--tier-1-surface);
+    --results-row-stripe: var(--tier-1-row-stripe);
 }
 
 .results-details.tier-section-2 {
     border-left-color: var(--accent-cyan);
     background: var(--tier-2-surface);
+    --results-row-stripe: var(--tier-2-row-stripe);
 }
 
 .results-details.tier-section-3 {
     border-left-color: var(--accent-purple);
     background: var(--tier-3-surface);
+    --results-row-stripe: var(--tier-3-row-stripe);
 }
 
 .results-details__trigger {
@@ -3879,6 +3974,9 @@ html[data-theme="dark"] {
     --tier-1-surface: rgba(147, 181, 232, 0.16);
     --tier-2-surface: rgba(126, 198, 175, 0.16);
     --tier-3-surface: rgba(194, 173, 223, 0.18);
+    --tier-1-row-stripe: rgba(147, 181, 232, 0.18);
+    --tier-2-row-stripe: rgba(126, 198, 175, 0.18);
+    --tier-3-row-stripe: rgba(194, 173, 223, 0.2);
     --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.22);
     --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.32), 0 2px 6px rgba(0, 0, 0, 0.22);
     --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.38), 0 4px 10px rgba(0, 0, 0, 0.24);

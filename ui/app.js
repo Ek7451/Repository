@@ -122,7 +122,11 @@ export class SeatingBowlApp {
                     this.editorShell?.ensure3DContainerSize();
                 }
             });
-            this.statsPanel = new StatsPanel();
+            this.statsPanel = new StatsPanel({
+                onHoverTargetChanged: (target) => {
+                    this._handleResultsHoverTargetChanged(target);
+                }
+            });
 
             this.editorControls?.syncFromState();
             this.editorShell?.syncFromState({
@@ -324,6 +328,11 @@ export class SeatingBowlApp {
         this.profileRenderer?.setTheme?.(nextTheme);
         this.scene3DController?.applyTheme(nextTheme);
         return nextTheme;
+    }
+
+    _handleResultsHoverTargetChanged(target = null) {
+        this.fieldRenderer?.setMetricsHoverTarget?.(target);
+        this.scene3DController?.setMetricsHoverTarget?.(target);
     }
 
     syncShellFromState() {

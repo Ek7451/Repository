@@ -257,12 +257,14 @@ describe('Workspace shell characterization', () => {
         const resultButtons = [
             createTabButton('data-target', 'statsTab'),
             createTabButton('data-target', 'accessibilityTab'),
-            createTabButton('data-target', 'detailsTab')
+            createTabButton('data-target', 'detailsTab'),
+            createTabButton('data-target', 'sectionMetricsTab')
         ];
         const resultPanels = [
             createPanel('statsTab'),
             createPanel('accessibilityTab'),
-            createPanel('detailsTab')
+            createPanel('detailsTab'),
+            createPanel('sectionMetricsTab')
         ];
         const dockViews = [
             createDockView('profile'),
@@ -302,7 +304,7 @@ describe('Workspace shell characterization', () => {
         shell._notifyScene3DResize = vi.fn();
 
         shell.setViewTab('field');
-        shell.setResultsTab('accessibilityTab');
+        shell.setResultsTab('sectionMetricsTab');
         vi.runAllTimers();
 
         expect(viewButtons[1].classList.contains('active')).toBe(true);
@@ -312,12 +314,12 @@ describe('Workspace shell characterization', () => {
         expect(dockViews[1].classList.contains('active')).toBe(true);
         expect(dockViews[1].hidden).toBe(false);
         expect(dockViews[0].hidden).toBe(true);
-        expect(resultButtons[1].classList.contains('active')).toBe(true);
-        expect(resultPanels[1].classList.contains('active')).toBe(true);
-        expect(resultPanels[1].scrollTop).toBe(0);
+        expect(resultButtons[3].classList.contains('active')).toBe(true);
+        expect(resultPanels[3].classList.contains('active')).toBe(true);
+        expect(resultPanels[3].scrollTop).toBe(0);
         expect(rightSidebar.classList.contains('collapsed')).toBe(false);
         expect(onViewTabChanged).toHaveBeenCalledWith('field');
-        expect(onResultsTabChanged).toHaveBeenCalledWith('accessibilityTab');
+        expect(onResultsTabChanged).toHaveBeenCalledWith('sectionMetricsTab');
         expect(window.dispatchEvent).toHaveBeenCalledTimes(1);
         expect(shell._notifyScene3DResize).toHaveBeenCalledTimes(1);
     });

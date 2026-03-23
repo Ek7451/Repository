@@ -79,6 +79,10 @@ const AISLE_POLYGON_OFFSET_FACTOR = -2;
 const AISLE_POLYGON_OFFSET_UNITS = -2;
 const SEAT_DEFAULT_COLOR = '#ffffff';
 const SEAT_HIGHLIGHT_COLOR = '#de850a';
+const METRICS_HOVER_COLOR = 0xde850a;
+const METRICS_HOVER_OPACITY = 0.56;
+const METRICS_HOVER_SURFACE_LIFT = 0.12;
+const METRICS_HOVER_SECTION_SAMPLES = 14;
 const SEAT_CLICK_DRAG_PX = 6;
 const SPECTATOR_LOOK_DISTANCE_FT = 120;
 const SPECTATOR_ALT_LOOK_YAW_SPEED = 0.006;
@@ -88,6 +92,84 @@ const SPECTATOR_MAX_PITCH_RAD = Math.PI * 0.48;
 function syncSceneThemeColors(theme = 'light') {
     theme = normalizeThemeName(theme);
     BRAND_COLORS = SCENE_THEME_COLORS[theme] || SCENE_THEME_COLORS.light;
+}
+
+function normalizeMetricsHoverTarget(target = null) {
+    if (!target || typeof target !== 'object') return null;
+    const tierIndex = Math.max(0, Math.floor(Number(target.tierIndex) || 0));
+    if (target.type === 'row') {
+        return {
+            type: 'row',
+            tierIndex,
+            rowIndex: Math.max(0, Math.floor(Number(target.rowIndex) || 0))
+        };
+    }
+    if (target.type === 'section') {
+        const sectionNumber = Math.max(0, Math.round(Number(target.sectionNumber) || 0));
+        if (!(sectionNumber > 0)) return null;
+        return {
+            type: 'section',
+            tierIndex,
+            sectionNumber
+        };
+    }
+    return null;
+}
+
+function metricsHoverTargetsEqual(a, b) {
+    const targetA = normalizeMetricsHoverTarget(a);
+    const targetB = normalizeMetricsHoverTarget(b);
+    if (!targetA && !targetB) return true;
+    if (!targetA || !targetB) return false;
+    if (targetA.type !== targetB.type || targetA.tierIndex !== targetB.tierIndex) return false;
+    if (targetA.type === 'row') return targetA.rowIndex === targetB.rowIndex;
+    return targetA.sectionNumber === targetB.sectionNumber;
+}
+
+function normalizeLoopU(u) {
+    let out = Number(u) || 0;
+    out %= 1;
+    if (out < 0) out += 1;
+    return out;
+}
+
+function wrappedSpan01(startU, endU) {
+    const start = normalizeLoopU(startU);
+    let end = normalizeLoopU(endU);
+    if (end <= start) end += 1;
+    return { start, end, span: end - start };
+}
+
+function interpolateLoopU(startU, endU, t) {
+    const wrapped = wrappedSpan01(startU, endU);
+    return normalizeLoopU(wrapped.start + (wrapped.span * Math.max(0, Math.min(1, Number(t) || 0))));
+}
+
+function clampUnit01(value) {
+    return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function normalizePathU(path, u) {
+    if (!path) return Number(u) || 0;
+    return path.closed ? normalizeLoopU(u) : clampUnit01(u);
+}
+
+function interpolatePathSectionU(path, startU, endU, t) {
+    const ratio = Math.max(0, Math.min(1, Number(t) || 0));
+    if (path?.closed) return interpolateLoopU(startU, endU, ratio);
+    const start = clampUnit01(startU);
+    const end = clampUnit01(endU);
+    return clampUnit01(start + ((end - start) * ratio));
+}
+
+function resolveSectionBoundaryU(path, aisleMap, boundaryKind, aisleIndex, fallbackU) {
+    if (!path) return Number(fallbackU) || 0;
+    if (boundaryKind === 'edge' || !Number.isFinite(Number(aisleIndex))) {
+        return normalizePathU(path, fallbackU);
+    }
+
+    const aisleU = aisleMap instanceof Map ? aisleMap.get(aisleIndex) : NaN;
+    return Number.isFinite(aisleU) ? normalizePathU(path, aisleU) : normalizePathU(path, fallbackU);
 }
 
 function buildThreeShapeFromSegments(THREERef, segments = []) {
@@ -128,10 +210,14 @@ export class Scene3D {
         /** @type {any} */
         this.aisleGroup = null;
         /** @type {any} */
+        this.highlightGroup = null;
+        /** @type {any} */
         this.seatGroup = null;
         /** @type {any} */
         this.fieldGroup = null;
         this._currentTemplate = null;
+        this._currentBowlRenderState = null;
+        this._metricsHoverTarget = null;
         this._animId = null;
         this._initialized = false;
         this._cameraAutoFitted = false;
@@ -250,10 +336,12 @@ export class Scene3D {
         // Groups for dynamic content
         this.bowlGroup = new THREE.Group();
         this.aisleGroup = new THREE.Group();
+        this.highlightGroup = new THREE.Group();
         this.seatGroup = new THREE.Group();
         this.fieldGroup = new THREE.Group();
         this.scene.add(this.bowlGroup);
         this.scene.add(this.aisleGroup);
+        this.scene.add(this.highlightGroup);
         this.scene.add(this.seatGroup);
         this.scene.add(this.fieldGroup);
 
@@ -417,6 +505,13 @@ export class Scene3D {
         this.scene.add(this._gridHelper);
     }
 
+    setMetricsHoverTarget(target = null) {
+        const normalizedTarget = normalizeMetricsHoverTarget(target);
+        if (metricsHoverTargetsEqual(this._metricsHoverTarget, normalizedTarget)) return;
+        this._metricsHoverTarget = normalizedTarget;
+        this._rebuildMetricsHoverOverlay();
+    }
+
     _onResize() {
         const size = this._getViewportSize();
         const w = size.w;
@@ -550,6 +645,7 @@ export class Scene3D {
         if (!this._initialized || !this.THREE) return;
         const THREE = this.THREE;
         this._currentTemplate = template || null;
+        this._currentBowlRenderState = null;
         this._clearSeatHover();
         this._clearSeatSelection();
         this._clearSpectatorView();
@@ -576,12 +672,19 @@ export class Scene3D {
             if (child.geometry) child.geometry.dispose();
             if (child.material) child.material.dispose();
         }
+        this._clearMetricsHoverOverlay();
 
         if (!solvers) {
             this.seatPreviewStats = { enabled: false, seatWidthIn: 0, totalSeats: 0, tiers: [] };
             return;
         }
         const solverList = Array.isArray(solvers) ? solvers : [solvers];
+        this._currentBowlRenderState = {
+            solvers: solverList,
+            bowlConfig,
+            offsetCorrection,
+            tierAisleLayouts
+        };
         const aisleLayoutMap = new Map((tierAisleLayouts || []).map(layout => [layout.tierIndex, layout]));
         const showSeatCubes = !!(seatPreviewOptions && seatPreviewOptions.showSeatCubes);
         const seatWidthIn = Math.max(0, Number(seatPreviewOptions && seatPreviewOptions.seatWidthIn) || 0);
@@ -690,6 +793,8 @@ export class Scene3D {
             this._fitCameraToBowl();
             this._cameraAutoFitted = true;
         }
+
+        this._rebuildMetricsHoverOverlay();
     }
 
     _resetCamera(_size) {
@@ -947,6 +1052,308 @@ export class Scene3D {
         geometry.setIndex(indices);
         geometry.computeVertexNormals();
         return geometry;
+    }
+
+    _clearMetricsHoverOverlay() {
+        while (this.highlightGroup && this.highlightGroup.children.length) {
+            const child = this.highlightGroup.children[0];
+            this.highlightGroup.remove(child);
+            child.geometry?.dispose?.();
+            if (Array.isArray(child.material)) {
+                child.material.forEach((material) => material?.dispose?.());
+            } else {
+                child.material?.dispose?.();
+            }
+        }
+    }
+
+    _createMetricsHoverMaterial() {
+        return new this.THREE.MeshStandardMaterial({
+            color: METRICS_HOVER_COLOR,
+            emissive: METRICS_HOVER_COLOR,
+            emissiveIntensity: 0.22,
+            roughness: 0.45,
+            metalness: 0.02,
+            transparent: true,
+            opacity: METRICS_HOVER_OPACITY,
+            side: this.THREE.DoubleSide,
+            depthWrite: false,
+            polygonOffset: true,
+            polygonOffsetFactor: AISLE_POLYGON_OFFSET_FACTOR - 1,
+            polygonOffsetUnits: AISLE_POLYGON_OFFSET_UNITS - 1
+        });
+    }
+
+    _buildResolvedAisleRatioMap(pathA, pathB, tierAisleLayout, chamferCache, aisleReferenceMap = null) {
+        const byPath = new Map();
+        if (!tierAisleLayout || !Array.isArray(tierAisleLayout.aisles)) return byPath;
+
+        for (let aisleIndex = 0; aisleIndex < tierAisleLayout.aisles.length; aisleIndex += 1) {
+            const aisle = tierAisleLayout.aisles[aisleIndex];
+            const pathIndex = Math.max(0, Math.floor(Number(aisle?.pathIndex) || 0));
+            const pathFront = pathA[pathIndex];
+            const pathBack = pathB[pathIndex];
+            if (!pathFront || !pathBack) continue;
+
+            const ratios = this._resolveTierAisleStationRatios(
+                pathFront,
+                pathBack,
+                aisle,
+                aisleIndex,
+                tierAisleLayout,
+                chamferCache,
+                aisleReferenceMap
+            );
+            if (!ratios || !Number.isFinite(ratios.uFront)) continue;
+
+            if (!byPath.has(pathIndex)) byPath.set(pathIndex, new Map());
+            byPath.get(pathIndex).set(aisleIndex, normalizePathU(pathFront, ratios.uFront));
+        }
+
+        return byPath;
+    }
+
+    _appendTopSurfaceStrip(positions, indices, frontPoints, backPoints, y) {
+        if (!Array.isArray(frontPoints) || !Array.isArray(backPoints)) return;
+        const count = Math.min(frontPoints.length, backPoints.length);
+        if (count < 2) return;
+
+        const stripBase = positions.length / 3;
+        for (let index = 0; index < count; index += 1) {
+            const frontPoint = frontPoints[index];
+            const backPoint = backPoints[index];
+            positions.push(frontPoint.x, y, -frontPoint.y);
+            positions.push(backPoint.x, y, -backPoint.y);
+
+            if (index >= count - 1) continue;
+
+            const a = stripBase + (index * 2);
+            const b = a + 1;
+            const c = stripBase + ((index + 1) * 2);
+            const d = c + 1;
+            indices.push(a, b, c);
+            indices.push(b, d, c);
+        }
+    }
+
+    _buildRowHighlightGeometry(solver, bowlConfig, rowIndex, offsetCorrection = 0) {
+        const THREE = this.THREE;
+        const row = Array.isArray(solver?.rows) ? solver.rows[rowIndex] : null;
+        if (!row) return null;
+
+        const positions = [];
+        const indices = [];
+        const y = Number(row?.z) + METRICS_HOVER_SURFACE_LIFT;
+        const getPlanSubpathsForOffset = (offset) => buildBowlGeometrySubpaths(bowlConfig, offset)
+            .map((subpath) => subpath.map((point) => ({ x: point.x, z: -point.y })));
+        const frontPaths = getPlanSubpathsForOffset((row.x - row.tread_depth) - offsetCorrection);
+        const backPaths = getPlanSubpathsForOffset(row.x - offsetCorrection);
+        const pathCount = Math.min(frontPaths.length, backPaths.length);
+
+        for (let pathIndex = 0; pathIndex < pathCount; pathIndex += 1) {
+            const frontPoints = frontPaths[pathIndex];
+            const backPoints = backPaths[pathIndex];
+            if (!Array.isArray(frontPoints) || !Array.isArray(backPoints)) continue;
+
+            const count = Math.min(frontPoints.length, backPoints.length);
+            if (count < 2) continue;
+            const stripBase = positions.length / 3;
+
+            for (let pointIndex = 0; pointIndex < count; pointIndex += 1) {
+                const frontPoint = frontPoints[pointIndex];
+                const backPoint = backPoints[pointIndex];
+                positions.push(frontPoint.x, y, frontPoint.z);
+                positions.push(backPoint.x, y, backPoint.z);
+
+                if (pointIndex >= count - 1) continue;
+
+                const a = stripBase + (pointIndex * 2);
+                const b = a + 1;
+                const c = stripBase + ((pointIndex + 1) * 2);
+                const d = c + 1;
+                indices.push(a, b, c);
+                indices.push(b, d, c);
+            }
+
+            if (!isPlanSubpathClosed(frontPoints) || !isPlanSubpathClosed(backPoints)) continue;
+            const a = stripBase + ((count - 1) * 2);
+            const b = a + 1;
+            const c = stripBase;
+            const d = stripBase + 1;
+            indices.push(a, b, c);
+            indices.push(b, d, c);
+        }
+
+        if (!positions.length || !indices.length) return null;
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+        return geometry;
+    }
+
+    _buildSectionHighlightGeometry(solver, bowlConfig, tierAisleLayout, sectionNumber, offsetCorrection = 0) {
+        const THREE = this.THREE;
+        if (!solver || !Array.isArray(solver.rows) || solver.rows.length === 0) return null;
+
+        const sections = Array.isArray(tierAisleLayout?.sectionSummary?.sections)
+            ? tierAisleLayout.sectionSummary.sections
+            : [];
+        const targetSection = sections.find((section) => (
+            Math.max(0, Math.round(Number(section?.sectionNumber) || 0)) === Math.max(0, Math.round(Number(sectionNumber) || 0))
+        ));
+        if (!targetSection) return null;
+
+        const positions = [];
+        const indices = [];
+        const pathCache = new Map();
+        const chamferCache = new Map();
+        const getPathsForOffset = (offset) => {
+            const key = offset.toFixed(6);
+            if (!pathCache.has(key)) {
+                pathCache.set(key, buildGeometryPaths(buildBowlGeometrySegments(bowlConfig, offset)));
+            }
+            return pathCache.get(key);
+        };
+        const aisleReferenceMap = this._buildTierAisleReferenceMap(
+            solver,
+            tierAisleLayout,
+            offsetCorrection,
+            getPathsForOffset,
+            chamferCache
+        );
+        const pathIndex = Math.max(0, Math.floor(Number(targetSection.pathIndex) || 0));
+
+        for (let rowIndex = 0; rowIndex < solver.rows.length; rowIndex += 1) {
+            const row = solver.rows[rowIndex];
+            const frontOffset = (row.x - row.tread_depth) - offsetCorrection;
+            const backOffset = row.x - offsetCorrection;
+            const frontPaths = getPathsForOffset(frontOffset);
+            const backPaths = getPathsForOffset(backOffset);
+            const frontPath = frontPaths[pathIndex];
+            const backPath = backPaths[pathIndex];
+            if (!frontPath || !backPath) continue;
+
+            const frontAisles = this._buildResolvedAisleRatioMap(
+                frontPaths,
+                frontPaths,
+                tierAisleLayout,
+                chamferCache,
+                aisleReferenceMap
+            );
+            const backAisles = this._buildResolvedAisleRatioMap(
+                backPaths,
+                backPaths,
+                tierAisleLayout,
+                chamferCache,
+                aisleReferenceMap
+            );
+            const frontAisleMap = frontAisles.get(pathIndex);
+            const backAisleMap = backAisles.get(pathIndex);
+            const uFA = resolveSectionBoundaryU(
+                frontPath,
+                frontAisleMap,
+                targetSection.startBoundaryKind,
+                targetSection.aisleIndexA,
+                targetSection.startU
+            );
+            const uFB = resolveSectionBoundaryU(
+                frontPath,
+                frontAisleMap,
+                targetSection.endBoundaryKind,
+                targetSection.aisleIndexB,
+                targetSection.endU
+            );
+            const uBA = resolveSectionBoundaryU(
+                backPath,
+                backAisleMap,
+                targetSection.startBoundaryKind,
+                targetSection.aisleIndexA,
+                targetSection.startU
+            );
+            const uBB = resolveSectionBoundaryU(
+                backPath,
+                backAisleMap,
+                targetSection.endBoundaryKind,
+                targetSection.aisleIndexB,
+                targetSection.endU
+            );
+            if (![uFA, uFB, uBA, uBB].every(Number.isFinite)) continue;
+
+            const frontPoints = [];
+            const backPoints = [];
+            for (let sampleIndex = 0; sampleIndex <= METRICS_HOVER_SECTION_SAMPLES; sampleIndex += 1) {
+                const ratio = sampleIndex / METRICS_HOVER_SECTION_SAMPLES;
+                const frontPoint = samplePathPointByRatio(
+                    frontPath,
+                    interpolatePathSectionU(frontPath, uFA, uFB, ratio)
+                );
+                const backPoint = samplePathPointByRatio(
+                    backPath,
+                    interpolatePathSectionU(backPath, uBA, uBB, ratio)
+                );
+                if (!Number.isFinite(frontPoint?.x) || !Number.isFinite(frontPoint?.y)) continue;
+                if (!Number.isFinite(backPoint?.x) || !Number.isFinite(backPoint?.y)) continue;
+                frontPoints.push(frontPoint);
+                backPoints.push(backPoint);
+            }
+            this._appendTopSurfaceStrip(
+                positions,
+                indices,
+                frontPoints,
+                backPoints,
+                Number(row?.z) + METRICS_HOVER_SURFACE_LIFT
+            );
+        }
+
+        if (!positions.length || !indices.length) return null;
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+        return geometry;
+    }
+
+    _rebuildMetricsHoverOverlay() {
+        this._clearMetricsHoverOverlay();
+        if (!this._initialized || !this.THREE || !this.highlightGroup) return;
+
+        const target = normalizeMetricsHoverTarget(this._metricsHoverTarget);
+        const renderState = this._currentBowlRenderState;
+        if (!target || !renderState) return;
+
+        const solverList = Array.isArray(renderState.solvers) ? renderState.solvers : [];
+        const solver = solverList.find((entry, index) => (
+            (Number.isFinite(Number(entry?.tierIndex)) ? Number(entry.tierIndex) : index) === target.tierIndex
+        ));
+        if (!solver) return;
+
+        const tierAisleLayouts = Array.isArray(renderState.tierAisleLayouts) ? renderState.tierAisleLayouts : [];
+        const tierAisleLayout = tierAisleLayouts.find((layout) => (
+            Math.max(0, Math.floor(Number(layout?.tierIndex) || 0)) === target.tierIndex
+        )) || null;
+
+        const geometry = target.type === 'row'
+            ? this._buildRowHighlightGeometry(
+                solver,
+                renderState.bowlConfig,
+                target.rowIndex,
+                renderState.offsetCorrection
+            )
+            : this._buildSectionHighlightGeometry(
+                solver,
+                renderState.bowlConfig,
+                tierAisleLayout,
+                target.sectionNumber,
+                renderState.offsetCorrection
+            );
+        if (!geometry) return;
+
+        const mesh = /** @type {any} */ (new this.THREE.Mesh(geometry, this._createMetricsHoverMaterial()));
+        mesh.renderOrder = 6;
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
+        this.highlightGroup.add(mesh);
     }
 
     _buildTierAisleReferenceMap(
@@ -1945,6 +2352,8 @@ export class Scene3D {
         this._clearSeatHover();
         this._clearSeatSelection();
         this._clearSpectatorView();
+        this._clearMetricsHoverOverlay();
+        this._currentBowlRenderState = null;
         if (this.renderer) {
             if (this._middlePointerDownHandler) {
                 this.renderer.domElement.removeEventListener('pointerdown', this._middlePointerDownHandler);

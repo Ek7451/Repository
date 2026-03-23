@@ -200,4 +200,43 @@ describe('Scene3DController', () => {
 
         controller.destroy();
     });
+
+    it('forwards metrics hover targets to the live scene and reapplies them after bowl updates', async () => {
+        const scene3D = {
+            init: vi.fn().mockResolvedValue(),
+            applyTheme: vi.fn(),
+            forceResize: vi.fn(),
+            updateField: vi.fn(),
+            updateBowl: vi.fn(),
+            setMetricsHoverTarget: vi.fn(),
+            dispose: vi.fn()
+        };
+        scene3DFactory.mockImplementation(() => scene3D);
+        const controller = new Scene3DController({
+            ...createElements(),
+            getBookmarks: () => []
+        });
+        const snapshot = createSnapshot();
+
+        controller.setMetricsHoverTarget({ type: 'row', tierIndex: 0, rowIndex: 2 });
+        controller.update(snapshot, { isActive: false });
+        await controller.activate();
+
+        expect(scene3D.setMetricsHoverTarget).toHaveBeenCalledWith({
+            type: 'row',
+            tierIndex: 0,
+            rowIndex: 2
+        });
+
+        scene3D.setMetricsHoverTarget.mockClear();
+        controller.setMetricsHoverTarget({ type: 'section', tierIndex: 0, sectionNumber: 101 });
+
+        expect(scene3D.setMetricsHoverTarget).toHaveBeenCalledWith({
+            type: 'section',
+            tierIndex: 0,
+            sectionNumber: 101
+        });
+
+        controller.destroy();
+    });
 });

@@ -207,6 +207,9 @@ const ROW_SEATCOUNT_LABEL_MIN_T = 0.08;
 const ROW_SEATCOUNT_LABEL_MAX_T = 0.45;
 const SECTION_CUT_LINE_EXTENSION_FT = 10;
 const SECTION_CUT_LINE_INTERSECTION_EPSILON = 1e-6;
+const METRICS_HOVER_FILL = 'rgba(222, 133, 10, 0.75)';
+const METRICS_HOVER_STROKE = 'rgba(222, 133, 10, 0.75)';
+const METRICS_HOVER_PATH_SAMPLES = 14;
 
 function normalizeLoopU(u) {
     let out = Number(u) || 0;
@@ -237,6 +240,38 @@ function clampUnit01(v) {
     return Math.max(0, Math.min(1, Number(v) || 0));
 }
 
+function normalizeMetricsHoverTarget(target = null) {
+    if (!target || typeof target !== 'object') return null;
+    const tierIndex = Math.max(0, Math.floor(Number(target.tierIndex) || 0));
+    if (target.type === 'row') {
+        return {
+            type: 'row',
+            tierIndex,
+            rowIndex: Math.max(0, Math.floor(Number(target.rowIndex) || 0))
+        };
+    }
+    if (target.type === 'section') {
+        const sectionNumber = Math.max(0, Math.round(Number(target.sectionNumber) || 0));
+        if (!(sectionNumber > 0)) return null;
+        return {
+            type: 'section',
+            tierIndex,
+            sectionNumber
+        };
+    }
+    return null;
+}
+
+function metricsHoverTargetsEqual(a, b) {
+    const targetA = normalizeMetricsHoverTarget(a);
+    const targetB = normalizeMetricsHoverTarget(b);
+    if (!targetA && !targetB) return true;
+    if (!targetA || !targetB) return false;
+    if (targetA.type !== targetB.type || targetA.tierIndex !== targetB.tierIndex) return false;
+    if (targetA.type === 'row') return targetA.rowIndex === targetB.rowIndex;
+    return targetA.sectionNumber === targetB.sectionNumber;
+}
+
 function normalizePathU(path, u) {
     if (!path) return Number(u) || 0;
     return path.closed ? normalizeLoopU(u) : clampUnit01(u);
@@ -254,6 +289,18 @@ function sectionDistanceOnPath(path, startU, endU) {
     if (!path || !(path.length > 0)) return 0;
     if (path.closed) return wrappedDistanceOnPath(path, startU, endU);
     return Math.abs(clampUnit01(endU) - clampUnit01(startU)) * path.length;
+}
+
+function buildSampledPathSectionPoints(path, startU, endU, sampleCount = METRICS_HOVER_PATH_SAMPLES) {
+    if (!path) return [];
+    const points = [];
+    const steps = Math.max(2, Math.floor(Number(sampleCount) || 0));
+    for (let i = 0; i <= steps; i += 1) {
+        const point = samplePathPointByRatio(path, interpolatePathSectionU(path, startU, endU, i / steps));
+        if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)) continue;
+        points.push({ x: point.x, y: point.y });
+    }
+    return points;
 }
 
 function normalizeAnglePi(angleRad) {
@@ -318,125 +365,6 @@ function formatComputedLabelNumber(value, maxDecimals = 12) {
         }
     }
     return `${numericValue}`;
-}
-
-const SIDE_BOWL_NUMBERING_TYPES = new Set(['Side1', 'Side2', 'Sides', 'Sides3', 'Sides4']);
-
-function compareFiniteNumbers(a, b) {
-    const delta = (Number(a) || 0) - (Number(b) || 0);
-    if (Math.abs(delta) <= 1e-6) return 0;
-    return delta;
-}
-
-function buildDefaultOpenSectionSlotOrder(slots) {
-    return slots.map((_, idx) => idx).sort((aIdx, bIdx) => {
-        const a = slots[aIdx].midPt || { x: -Infinity, y: -Infinity };
-        const b = slots[bIdx].midPt || { x: -Infinity, y: -Infinity };
-        if (Math.abs(b.x - a.x) > 1e-6) return b.x - a.x;
-        return b.y - a.y;
-    });
-}
-
-function classifySideBowlPathSegment(slots) {
-    const points = slots
-        .map((slot) => slot?.midPt)
-        .filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y));
-    if (!points.length) return 'top';
-
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
-    let sumX = 0;
-    let sumY = 0;
-
-    points.forEach((point) => {
-        minX = Math.min(minX, point.x);
-        maxX = Math.max(maxX, point.x);
-        minY = Math.min(minY, point.y);
-        maxY = Math.max(maxY, point.y);
-        sumX += point.x;
-        sumY += point.y;
-    });
-
-    const centerX = sumX / points.length;
-    const centerY = sumY / points.length;
-    const spanX = maxX - minX;
-    const spanY = maxY - minY;
-
-    if (spanX >= spanY) {
-        return centerY <= 0 ? 'bottom' : 'top';
-    }
-    return centerX <= 0 ? 'left' : 'right';
-}
-
-function getSideBowlPathRank(segment) {
-    if (segment === 'bottom') return 0;
-    if (segment === 'left') return 1;
-    if (segment === 'top') return 2;
-    if (segment === 'right') return 3;
-    return 99;
-}
-
-function buildSideBowlSectionSlotOrder(slots, segment) {
-    return slots.map((_, idx) => idx).sort((aIdx, bIdx) => {
-        const a = slots[aIdx];
-        const b = slots[bIdx];
-        const aPoint = a.midPt || { x: 0, y: 0 };
-        const bPoint = b.midPt || { x: 0, y: 0 };
-
-        if (segment === 'bottom') {
-            return (compareFiniteNumbers(bPoint.x, aPoint.x))
-                || (compareFiniteNumbers(aPoint.y, bPoint.y))
-                || (compareFiniteNumbers(b.midU, a.midU))
-                || (compareFiniteNumbers(b.slotIndex, a.slotIndex));
-        }
-        if (segment === 'top') {
-            return (compareFiniteNumbers(aPoint.x, bPoint.x))
-                || (compareFiniteNumbers(bPoint.y, aPoint.y))
-                || (compareFiniteNumbers(a.midU, b.midU))
-                || (compareFiniteNumbers(a.slotIndex, b.slotIndex));
-        }
-        if (segment === 'left') {
-            return (compareFiniteNumbers(aPoint.y, bPoint.y))
-                || (compareFiniteNumbers(aPoint.x, bPoint.x))
-                || (compareFiniteNumbers(a.midU, b.midU))
-                || (compareFiniteNumbers(a.slotIndex, b.slotIndex));
-        }
-        if (segment === 'right') {
-            return (compareFiniteNumbers(bPoint.y, aPoint.y))
-                || (compareFiniteNumbers(aPoint.x, bPoint.x))
-                || (compareFiniteNumbers(b.midU, a.midU))
-                || (compareFiniteNumbers(b.slotIndex, a.slotIndex));
-        }
-
-        return (compareFiniteNumbers(a.midU, b.midU))
-            || (compareFiniteNumbers(a.slotIndex, b.slotIndex));
-    });
-}
-
-function resolveOpenPathSectionTraversal(normalizedType, bowlConfig, slots, pathIndex) {
-    if (bowlConfig?.shape === 'arc') return null;
-
-    if (normalizedType === 'U-End1') {
-        return {
-            pathRank: pathIndex,
-            slotOrder: slots.map((_, idx) => idx).sort((aIdx, bIdx) => {
-                const a = slots[aIdx];
-                const b = slots[bIdx];
-                return (compareFiniteNumbers(b.midU, a.midU))
-                    || (compareFiniteNumbers(b.slotIndex, a.slotIndex));
-            })
-        };
-    }
-
-    if (!SIDE_BOWL_NUMBERING_TYPES.has(normalizedType)) return null;
-
-    const segment = classifySideBowlPathSegment(slots);
-    return {
-        pathRank: getSideBowlPathRank(segment),
-        slotOrder: buildSideBowlSectionSlotOrder(slots, segment)
-    };
 }
 
 const PLAN_SEGMENT_ARC_RESOLUTION_DEG = 5;
@@ -1281,22 +1209,6 @@ function findNearestVerticalRayIntersectionY(intersections, originY, direction =
     return safeDirection < 0 ? Math.max(...candidates) : Math.min(...candidates);
 }
 
-function approximatePathSignedArea(path, samples = 160) {
-    if (!path || !(path.length > 0) || !path.closed) return 0;
-    const pts = [];
-    const n = Math.max(24, Math.floor(samples));
-    for (let i = 0; i < n; i++) {
-        pts.push(samplePathPointByRatio(path, i / n));
-    }
-    let area2 = 0;
-    for (let i = 0; i < pts.length; i++) {
-        const a = pts[i];
-        const b = pts[(i + 1) % pts.length];
-        area2 += (a.x * b.y) - (b.x * a.y);
-    }
-    return area2 * 0.5;
-}
-
 export class FieldRenderer {
     /**
      * @param {HTMLCanvasElement} canvas
@@ -1306,6 +1218,7 @@ export class FieldRenderer {
         this.ctx = canvas.getContext('2d');
         this.padding = 160;
         this._theme = normalizeThemeName(options?.theme);
+        this._metricsHoverTarget = null;
 
         // Zoom/pan state
         this._userZoom = 1.0;
@@ -1323,6 +1236,13 @@ export class FieldRenderer {
     setTheme(theme) {
         this._theme = normalizeThemeName(theme);
         syncFieldThemeColors(this._theme);
+    }
+
+    setMetricsHoverTarget(target = null) {
+        const normalizedTarget = normalizeMetricsHoverTarget(target);
+        if (metricsHoverTargetsEqual(this._metricsHoverTarget, normalizedTarget)) return;
+        this._metricsHoverTarget = normalizedTarget;
+        this._rerenderFromLastArgs();
     }
 
     getGeometryPort() {
@@ -1840,6 +1760,158 @@ export class FieldRenderer {
         ctx.fill();
     }
 
+    _drawMetricsHoverPolygons(ctx, polygons, scale, fx, fy) {
+        if (!Array.isArray(polygons) || polygons.length === 0) return;
+
+        ctx.save();
+        ctx.translate(fx, fy);
+        ctx.fillStyle = METRICS_HOVER_FILL;
+        ctx.strokeStyle = METRICS_HOVER_STROKE;
+        ctx.lineWidth = 2 / Math.max(1e-6, Number(scale) || 1);
+
+        polygons.forEach((polygon) => {
+            const points = Array.isArray(polygon?.points) ? polygon.points : polygon;
+            if (!Array.isArray(points) || points.length < 3) return;
+
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i += 1) {
+                ctx.lineTo(points[i].x, points[i].y);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        });
+
+        ctx.restore();
+    }
+
+    _getTierSectionHoverPolygons(solver, bowlConfig, tierLayout, offsetCorrection = 0, sectionNumber = 0) {
+        const sections = Array.isArray(tierLayout?.sectionSummary?.sections) ? tierLayout.sectionSummary.sections : [];
+        const targetSection = sections.find((section) => (
+            Math.max(0, Math.round(Number(section?.sectionNumber) || 0)) === Math.max(0, Math.round(Number(sectionNumber) || 0))
+        ));
+        if (!targetSection || !solver || !Array.isArray(solver.rows) || solver.rows.length === 0) return [];
+
+        const pathIndex = Math.max(0, Math.floor(Number(targetSection.pathIndex) || 0));
+        const polygons = [];
+        const pathCache = new Map();
+        const getPathsForOffset = (offset) => {
+            const key = offset.toFixed(6);
+            if (!pathCache.has(key)) {
+                pathCache.set(key, buildGeometryPaths(buildBowlGeometrySegments(bowlConfig, offset)));
+            }
+            return pathCache.get(key);
+        };
+        const chamferCache = new Map();
+        const aisleReferenceMap = this._buildTierAisleReferenceMap(
+            solver,
+            bowlConfig,
+            tierLayout,
+            offsetCorrection,
+            getPathsForOffset,
+            chamferCache
+        );
+
+        for (let rowIndex = 0; rowIndex < solver.rows.length; rowIndex += 1) {
+            const row = solver.rows[rowIndex];
+            const frontOffset = (row.x - row.tread_depth) - offsetCorrection;
+            const backOffset = row.x - offsetCorrection;
+            const frontPaths = getPathsForOffset(frontOffset);
+            const backPaths = getPathsForOffset(backOffset);
+            const frontPath = frontPaths[pathIndex];
+            const backPath = backPaths[pathIndex];
+            if (!frontPath || !backPath) continue;
+
+            const frontAisles = this._buildResolvedAisleRatioMap(
+                frontPaths,
+                frontPaths,
+                tierLayout,
+                chamferCache,
+                aisleReferenceMap
+            );
+            const backAisles = this._buildResolvedAisleRatioMap(
+                backPaths,
+                backPaths,
+                tierLayout,
+                chamferCache,
+                aisleReferenceMap
+            );
+            const frontAisleMap = frontAisles.get(pathIndex);
+            const backAisleMap = backAisles.get(pathIndex);
+
+            const uFA = resolveSectionTemplateBoundaryU(
+                frontPath,
+                frontAisleMap,
+                targetSection.startBoundaryKind,
+                targetSection.aisleIndexA,
+                targetSection.startU
+            );
+            const uFB = resolveSectionTemplateBoundaryU(
+                frontPath,
+                frontAisleMap,
+                targetSection.endBoundaryKind,
+                targetSection.aisleIndexB,
+                targetSection.endU
+            );
+            const uBA = resolveSectionTemplateBoundaryU(
+                backPath,
+                backAisleMap,
+                targetSection.startBoundaryKind,
+                targetSection.aisleIndexA,
+                targetSection.startU
+            );
+            const uBB = resolveSectionTemplateBoundaryU(
+                backPath,
+                backAisleMap,
+                targetSection.endBoundaryKind,
+                targetSection.aisleIndexB,
+                targetSection.endU
+            );
+            if (![uFA, uFB, uBA, uBB].every(Number.isFinite)) continue;
+
+            const frontArc = buildSampledPathSectionPoints(frontPath, uFA, uFB);
+            const backArc = buildSampledPathSectionPoints(backPath, uBA, uBB).reverse();
+            if (frontArc.length < 2 || backArc.length < 2) continue;
+
+            polygons.push({
+                points: [...frontArc, ...backArc]
+            });
+        }
+
+        return polygons;
+    }
+
+    _drawMetricsHoverOverlay(ctx, solver, tierIndex, bowlConfig, tierLayout, offsetCorrection, scale, fx, fy) {
+        const target = normalizeMetricsHoverTarget(this._metricsHoverTarget);
+        if (!target) return;
+        if (target.tierIndex !== tierIndex) return;
+
+        if (target.type === 'row') {
+            const row = Array.isArray(solver?.rows) ? solver.rows[target.rowIndex] : null;
+            if (!row) return;
+
+            const polygons = buildBowlBandPolygons(
+                bowlConfig,
+                (row.x - row.tread_depth) - offsetCorrection,
+                row.x - offsetCorrection
+            );
+            this._drawMetricsHoverPolygons(ctx, polygons, scale, fx, fy);
+            return;
+        }
+
+        if (target.type === 'section' && tierLayout) {
+            const polygons = this._getTierSectionHoverPolygons(
+                solver,
+                bowlConfig,
+                tierLayout,
+                offsetCorrection,
+                target.sectionNumber
+            );
+            this._drawMetricsHoverPolygons(ctx, polygons, scale, fx, fy);
+        }
+    }
+
     generateTierAisleLayout(solver, bowlConfig, tierMetrics, offsetCorrection = 0, egressParams = null) {
         void tierMetrics;
         if (!solver || !solver.rows || solver.rows.length === 0) return null;
@@ -1963,7 +2035,7 @@ export class FieldRenderer {
         return pickBestRowAisleSampling(centerOffset, getPathsForOffset, tierLayout, chamferCache, aisleReferenceMap);
     }
 
-    _buildTierSectionTemplates(referencePaths, tierLayout, sectionBase, bowlConfig = null) {
+    _buildTierSectionTemplates(referencePaths, tierLayout) {
         const out = new Map();
         if (!tierLayout) return out;
 
@@ -1980,9 +2052,6 @@ export class FieldRenderer {
         const summarySections = Array.isArray(tierLayout?.sectionSummary?.sections)
             ? tierLayout.sectionSummary.sections
             : [];
-        const normalizedType = normalizeBowlType(bowlConfig?.type);
-        let nextSectionNumber = sectionBase;
-        const numberedPathTemplates = [];
         const pathCount = Math.max(
             Array.isArray(referencePaths) ? referencePaths.length : 0,
             Array.isArray(tierLayout.sectionBoundaries) ? tierLayout.sectionBoundaries.length : 0
@@ -2025,7 +2094,9 @@ export class FieldRenderer {
                         uB: normUB,
                         midU,
                         midPt,
-                        sectionNumber: null
+                        sectionNumber: Number.isFinite(Number(section?.sectionNumber))
+                            ? Math.round(Number(section.sectionNumber))
+                            : null
                     });
                 });
             } else {
@@ -2060,56 +2131,8 @@ export class FieldRenderer {
                 }
             }
             if (slots.length < 1) continue;
-
-            let order = slots.map((_, idx) => idx);
-            let pathRank = pathIndex;
-            if (path.closed) {
-                const isPathClockwise = approximatePathSignedArea(path) < 0;
-                if (!isPathClockwise) order = order.reverse();
-
-                let startPos = 0;
-                let bestX = -Infinity;
-                let bestY = -Infinity;
-                for (let i = 0; i < order.length; i++) {
-                    const p = slots[order[i]].midPt || { x: -Infinity, y: -Infinity };
-                    if (
-                        p.x > bestX + 1e-6 ||
-                        (Math.abs(p.x - bestX) <= 1e-6 && p.y > bestY + 1e-6)
-                    ) {
-                        bestX = p.x;
-                        bestY = p.y;
-                        startPos = i;
-                    }
-                }
-                order = order.slice(startPos).concat(order.slice(0, startPos));
-            } else {
-                const explicitTraversal = resolveOpenPathSectionTraversal(
-                    normalizedType,
-                    bowlConfig,
-                    slots,
-                    pathIndex
-                );
-                if (explicitTraversal) {
-                    order = explicitTraversal.slotOrder;
-                    pathRank = explicitTraversal.pathRank;
-                } else {
-                    order = buildDefaultOpenSectionSlotOrder(slots);
-                }
-            }
-
-            numberedPathTemplates.push({ pathIndex, pathRank, slots, order });
             out.set(pathIndex, slots);
         }
-
-        numberedPathTemplates.sort((a, b) => (
-            compareFiniteNumbers(a.pathRank, b.pathRank)
-            || compareFiniteNumbers(a.pathIndex, b.pathIndex)
-        ));
-        numberedPathTemplates.forEach(({ slots, order }) => {
-            for (let i = 0; i < order.length; i++) {
-                slots[order[i]].sectionNumber = nextSectionNumber++;
-            }
-        });
 
         return out;
     }
@@ -2339,7 +2362,6 @@ export class FieldRenderer {
         };
 
         const tierIdx = Math.max(0, Math.floor(Number(tierLayout.tierIndex) || 0));
-        const sectionBase = (tierIdx + 1) * 100;
         const templateRowIndex = Math.floor((Math.max(1, solver.rows.length) - 1) * 0.5);
         const templateRow = solver.rows[templateRowIndex];
         const templateOffset = (templateRow.x - (templateRow.tread_depth * 0.5)) - offsetCorrection;
@@ -2353,7 +2375,7 @@ export class FieldRenderer {
             getPathsForOffset,
             chamferCache
         );
-        const sectionTemplates = this._buildTierSectionTemplates(labelPaths, tierLayout, sectionBase, bowlConfig);
+        const sectionTemplates = this._buildTierSectionTemplates(labelPaths, tierLayout);
         if (!sectionTemplates.size) return { sectionLabels: [], rowSeatLabels: [] };
         const sectionByKey = new Map(
             sections.map((section) => [`${section.pathIndex}:${section.slotIndex}`, section])
@@ -2832,6 +2854,7 @@ export class FieldRenderer {
             if (tIdx === 2 && !visibility.t3) return;
 
             if (!solver.rows) return;
+            const tierAisleLayout = aisleLayoutMap.get(tIdx);
 
             solver.rows.forEach((row, rowIdx) => {
                 const rowStrokeColor = getRowStrokeColorForTheme(row, tierColors, colorByCValue);
@@ -2875,7 +2898,6 @@ export class FieldRenderer {
 
             // Second pass: aisle strips (egress geometry) for this tier.
             // Draw before row outlines so step lines remain visible across the aisle fills.
-            const tierAisleLayout = aisleLayoutMap.get(tIdx);
             if (tierAisleLayout && tierAisleLayout.aisles && tierAisleLayout.aisles.length > 0) {
                 this._drawTierAisles(ctx, solver, bowlConfig, tierAisleLayout, offsetCorrection, scale, fx, fy);
             }
@@ -2921,9 +2943,10 @@ export class FieldRenderer {
                 ctx.restore();
             }
 
+            this._drawMetricsHoverOverlay(ctx, solver, tIdx, bowlConfig, tierAisleLayout, offsetCorrection, scale, fx, fy);
+
             // Sixth pass: optional section IDs + row seat counts (field plan only)
             if (visibility?.showSectionMetrics) {
-                const tierAisleLayout = aisleLayoutMap.get(tIdx);
                 if (tierAisleLayout && tierAisleLayout.aisles && tierAisleLayout.aisles.length > 1) {
                     this._drawTierSectionMetrics(ctx, solver, bowlConfig, tierAisleLayout, offsetCorrection, scale, fx, fy);
                 }

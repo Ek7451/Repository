@@ -9,6 +9,7 @@ import {
 } from '../../viz/field-renderer.js';
 import {
     buildGeometryPaths,
+    __testHooks,
     resolveAisleStationRatios,
     samplePathPointByRatio
 } from '../../core/aisle-layout.js';
@@ -20,15 +21,13 @@ import { resolvePlanFocalYFt } from '../../core/sports-templates.js';
 
 vi.mock('three', async () => import('../../lib/three.module.js'));
 
-function createTierSolver({ tierIndex = 0 } = {}) {
+function createTierSolver({ tierIndex = 0, xStart = 24, rowCount = 4 } = {}) {
     return {
         tierIndex,
-        rows: [
-            { x: 24, tread_depth: 3 },
-            { x: 27, tread_depth: 3 },
-            { x: 30, tread_depth: 3 },
-            { x: 33, tread_depth: 3 }
-        ]
+        rows: Array.from({ length: rowCount }, (_, index) => ({
+            x: xStart + (index * 3),
+            tread_depth: 3
+        }))
     };
 }
 
@@ -73,6 +72,89 @@ function createEgressParams() {
         minAisleWidthIn: 48,
         maxAisleWidthIn: 72
     };
+}
+
+function normalizeWrappedTestU(u) {
+    let out = Number(u) || 0;
+    out %= 1;
+    if (out < 0) out += 1;
+    return out;
+}
+
+function computeWrappedTestSpan(startU, endU) {
+    const start = normalizeWrappedTestU(startU);
+    let end = normalizeWrappedTestU(endU);
+    if (end <= start + 1e-6) end += 1;
+    return { start, end, span: end - start };
+}
+
+function resolveWrappedTestOffset(startU, u) {
+    let offset = normalizeWrappedTestU(u) - normalizeWrappedTestU(startU);
+    if (offset < 0) offset += 1;
+    return offset;
+}
+
+function findUpperRightChamferStartSlotIndex(sections, referencePath, bowlConfig) {
+    const perimeterModel = __testHooks.buildPerimeterModel([referencePath], [referencePath], bowlConfig);
+    const upperRightChamfer = perimeterModel.paths[0].intervals
+        .filter((interval) => interval?.family === 'chamfer')
+        .map((interval) => {
+            const side = interval.front || interval.back;
+            const midU = normalizeWrappedTestU(side.startU + (computeWrappedTestSpan(side.startU, side.endU).span * 0.5));
+            const point = samplePathPointByRatio(referencePath, midU);
+            return {
+                interval,
+                point,
+                score: (Number(point?.x) || 0) + (Number(point?.y) || 0)
+            };
+        })
+        .sort((left, right) => (
+            (right.score - left.score)
+            || ((Number(right.point?.x) || 0) - (Number(left.point?.x) || 0))
+            || ((Number(right.point?.y) || 0) - (Number(left.point?.y) || 0))
+        ))[0]?.interval;
+    const side = upperRightChamfer?.front || upperRightChamfer?.back;
+    if (!side) return null;
+
+    const intervalSpan = computeWrappedTestSpan(side.startU, side.endU).span;
+    /** @type {{ slotIndex: number, endOffset: number } | null} */
+    let bestContained = null;
+    /** @type {{ slotIndex: number, overlap: number, endOffset: number } | null} */
+    let bestOverlap = null;
+
+    sections.forEach((section) => {
+        const sectionRange = computeWrappedTestSpan(section.startU, section.endU);
+        const startOffset = resolveWrappedTestOffset(side.startU, sectionRange.start);
+        const endOffset = startOffset + sectionRange.span;
+        const overlap = Math.max(0, Math.min(endOffset, intervalSpan) - Math.max(startOffset, 0));
+
+        if (
+            !bestOverlap
+            || overlap > bestOverlap.overlap + 1e-6
+            || (
+                Math.abs(overlap - bestOverlap.overlap) <= 1e-6
+                && endOffset > bestOverlap.endOffset + 1e-6
+            )
+        ) {
+            bestOverlap = {
+                slotIndex: section.slotIndex,
+                overlap,
+                endOffset
+            };
+        }
+
+        if (!(overlap > 1e-6) || endOffset > intervalSpan + 1e-6) return;
+        if (!bestContained || endOffset > bestContained.endOffset + 1e-6) {
+            bestContained = {
+                slotIndex: section.slotIndex,
+                endOffset
+            };
+        }
+    });
+
+    if (bestContained) return bestContained.slotIndex;
+    if (bestOverlap) return bestOverlap.slotIndex;
+    return null;
 }
 
 function createFieldTemplateCases() {
@@ -261,6 +343,55 @@ describe('FieldRenderer helper delegation surface', () => {
             r: 161.8
         }));
         expect(runoffRightArc.x + runoffRightArc.r).toBeCloseTo(300.25);
+    });
+
+    it('rerenders and resolves section hover polygons from canonical section numbering', () => {
+        const renderer = new FieldRenderer(/** @type {any} */ (createMockCanvas()));
+        const solver = createTierSolver();
+        const bowlConfig = createFullChamferBowlConfig();
+        const tierLayout = renderer.generateTierAisleLayout(
+            solver,
+            bowlConfig,
+            null,
+            0,
+            createEgressParams()
+        );
+        const sectionNumber = tierLayout.sectionSummary.sections[0].sectionNumber;
+        const rerenderSpy = vi.spyOn(renderer, '_rerenderFromLastArgs').mockImplementation(() => {});
+
+        renderer.setMetricsHoverTarget({ type: 'section', tierIndex: 0, sectionNumber });
+
+        expect(rerenderSpy).toHaveBeenCalledTimes(1);
+        expect(renderer._getTierSectionHoverPolygons(solver, bowlConfig, tierLayout, 0, sectionNumber).length).toBeGreaterThan(0);
+    });
+
+    it('keeps plan-view section hover polygons constrained to the selected section span', () => {
+        const renderer = new FieldRenderer(/** @type {any} */ (createMockCanvas()));
+        const solver = createTierSolver();
+        const bowlConfig = createFullChamferBowlConfig();
+        const tierLayout = renderer.generateTierAisleLayout(
+            solver,
+            bowlConfig,
+            null,
+            0,
+            createEgressParams()
+        );
+
+        const polygons = renderer._getTierSectionHoverPolygons(solver, bowlConfig, tierLayout, 0, 101);
+        expect(polygons.length).toBeGreaterThan(0);
+
+        polygons.forEach((polygon) => {
+            const points = Array.isArray(polygon?.points) ? polygon.points : [];
+            const xs = points.map((point) => point.x);
+            const ys = points.map((point) => point.y);
+            const spanX = Math.max(...xs) - Math.min(...xs);
+            const spanY = Math.max(...ys) - Math.min(...ys);
+
+            expect(points.length).toBeGreaterThanOrEqual(4);
+            expect(Math.min(...xs)).toBeGreaterThan(100);
+            expect(spanX).toBeLessThan(20);
+            expect(spanY).toBeLessThan(45);
+        });
     });
 
     it('draws runoff and field edge beneath seating in plan view', () => {
@@ -1179,6 +1310,44 @@ describe('FieldRenderer helper delegation surface', () => {
         });
     });
 
+    it('anchors full-bowl section numbering to the last section on the upper-right chamfer across varying tier counts', () => {
+        const renderer = Object.create(FieldRenderer.prototype);
+        const bowlConfig = createFullChamferBowlConfig();
+        const tierCases = [
+            { tierIndex: 0, xStart: 24, rowCount: 5 },
+            { tierIndex: 1, xStart: 52, rowCount: 5 },
+            { tierIndex: 2, xStart: 68, rowCount: 5 }
+        ];
+
+        tierCases.forEach(({ tierIndex, xStart, rowCount }) => {
+            const solver = createTierSolver({ tierIndex, xStart, rowCount });
+            const tierLayout = renderer.generateTierAisleLayout(
+                solver,
+                bowlConfig,
+                createTierMetrics(),
+                0,
+                createEgressParams()
+            );
+            const overlay = renderer.getTierSectionMetricsOverlayData(solver, bowlConfig, tierLayout, 0);
+            const lastRow = solver.rows[solver.rows.length - 1];
+            const referencePaths = buildGeometryPaths(
+                renderer._getBowlGeometry(bowlConfig, lastRow.x - (lastRow.tread_depth * 0.5))
+            );
+            const pathSections = tierLayout.sectionSummary.sections.filter((section) => section.pathIndex === 0);
+            const baseSectionNumber = (tierIndex + 1) * 100;
+            const baseLabel = overlay.sectionLabels.find((label) => label.sectionNumber === baseSectionNumber);
+            const expectedStartSlotIndex = findUpperRightChamferStartSlotIndex(
+                pathSections,
+                referencePaths[0],
+                bowlConfig
+            );
+            const expectedStartLabel = overlay.sectionLabels.find((label) => label.slotIndex === expectedStartSlotIndex);
+
+            expect(baseLabel).toBeTruthy();
+            expect(baseLabel.sectionNumber).toBe(expectedStartLabel.sectionNumber);
+        });
+    });
+
     it('renders U-end terminal aisle polygons flush to the open segment edge', () => {
         const renderer = Object.create(FieldRenderer.prototype);
         const solver = createTierSolver();
@@ -1397,10 +1566,10 @@ describe('FieldRenderer helper delegation surface', () => {
             0
         );
 
-        expect(renderer._getTierAisleMetricLabelData).not.toHaveBeenCalled();
-        expect(renderer._drawWorldTextLabel).toHaveBeenCalledTimes(2);
-        expect(ctx.save).toHaveBeenCalledTimes(1);
-        expect(ctx.restore).toHaveBeenCalledTimes(1);
+        expect(renderer._getTierAisleMetricLabelData).toHaveBeenCalledTimes(1);
+        expect(renderer._drawWorldTextLabel).toHaveBeenCalledTimes(5);
+        expect(ctx.save).toHaveBeenCalledTimes(2);
+        expect(ctx.restore).toHaveBeenCalledTimes(2);
 
         renderer._drawWorldTextLabel.mockClear();
         renderer._getTierAisleMetricLabelData.mockClear();
@@ -1419,10 +1588,10 @@ describe('FieldRenderer helper delegation surface', () => {
             0
         );
 
-        expect(renderer._getTierAisleMetricLabelData).not.toHaveBeenCalled();
-        expect(renderer._drawWorldTextLabel).toHaveBeenCalledTimes(2);
-        expect(ctx.save).toHaveBeenCalledTimes(1);
-        expect(ctx.restore).toHaveBeenCalledTimes(1);
+        expect(renderer._getTierAisleMetricLabelData).toHaveBeenCalledTimes(1);
+        expect(renderer._drawWorldTextLabel).toHaveBeenCalledTimes(5);
+        expect(ctx.save).toHaveBeenCalledTimes(2);
+        expect(ctx.restore).toHaveBeenCalledTimes(2);
 
         renderer._drawWorldTextLabel.mockClear();
         renderer._getTierAisleMetricLabelData.mockClear();
@@ -2019,6 +2188,41 @@ describe('FieldRenderer helper delegation surface', () => {
 
         expect(scene._getSeatPickFromPointerEvent).not.toHaveBeenCalled();
         expect(scene._selectedSeatRef).toBe(seatRef);
+    });
+
+    it('builds row and section hover overlay meshes for metrics-driven highlighting', async () => {
+        const { Scene3D } = await import('../../viz/scene3d.js');
+        const THREE = await import('../../lib/three.module.js');
+        const scene = Object.create(Scene3D.prototype);
+        const renderer = new FieldRenderer(/** @type {any} */ (createMockCanvas()));
+        const solver = createTierSolver();
+        const bowlConfig = createFullChamferBowlConfig();
+        const tierLayout = renderer.generateTierAisleLayout(
+            solver,
+            bowlConfig,
+            null,
+            0,
+            createEgressParams()
+        );
+        const sectionNumber = tierLayout.sectionSummary.sections[0].sectionNumber;
+
+        scene.THREE = THREE;
+        scene.highlightGroup = new THREE.Group();
+        scene._initialized = true;
+        scene._metricsHoverTarget = null;
+        scene._currentBowlRenderState = {
+            solvers: [solver],
+            bowlConfig,
+            offsetCorrection: 0,
+            tierAisleLayouts: [tierLayout]
+        };
+
+        scene.setMetricsHoverTarget({ type: 'row', tierIndex: 0, rowIndex: 1 });
+        expect(scene.highlightGroup.children).toHaveLength(1);
+
+        scene.setMetricsHoverTarget({ type: 'section', tierIndex: 0, sectionNumber });
+        expect(scene.highlightGroup.children).toHaveLength(1);
+        expect(scene.highlightGroup.children[0].geometry).toBeTruthy();
     });
 });
 

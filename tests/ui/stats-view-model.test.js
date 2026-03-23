@@ -293,6 +293,60 @@ describe('buildStatsViewModel', () => {
         });
     });
 
+    test('projects section-level metrics from authoritative core section details', () => {
+        const viewModel = buildStatsDto({
+            solvers: [createSolver({
+                rows: [
+                    createRow({ row_number: 1, x: 10, tread_depth: 2 }),
+                    createRow({ row_number: 2, x: 14, tread_depth: 2 })
+                ]
+            })],
+            focalPointFt: { x: 0, z: 0 },
+            bowlConfig: { type: 'Full' },
+            egressParams: { egressFactor: 0.2 },
+            tierMetricsByIndex: new Map([[0, createMetrics({
+                sectionDetails: [{
+                    sectionNumber: 101,
+                    occupancy: 30,
+                    seatWidthIn: 20,
+                    longestRowBySeatCount: { rowNumber: 2, seatCount: 16 },
+                    shortestRowBySeatCount: { rowNumber: 1, seatCount: 14 },
+                    longestRowByLength: { rowNumber: 2, seatingLengthFt: 26.5 },
+                    shortestRowByLength: { rowNumber: 1, seatingLengthFt: 23.3 }
+                }, {
+                    sectionNumber: 100,
+                    occupancy: 44,
+                    seatWidthIn: 20,
+                    longestRowBySeatCount: { rowNumber: 2, seatCount: 24 },
+                    shortestRowBySeatCount: { rowNumber: 1, seatCount: 20 },
+                    longestRowByLength: { rowNumber: 2, seatingLengthFt: 40.5 },
+                    shortestRowByLength: { rowNumber: 1, seatingLengthFt: 33.3 }
+                }]
+            })]])
+        });
+
+        expect(viewModel.tiers[0].sections).toEqual([
+            expect.objectContaining({
+                sectionNumberDisplay: '100',
+                totalSeatsDisplay: '44',
+                seatSizeDisplay: '20.0"',
+                longestRowSeatsDisplay: 'R2 / 24',
+                shortestRowSeatsDisplay: 'R1 / 20',
+                longestRowLengthDisplay: "R2 / 40.5'",
+                shortestRowLengthDisplay: "R1 / 33.3'"
+            }),
+            expect.objectContaining({
+                sectionNumberDisplay: '101',
+                totalSeatsDisplay: '30',
+                seatSizeDisplay: '20.0"',
+                longestRowSeatsDisplay: 'R2 / 16',
+                shortestRowSeatsDisplay: 'R1 / 14',
+                longestRowLengthDisplay: "R2 / 26.5'",
+                shortestRowLengthDisplay: "R1 / 23.3'"
+            })
+        ]);
+    });
+
     test('leaves base egress metrics in place when tier layout data is missing', () => {
         const viewModel = buildStatsDto({
             solvers: [createSolver()],
