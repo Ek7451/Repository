@@ -9,6 +9,7 @@ import {
     buildTierAisleLayout,
     buildTierAisleReferenceMap,
     buildTierAisleLayoutSummary,
+    getTierRenderedAisleWidthFt,
     pickBestRowAisleSampling,
     resolveAisleStationRatios,
     resolveTierAisleStationRatios,
@@ -16,7 +17,7 @@ import {
     samplePathPointByRatio
 } from '../../core/aisle-layout.js';
 import { computeMaximumOccupantsPerAisle } from '../../core/egress-policy.js';
-import { spanGapToSeatCount } from '../../core/seat-math.js';
+import { intervalLengthToSeatCount, spanGapToSeatCount } from '../../core/seat-math.js';
 import { FieldRenderer } from '../../viz/field-renderer.js';
 
 function buildChamferRectangleSegments({
@@ -525,6 +526,155 @@ function buildTierAisleAnalysisForFixture({
         getPathsForOffset: (offset) => buildGeometryPaths(renderer._getBowlGeometry(fixture.bowlConfig, offset)),
         getRowLengthFt: (offset) => renderer.calculateRowLength(fixture.bowlConfig, offset)
     });
+}
+
+function addBlockedSpan(spans, pathLength, startDist, endDist, isClosed) {
+    if (!Array.isArray(spans)) return;
+    const length = Math.max(0, Number(pathLength) || 0);
+    if (length <= 1e-6) return;
+    if (!Number.isFinite(startDist) || !Number.isFinite(endDist)) return;
+
+    if (!isClosed) {
+        const s = Math.max(0, Math.min(length, startDist));
+        const e = Math.max(0, Math.min(length, endDist));
+        if (e - s > 1e-6) spans.push([s, e]);
+        return;
+    }
+
+    let s = startDist;
+    let e = endDist;
+    const width = e - s;
+    if (width >= length - 1e-6) {
+        spans.push([0, length]);
+        return;
+    }
+
+    while (s < 0) {
+        s += length;
+        e += length;
+    }
+    while (s >= length) {
+        s -= length;
+        e -= length;
+    }
+
+    if (e <= length) {
+        if (e - s > 1e-6) spans.push([s, e]);
+        return;
+    }
+
+    if (length - s > 1e-6) spans.push([s, length]);
+    if (e - length > 1e-6) spans.push([0, e - length]);
+}
+
+function computeFreeIntervals(path, blockedSpans = []) {
+    const length = Math.max(0, Number(path?.length) || 0);
+    if (length <= 1e-6) return [];
+    if (!Array.isArray(blockedSpans) || blockedSpans.length === 0) return [[0, length]];
+
+    const spans = blockedSpans
+        .filter((span) => Array.isArray(span) && span.length >= 2 && Number.isFinite(span[0]) && Number.isFinite(span[1]))
+        .map((span) => [Math.max(0, span[0]), Math.min(length, span[1])])
+        .filter((span) => (span[1] - span[0]) > 1e-6)
+        .sort((left, right) => left[0] - right[0]);
+    if (!spans.length) return [[0, length]];
+
+    const merged = [];
+    spans.forEach((span) => {
+        const last = merged[merged.length - 1];
+        if (!last || span[0] > last[1] + 1e-6) {
+            merged.push([span[0], span[1]]);
+        } else if (span[1] > last[1]) {
+            last[1] = span[1];
+        }
+    });
+
+    const free = [];
+    let cursor = 0;
+    merged.forEach((span) => {
+        if (span[0] > cursor + 1e-6) free.push([cursor, span[0]]);
+        cursor = Math.max(cursor, span[1]);
+    });
+    if (cursor < length - 1e-6) free.push([cursor, length]);
+    return free;
+}
+
+function countPackedSeatsForRow({
+    fixture,
+    solver,
+    tierLayout,
+    rowIndex,
+    seatWidthIn,
+    offsetCorrection = 0
+}) {
+    const renderer = Object.create(FieldRenderer.prototype);
+    const row = solver?.rows?.[rowIndex];
+    if (!row) return 0;
+
+    const pathCache = new Map();
+    const chamferCache = new Map();
+    const getPathsForOffset = (offset) => {
+        const key = Number(offset).toFixed(6);
+        if (!pathCache.has(key)) {
+            pathCache.set(key, buildGeometryPaths(renderer._getBowlGeometry(fixture.bowlConfig, offset)));
+        }
+        return pathCache.get(key);
+    };
+    const aisleReferenceMap = buildTierAisleReferenceMap({
+        rows: solver?.rows || [],
+        tierLayout,
+        offsetCorrection,
+        getPathsForOffset,
+        chamferCache
+    });
+
+    const centerOffset = (row.x - (row.tread_depth * 0.5)) - offsetCorrection;
+    const centerPaths = getPathsForOffset(centerOffset);
+    const blockedByPath = centerPaths.map(() => []);
+    (tierLayout?.aisles || []).forEach((aisle, aisleIndex) => {
+        const pathIndex = Math.max(0, Math.floor(Number(aisle?.pathIndex) || 0));
+        const path = centerPaths[pathIndex];
+        if (!path || !(path.length > 1e-6)) return;
+
+        const ratios = resolveTierAisleStationRatios(
+            path,
+            path,
+            aisle,
+            aisleIndex,
+            chamferCache,
+            aisleReferenceMap,
+            tierLayout
+        );
+        if (!ratios) return;
+
+        const u = Number.isFinite(ratios.uFront) ? ratios.uFront : ratios.uBack;
+        if (!Number.isFinite(u)) return;
+
+        const normalizedU = path.closed
+            ? ((((u % 1) + 1) % 1))
+            : Math.max(0, Math.min(1, u));
+        const centerDist = normalizedU * path.length;
+        const aisleWidthFt = getTierRenderedAisleWidthFt(tierLayout, aisleIndex);
+        if (!(aisleWidthFt > 0)) return;
+
+        addBlockedSpan(
+            blockedByPath[pathIndex],
+            path.length,
+            centerDist - (aisleWidthFt * 0.5),
+            centerDist + (aisleWidthFt * 0.5),
+            !!path.closed
+        );
+    });
+
+    return centerPaths.reduce((sum, path, pathIndex) => {
+        if (!path || !(path.length > 1e-6)) return sum;
+        const packedOnPath = computeFreeIntervals(path, blockedByPath[pathIndex] || []).reduce((pathSum, interval) => {
+            const lengthFt = interval[1] - interval[0];
+            if (lengthFt <= 1e-6) return pathSum;
+            return pathSum + intervalLengthToSeatCount(lengthFt + 1e-6, seatWidthIn);
+        }, 0);
+        return sum + packedOnPath;
+    }, 0);
 }
 
 function findFirstCompliantTargetAisleSolve({
@@ -2659,6 +2809,48 @@ describe('aisle layout geometry seam', () => {
             }));
             expect(firstAisleSummary.tributaryOccupancy).toBeCloseTo(firstSection.occupancy / 2, 5);
             expect(lastAisleSummary.tributaryOccupancy).toBeCloseTo(lastSection.occupancy / 2, 5);
+        });
+    });
+
+    it('keeps U-end summary row totals aligned with rendered seat packing at terminal aisles', () => {
+        const fixture = buildRendererBowlFixture('U-End2', {
+            width: 85,
+            length: 200,
+            shape: 'rounded_rect',
+            radius: 16,
+            straightAisleMode: 'perpendicular',
+            chamferAisleMode: 'radial'
+        });
+        const rows = Array.from({ length: 15 }, (_, index) => ({
+            row_number: index + 1,
+            x: 2.75 * (index + 1),
+            tread_depth: 2.75
+        }));
+        const egressParams = {
+            seatWidthIn: 19,
+            minAisleWidthIn: 48,
+            maxAisleWidthIn: 66,
+            egressFactor: 0.2,
+            seatsBetweenAisles: 32
+        };
+
+        const tierLayout = buildTierAisleAnalysisForFixture({
+            fixture,
+            rows,
+            egressParams
+        });
+        const solver = { rows };
+
+        tierLayout.sectionSummary.rowSummaries.forEach((rowSummary, rowIndex) => {
+            expect(
+                countPackedSeatsForRow({
+                    fixture,
+                    solver,
+                    tierLayout,
+                    rowIndex,
+                    seatWidthIn: egressParams.seatWidthIn
+                })
+            ).toBe(rowSummary.seatCount);
         });
     });
 

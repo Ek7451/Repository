@@ -3194,7 +3194,12 @@ export function resolveTierAisleStationRatios(
     aisleReferenceMap = null,
     tierLayout = null
 ) {
-    const renderedWidthFt = getTierRenderedAisleWidthFt(tierLayout, aisleIndex);
+    const transientTerminalWidthIn = aisle?.anchorType === 'open_edge_terminal'
+        ? Number(tierLayout?.renderedWidthsIn?.[aisleIndex])
+        : NaN;
+    const renderedWidthFt = Number.isFinite(transientTerminalWidthIn) && transientTerminalWidthIn > 0
+        ? Math.max(0, transientTerminalWidthIn / 12.0)
+        : getTierRenderedAisleWidthFt(tierLayout, aisleIndex);
     const alignmentMode = normalizeAlignmentMode(aisle?.alignmentMode);
     const shouldClampOpenEdgeByWidth = (
         aisle?.anchorType === 'open_edge_terminal' ||
@@ -4383,10 +4388,16 @@ export function buildTierAisleLayoutSummary({
     );
 
     const evaluateRenderedWidths = (renderedWidthsIn) => {
+        const samplingTierLayout = {
+            ...tierLayout,
+            renderedWidthsIn: Array.isArray(renderedWidthsIn) ? renderedWidthsIn.slice() : []
+        };
         const measured = measureSectionsFromRenderedWidths({
             rows: safeRows,
             sectionRecords: buildSectionRecords(slots, safeRows.length),
-            resolveRowAisleSampling,
+            resolveRowAisleSampling: typeof resolveRowAisleSampling === 'function'
+                ? ((rowIndex, row) => resolveRowAisleSampling(rowIndex, row, samplingTierLayout))
+                : null,
             seatWidthIn: resolvedSeatWidthIn,
             renderedWidthsIn,
             aisles: safeAisles
@@ -4805,10 +4816,10 @@ function buildTierAisleAnalysisCandidate({
         rows: safeRows,
         tierLayout: layoutForSummary,
         referencePaths,
-        resolveRowAisleSampling: (_rowIndex, row) => pickBestRowAisleSampling(
+        resolveRowAisleSampling: (_rowIndex, row, samplingTierLayout = layoutForSummary) => pickBestRowAisleSampling(
             (row.x - (row.tread_depth * 0.5)) - offsetCorrection,
             getPathsForOffset,
-            layoutForSummary,
+            samplingTierLayout,
             chamferCache,
             aisleReferenceMap
         ),
