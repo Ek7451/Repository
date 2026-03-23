@@ -1977,6 +1977,29 @@ function buildOpenTerminalEdgeAisles(perimeterModel, bowlConfig, aisleWidthFt = 
     return out.sort(compareAislesByPathAndStation);
 }
 
+function filterRedundantOpenTerminalForcedAisles(forcedAisles = [], terminalEdgeAisles = []) {
+    if (!Array.isArray(forcedAisles) || !forcedAisles.length) return [];
+    if (!Array.isArray(terminalEdgeAisles) || !terminalEdgeAisles.length) return forcedAisles.slice();
+
+    const terminalEdges = new Set();
+    terminalEdgeAisles.forEach((aisle) => {
+        const edge = String(aisle?.edge || '').toLowerCase();
+        if (edge !== 'start' && edge !== 'end') return;
+
+        terminalEdges.add(`${Math.max(0, Math.floor(Number(aisle?.pathIndex) || 0))}:${edge}`);
+    });
+
+    return forcedAisles.filter((aisle) => {
+        if (!aisle?.forced || aisle?.anchorType !== 'forced_chamfer') return true;
+
+        const pathIndex = Math.max(0, Math.floor(Number(aisle?.pathIndex) || 0));
+        const u = clamp01(Number(aisle?.u) || 0);
+        if (u <= 1e-5) return !terminalEdges.has(`${pathIndex}:start`);
+        if (Math.abs(1 - u) <= 1e-5) return !terminalEdges.has(`${pathIndex}:end`);
+        return true;
+    });
+}
+
 function buildMeasureWorstSeatsForInterval(interval, seatWidthIn, aisleWidthFt, axisExclusionFt, endpointBufferFt) {
     return (count) => estimateWorstSeatsInInterval(
         interval,
@@ -3803,6 +3826,18 @@ function resolveOpenPathSectionTraversal(normalizedType, bowlConfig, slots, path
         };
     }
 
+    if (normalizedType === 'U-End2') {
+        return {
+            pathRank: pathIndex,
+            slotOrder: slots.map((_, idx) => idx).sort((aIdx, bIdx) => {
+                const a = slots[aIdx];
+                const b = slots[bIdx];
+                return (compareFiniteNumbers(a.midU, b.midU))
+                    || (compareFiniteNumbers(a.slotIndex, b.slotIndex));
+            })
+        };
+    }
+
     if (!SIDE_BOWL_SECTION_NUMBERING_TYPES.has(normalizedType)) return null;
 
     const segment = classifySideBowlPathSegment(slots);
@@ -4618,7 +4653,7 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
     const minSpacingFt = Math.max(widthFt * 1.05, 1.25);
     const axisExclusionFt = Math.max(0.5, Number(axisToleranceFt) || 2, widthFt * 0.5 + 0.25);
     const endpointBufferFt = Math.max(2.0, widthFt * 1.0, minSpacingFt * 0.5);
-    const forcedAisles = buildForcedTransitionAisles(perimeterModel);
+    const rawForcedAisles = buildForcedTransitionAisles(perimeterModel);
     const legalMaxOccupantsPerAisle = resolveMaxOccupantsPerAisle({
         maxOccupantsPerAisle,
         maxAisleWidthIn,
@@ -4626,9 +4661,10 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
     });
     const hasSeatCap = Number.isFinite(Number(maxSeatsBetweenAisles)) && Number(maxSeatsBetweenAisles) > 0;
     const hasEgressCap = Number.isFinite(legalMaxOccupantsPerAisle) && legalMaxOccupantsPerAisle > 0 && Math.max(0, Math.round(Number(rowCount) || 0)) > 0;
-    const terminalEdgeAisles = forcedAisles.length > 0 && (hasSeatCap || hasEgressCap)
+    const terminalEdgeAisles = rawForcedAisles.length > 0 && (hasSeatCap || hasEgressCap)
         ? buildOpenTerminalEdgeAisles(perimeterModel, bowlConfig, widthFt)
         : [];
+    const forcedAisles = filterRedundantOpenTerminalForcedAisles(rawForcedAisles, terminalEdgeAisles);
 
     let aisles = [];
     let resolvedOpenPathTargets = null;
@@ -4638,14 +4674,16 @@ function buildTierAisleLayoutFromPaths(paths, backPaths, params = {}) {
         ['sides', 'sides3', 'sides4'].includes(bowlType) &&
         paths.length >= 2 &&
         paths.every((path) => path && !path.closed && path.length > EPS) &&
-        forcedAisles.length === 0;
+        rawForcedAisles.length === 0 &&
+        terminalEdgeAisles.length === 0;
     const useEvenOpenPathDistribution =
         paths.length === 1 &&
         !!paths[0] &&
         !paths[0].closed &&
-        forcedAisles.length === 0;
+        rawForcedAisles.length === 0 &&
+        terminalEdgeAisles.length === 0;
     const useDeterministicPerimeterAllocation =
-        forcedAisles.length > 0 &&
+        (rawForcedAisles.length > 0 || terminalEdgeAisles.length > 0) &&
         getPerimeterIntervalEntries(perimeterModel).length > 0;
     const useClosedEvenPathDistribution =
         paths.length === 1 &&

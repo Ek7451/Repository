@@ -2836,6 +2836,54 @@ describe('aisle layout geometry seam', () => {
         });
     });
 
+    it('keeps baseball zero-radius open ends on inset terminal aisles without duplicate endpoint forced aisles', () => {
+        const fixture = buildBaseballArcFixture('BaseballStandard', {
+            radius: 0,
+            sideLength: 200,
+            endLength: 200,
+            straightAisleMode: 'perpendicular',
+            chamferAisleMode: 'perpendicular'
+        });
+        const rows = buildTierRows({
+            count: 20,
+            startX: 27.75,
+            treadDepth: 2.75
+        });
+        const tierLayout = buildTierAisleAnalysisForFixture({
+            fixture,
+            rows,
+            egressParams: {
+                seatWidthIn: 20,
+                minAisleWidthIn: 48,
+                maxAisleWidthIn: 72,
+                egressFactor: 0.2,
+                seatsBetweenAisles: 20
+            }
+        });
+        const firstAisle = tierLayout.aisles[0];
+        const lastAisle = tierLayout.aisles[tierLayout.aisles.length - 1];
+        const endpointForcedAisles = tierLayout.aisles.filter((aisle) => {
+            if (!aisle?.forced) return false;
+            const u = Number(aisle?.u) || 0;
+            return Math.abs(u) <= 1e-6 || Math.abs(1 - u) <= 1e-6;
+        });
+
+        expect(firstAisle).toEqual(expect.objectContaining({
+            anchorType: 'open_edge_terminal',
+            edge: 'start'
+        }));
+        expect(lastAisle).toEqual(expect.objectContaining({
+            anchorType: 'open_edge_terminal',
+            edge: 'end'
+        }));
+        expect(firstAisle.u).toBeGreaterThan(0);
+        expect(lastAisle.u).toBeLessThan(1);
+        expect(endpointForcedAisles).toHaveLength(0);
+        expect(countFixedDeterministicAisles(tierLayout)).toBe(2);
+        expect(tierLayout.sectionSummary.actualAisles).toBe(tierLayout.aisles.length);
+        expect(tierLayout.sectionSummary.compliance.isCompliant).toBe(true);
+    });
+
     it('keeps U-end summary row totals aligned with rendered seat packing at terminal aisles', () => {
         const fixture = buildRendererBowlFixture('U-End2', {
             width: 85,
@@ -2876,6 +2924,39 @@ describe('aisle layout geometry seam', () => {
                 })
             ).toBe(rowSummary.seatCount);
         });
+    });
+
+    it('keeps U-End2 section numbering sequential along the open-path traversal', () => {
+        const fixture = buildRendererBowlFixture('U-End2', {
+            width: 85,
+            length: 200,
+            shape: 'rounded_rect',
+            radius: 16,
+            straightAisleMode: 'perpendicular',
+            chamferAisleMode: 'radial'
+        });
+        const rows = Array.from({ length: 15 }, (_, index) => ({
+            row_number: index + 1,
+            x: 2.75 * (index + 1),
+            tread_depth: 2.75
+        }));
+        const egressParams = {
+            seatWidthIn: 19,
+            minAisleWidthIn: 48,
+            maxAisleWidthIn: 66,
+            egressFactor: 0.2,
+            seatsBetweenAisles: 32
+        };
+
+        const tierLayout = buildTierAisleAnalysisForFixture({
+            fixture,
+            rows,
+            egressParams
+        });
+        const sectionNumbers = tierLayout.sectionSummary.sections.map((section) => section.sectionNumber);
+        const expectedSectionNumbers = sectionNumbers.map((_, index) => 100 + index);
+
+        expect(sectionNumbers).toEqual(expectedSectionNumbers);
     });
 
     it('keeps open-path end sections aligned with rendered seat packing for distributed aisles', () => {
