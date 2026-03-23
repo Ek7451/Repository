@@ -3194,44 +3194,47 @@ export function resolveTierAisleStationRatios(
     aisleReferenceMap = null,
     tierLayout = null
 ) {
-    const transientTerminalWidthIn = aisle?.anchorType === 'open_edge_terminal'
+    const alignmentMode = normalizeAlignmentMode(aisle?.alignmentMode);
+    let resolvedOpenEdge = null;
+    let samePathAisles = null;
+
+    if (aisle?.anchorType === 'open_edge_terminal') {
+        resolvedOpenEdge = String(aisle.edge || '').toLowerCase() === 'end' ? 'end' : 'start';
+    } else if (aisle?.anchorType === 'distributed_linear_even' && Array.isArray(tierLayout?.aisles)) {
+        const pathIndex = Math.max(0, Math.floor(Number(aisle?.pathIndex) || 0));
+        samePathAisles = tierLayout.aisles
+            .map((candidate, index) => ({ candidate, index }))
+            .filter(({ candidate }) => Math.max(0, Math.floor(Number(candidate?.pathIndex) || 0)) === pathIndex)
+            .sort((left, right) => {
+                const delta = (Number(left.candidate?.u) || 0) - (Number(right.candidate?.u) || 0);
+                if (Math.abs(delta) > EPS) return delta;
+                return left.index - right.index;
+            });
+
+        const resolvesAgainstOpenPath = !pathFront?.closed || !pathBack?.closed;
+        if (resolvesAgainstOpenPath && samePathAisles.length > 1) {
+            if (samePathAisles[0]?.index === aisleIndex) resolvedOpenEdge = 'start';
+            else if (samePathAisles[samePathAisles.length - 1]?.index === aisleIndex) resolvedOpenEdge = 'end';
+        }
+    }
+
+    const transientTerminalWidthIn = resolvedOpenEdge
         ? Number(tierLayout?.renderedWidthsIn?.[aisleIndex])
         : NaN;
     const renderedWidthFt = Number.isFinite(transientTerminalWidthIn) && transientTerminalWidthIn > 0
         ? Math.max(0, transientTerminalWidthIn / 12.0)
         : getTierRenderedAisleWidthFt(tierLayout, aisleIndex);
-    const alignmentMode = normalizeAlignmentMode(aisle?.alignmentMode);
     const shouldClampOpenEdgeByWidth = (
         aisle?.anchorType === 'open_edge_terminal' ||
         aisle?.anchorType === 'distributed_linear_even' ||
         alignmentMode !== 'perpendicular'
     );
     if (renderedWidthFt > 0 && shouldClampOpenEdgeByWidth) {
-        let edge = null;
-        if (aisle?.anchorType === 'open_edge_terminal') {
-            edge = String(aisle.edge || '').toLowerCase() === 'end' ? 'end' : 'start';
-        } else if (aisle?.anchorType === 'distributed_linear_even' && Array.isArray(tierLayout?.aisles)) {
-            const pathIndex = Math.max(0, Math.floor(Number(aisle?.pathIndex) || 0));
-            const samePathAisles = tierLayout.aisles
-                .map((candidate, index) => ({ candidate, index }))
-                .filter(({ candidate }) => Math.max(0, Math.floor(Number(candidate?.pathIndex) || 0)) === pathIndex)
-                .sort((left, right) => {
-                    const delta = (Number(left.candidate?.u) || 0) - (Number(right.candidate?.u) || 0);
-                    if (Math.abs(delta) > EPS) return delta;
-                    return left.index - right.index;
-                });
-
-            if (samePathAisles.length > 1) {
-                if (samePathAisles[0]?.index === aisleIndex) edge = 'start';
-                else if (samePathAisles[samePathAisles.length - 1]?.index === aisleIndex) edge = 'end';
-            }
-        }
-
-        if (edge) {
+        if (resolvedOpenEdge) {
             const resolveOpenTerminalU = (path) => {
                 if (!path || path.closed || !(path.length > EPS)) return NaN;
                 const edgeInsetU = Math.max(0, Math.min(0.5, (renderedWidthFt * 0.5) / path.length));
-                return edge === 'end'
+                return resolvedOpenEdge === 'end'
                     ? clamp01(1 - edgeInsetU)
                     : clamp01(edgeInsetU);
             };

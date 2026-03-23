@@ -599,7 +599,7 @@ function computeFreeIntervals(path, blockedSpans = []) {
     return free;
 }
 
-function countPackedSeatsForRow({
+function measurePackedSeatIntervalsForRow({
     fixture,
     solver,
     tierLayout,
@@ -666,15 +666,39 @@ function countPackedSeatsForRow({
         );
     });
 
-    return centerPaths.reduce((sum, path, pathIndex) => {
-        if (!path || !(path.length > 1e-6)) return sum;
-        const packedOnPath = computeFreeIntervals(path, blockedByPath[pathIndex] || []).reduce((pathSum, interval) => {
+    return centerPaths.flatMap((path, pathIndex) => {
+        if (!path || !(path.length > 1e-6)) return [];
+        return computeFreeIntervals(path, blockedByPath[pathIndex] || []).map((interval) => {
             const lengthFt = interval[1] - interval[0];
-            if (lengthFt <= 1e-6) return pathSum;
-            return pathSum + intervalLengthToSeatCount(lengthFt + 1e-6, seatWidthIn);
-        }, 0);
-        return sum + packedOnPath;
-    }, 0);
+            return {
+                pathIndex,
+                lengthFt,
+                seatCount: lengthFt > 1e-6
+                    ? intervalLengthToSeatCount(lengthFt + 1e-6, seatWidthIn)
+                    : 0
+            };
+        }).filter((interval) => interval.lengthFt > 1e-6);
+    });
+}
+
+function countPackedSeatsForRow({
+    fixture,
+    solver,
+    tierLayout,
+    rowIndex,
+    seatWidthIn,
+    offsetCorrection = 0
+}) {
+    return measurePackedSeatIntervalsForRow({
+        fixture,
+        solver,
+        tierLayout,
+        rowIndex,
+        seatWidthIn,
+        offsetCorrection
+    }).reduce((sum, interval) => (
+        sum + Math.max(0, Number(interval?.seatCount) || 0)
+    ), 0);
 }
 
 function findFirstCompliantTargetAisleSolve({
@@ -1504,8 +1528,8 @@ describe('aisle layout geometry seam', () => {
         });
 
         expect(countAislesByPath(relaxed.analysis)).toEqual({ 0: 6, 1: 6, 2: 4, 3: 4 });
-        expect(countAislesByPath(strict.analysis)).toEqual({ 0: 8, 1: 8, 2: 5, 3: 5 });
-        expect(countSectionsByPath(strict.analysis.sectionSummary)).toEqual({ 0: 7, 1: 7, 2: 4, 3: 4 });
+        expect(countAislesByPath(strict.analysis)).toEqual({ 0: 8, 1: 8, 2: 6, 3: 6 });
+        expect(countSectionsByPath(strict.analysis.sectionSummary)).toEqual({ 0: 7, 1: 7, 2: 5, 3: 5 });
     });
 
     it('keeps Sides3 grouped-open normalization scoped to the owning pair plus single side', () => {
@@ -2852,6 +2876,60 @@ describe('aisle layout geometry seam', () => {
                 })
             ).toBe(rowSummary.seatCount);
         });
+    });
+
+    it('keeps open-path end sections aligned with rendered seat packing for distributed aisles', () => {
+        const fixture = buildRendererBowlFixture('Side1', {
+            width: 85,
+            length: 200,
+            shape: 'rounded_rect',
+            radius: 16,
+            straightAisleMode: 'perpendicular',
+            chamferAisleMode: 'radial'
+        });
+        const rows = Array.from({ length: 15 }, (_, index) => ({
+            row_number: index + 1,
+            x: 2.75 * (index + 1),
+            tread_depth: 2.75
+        }));
+        const egressParams = {
+            seatWidthIn: 19,
+            minAisleWidthIn: 48,
+            maxAisleWidthIn: 66,
+            egressFactor: 0.2,
+            seatsBetweenAisles: 32
+        };
+
+        const tierLayout = buildTierAisleAnalysisForFixture({
+            fixture,
+            rows,
+            egressParams
+        });
+        const solver = { rows };
+        const packedIntervals = measurePackedSeatIntervalsForRow({
+            fixture,
+            solver,
+            tierLayout,
+            rowIndex: 0,
+            seatWidthIn: egressParams.seatWidthIn
+        });
+        const summaryIntervals = tierLayout.sectionSummary.sections.map((section) => ({
+            seatCount: Math.max(0, Number(section?.rowSeatCounts?.[0]) || 0),
+            lengthFt: Math.max(0, Number(section?.rowSeatingLengthsFt?.[0]) || 0)
+        }));
+
+        expect(summaryIntervals).toHaveLength(packedIntervals.length);
+        summaryIntervals.forEach((summaryInterval, index) => {
+            expect(summaryInterval.seatCount).toBe(packedIntervals[index].seatCount);
+            expect(summaryInterval.lengthFt).toBeCloseTo(packedIntervals[index].lengthFt, 6);
+        });
+        expect(countPackedSeatsForRow({
+            fixture,
+            solver,
+            tierLayout,
+            rowIndex: 0,
+            seatWidthIn: egressParams.seatWidthIn
+        })).toBe(tierLayout.sectionSummary.rowSummaries[0].seatCount);
     });
 
     it('classifies baseball terminal legs as straight intervals so the shared straight-aisle contract applies across the full path', () => {
